@@ -20,9 +20,8 @@ API, security, packaging, and compatibility gates.
 ## Prerequisites
 
 - `just` — command runner; quality gates run only through repository justfile
-  targets (for example `just check`) so that formatter, linter, and test
-  versions stay pinned in one place. Until this repository's justfile is
-  initialized, apply the equivalent gates locally before proposing changes.
+  targets so that formatter, linter, and tool versions stay pinned in one
+  place. Run `just check` before proposing changes.
 - `bun` / `bunx --bun` — JavaScript execution and package management. Never
   use `npm`, `npx`, or `yarn` in any Bitty repository.
 - `markdownlint-cli2` — Markdown linting for documentation changes.
@@ -63,5 +62,8 @@ fix(rules): correct scope overlap guidance
 chore(governance): add security policy scaffolding
 ```
 
-Commit messages are validated by `commitlint.config.ts` against the
-Conventional Commits configuration once hook wiring is initialized.
+Commit messages are validated by `commitlint.config.ts` against Conventional
+Commits rules. Run `just hooks-install` once per clone to enable the Git
+hooks: `commit-msg` rejects non-conforming messages through
+`just commit-check`, and `pre-commit` lints and format-checks staged Markdown
+files through the justfile targets.

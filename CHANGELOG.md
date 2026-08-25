@@ -8,3 +8,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Initial repository governance and toolchain scaffolding (proposed; pending
   first commit).
+- Enforceable quality gates: pinned `just check` targets, lefthook Git hooks,
+  and a read-only GitHub Actions CI workflow.
