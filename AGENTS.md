@@ -36,6 +36,11 @@
 - After the first commit, prefer a dedicated branch and Git worktree for each
   independent task. Before it, shared-checkout initialization is allowed only
   for disjoint scopes with CI-equivalent local checks.
+- Branches use `ctx-XXXX/<type>-<short-slug>` (XXXX = owning CarryCtx task
+  number; type `feat|fix|chore|docs`; kebab-case slug, e.g.
+  `ctx-0031/feat-isolation-rfc`); worktrees live at
+  `.worktrees/ctx-XXXX-<type>-<short-slug>` (`/` mapped to `-`); one branch per
+  task; commander housekeeping branches may use `cmd/<slug>`.
 - Preserve unrelated changes. Do not commit, push, release, publish packages,
   or mutate remote state without explicit authorization.
 
