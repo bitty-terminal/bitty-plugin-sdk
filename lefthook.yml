@@ -1,0 +1,13 @@
+commit-msg:
+  commands:
+    commitlint:
+      run: just commit-check "{1}"
+
+pre-commit:
+  commands:
+    markdownlint:
+      glob: "*.md"
+      run: just lint-files {staged_files}
+    prettier:
+      glob: "*.md"
+      run: just fmt-check-files {staged_files}
