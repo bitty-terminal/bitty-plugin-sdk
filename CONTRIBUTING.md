@@ -52,6 +52,14 @@ findings and CI-equivalent checks pass. Documentation synchronization is part
 of definition of done: an SDK surface is incomplete while canonical
 `bitty-docs` contracts or plugin-author guidance remain stale.
 
+### Branch and worktree naming
+
+Branches use `ctx-XXXX/<type>-<short-slug>`, where `XXXX` is the owning
+CarryCtx task number, `<type>` is one of `feat|fix|chore|docs`, and the slug
+is short kebab-case (for example `ctx-0031/feat-isolation-rfc`). CarryCtx-bound
+worktrees live at `.worktrees/ctx-XXXX-<type>-<short-slug>` with `/` mapped to
+`-`. One branch per task; commander housekeeping branches may use `cmd/<slug>`.
+
 ## Committing
 
 Use Conventional Commits:
