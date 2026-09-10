@@ -1,0 +1,216 @@
+# Plugin manifest schema and `bitty-plugin-lint`
+
+Status: implemented by SDK task `CTX-0015` (R-SDK-2) for cross-repository gate
+`CTX-0221`. This document, `src/schema.ts`, and `src/capabilities.ts` are the
+machine-checked SDK surface; there is no separate JSON Schema artifact.
+
+## Contract sources
+
+- Accepted contract:
+  [`docs/specifications/plugin-platform-rfc.md`](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/specifications/plugin-platform-rfc.md)
+  (Plugin API v1 manifest, capability model, and hard limits; OQ-011, OQ-012,
+  OQ-013).
+- Read-only reference host models at `bitty@1ea2f66`:
+  `crates/bitty-plugin-host/src/manifest.rs`,
+  `crates/bitty-plugin-host/src/capability.rs`, and
+  `crates/bitty-package/src/manifest.rs`.
+- Batch definition: bitty CarryCtx note `PX-1199`, task `CTX-0221`.
+
+The validator never accepts a manifest the host rejected in those models. Where
+the SDK is stricter than the host, the difference is listed under
+[Known gaps and open questions](#known-gaps-and-open-questions).
+
+## File and format
+
+- File name: `bitty-plugin.toml` (fixed by the accepted contract).
+- Format: TOML; static and declarative, with no execution during parsing.
+- Size: at most 256 KiB, checked before parsing.
+- Manifests are attacker-controlled input. Validation is total and
+  side-effect-free: no file writes, no process spawn, no network, no VM.
+
+## Schema
+
+### `[plugin]` (required)
+
+| Key           | Required | Rules                                                      |
+| ------------- | -------- | ---------------------------------------------------------- |
+| `id`          | yes      | `^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_-]*$`, max 128 bytes      |
+| `name`        | yes      | Non-empty, max 128 bytes, no NUL or ESC                    |
+| `version`     | yes      | SemVer 2 (`MAJOR.MINOR.PATCH` + optional prerelease/build) |
+| `description` | yes      | Max 1024 bytes, no NUL or ESC                              |
+| `license`     | no       | Non-empty when present, max 256 bytes                      |
+
+### `[compat]` (optional)
+
+| Key          | Rules                                           |
+| ------------ | ----------------------------------------------- |
+| `bitty`      | Version range syntax, max 128 bytes             |
+| `plugin-api` | Version range syntax, max 128 bytes (`^1.0` v1) |
+
+### `[dependencies]` (optional)
+
+Plugin id to version-range pairs, at most 8. The plugin id must not equal the
+manifest's own id. Bare dotted keys and quoted keys are equivalent.
+
+### `[services.provided]` (optional)
+
+Interface name to concrete version pairs, at most 16. Interface names are
+lowercase dot-separated `[a-z0-9_-]` segments (1..64 characters each, 128
+total). Versions must be complete SemVer 2 (`1.0.0`, not `1.0`).
+
+### `[capabilities]` (optional)
+
+Requested authorities; absent means none. Every key is a closed-set capability
+identifier declared with `= true`; `false` is rejected to avoid silent typos.
+Filesystem requests use the structured form:
+
+```toml
+[capabilities]
+terminal.semantic-read = true
+
+[[capabilities.filesystem]]
+access = "read"
+paths = ["~/Documents/**/*.md"]
+```
+
+| Filesystem key | Required | Rules                                              |
+| -------------- | -------- | -------------------------------------------------- |
+| `access`       | yes      | `read` or `write`                                  |
+| `paths`        | yes      | 1+ glob patterns, 1..512 bytes each, no whitespace |
+
+### `[lazy]` (optional)
+
+| Key        | Rules                                                              |
+| ---------- | ------------------------------------------------------------------ |
+| `commands` | 1..128 qualified names (`plugin-id:resource`) owned by this plugin |
+| `events`   | 1..256 event types, 1..128 bytes, no whitespace or control chars   |
+| `claims`   | 1..64 bytes each                                                   |
+
+## Hard limits
+
+| Bound                          | Value                  |
+| ------------------------------ | ---------------------- |
+| Manifest size                  | 256 KiB                |
+| TOML nesting depth             | 8 levels               |
+| Lazy commands                  | 128                    |
+| Lazy event types               | 256                    |
+| Filesystem patterns per access | 32                     |
+| Total filesystem pattern text  | 8 KiB                  |
+| Provided services              | 16                     |
+| Plugin dependencies            | 8                      |
+| Capability identifier          | 512 bytes              |
+| Capability parameter           | 1024 bytes             |
+| Plugin id / name / description | 128 / 128 / 1024 bytes |
+| Version / version range        | 64 / 128 bytes         |
+| Qualified name / resource      | 256 / 128 bytes        |
+| Service interface / segment    | 128 / 64 bytes         |
+| Event type / claim             | 128 / 64 bytes         |
+| Filesystem path pattern        | 512 bytes              |
+
+## Capability identifiers
+
+Deny by default, no wildcards, closed identifier set. An unknown head fails
+validation instead of being ignored. Parameterized heads must carry a
+`:PARAMETER`; all others must not.
+
+| Family      | Identifiers                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| `terminal`  | `terminal.semantic-read`, `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`, `terminal.manage` |
+| `ui`        | `ui.rich`, `ui.overlay`, `ui.protocol-register`                                                               |
+| `clipboard` | `clipboard.read`, `clipboard.write`                                                                           |
+| `fs`        | `fs.read:PATTERN`, `fs.write:PATTERN`                                                                         |
+| `process`   | `process.spawn:CONSTRAINT`                                                                                    |
+| `network`   | `network.connect:DESTINATION`                                                                                 |
+| `runtime`   | `runtime.inspect`, `runtime.configure`, `runtime.plugin-manage`                                               |
+| `debug`     | `debug.inspect`, `debug.trace`, `debug.control`                                                               |
+| `platform`  | `platform.notify`, `platform.open-url`, `platform.image-file`                                                 |
+| `protocol`  | `protocol.register`                                                                                           |
+| `panel`     | `panel.provider`, `panel.create`, `panel.focus`, `panel.overlay`                                              |
+| `browser`   | `browser.embed`, `browser.navigation`, `browser.file-url`, `browser.storage`                                  |
+| `agent`     | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`                                 |
+| `mcp`       | `mcp.invoke:TOOL`                                                                                             |
+| `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                        |
+
+`bitty-plugin-lint` emits a `capabilities.high-risk` warning (never an error)
+for `terminal.input.all`, `terminal.raw-read`, `ui.protocol-register`,
+`debug.control`, `runtime.plugin-manage`, and `browser.embed` so reviewers and
+consent tooling can flag them.
+
+## CLI usage
+
+```sh
+bun src/cli.ts bitty-plugin.toml            # human-readable report
+bun src/cli.ts --json bitty-plugin.toml     # machine-readable report
+bun link && bitty-plugin-lint bitty-plugin.toml
+```
+
+Exit codes: `0` valid, `1` invalid manifest, `2` usage or I/O error. Without a
+path argument the CLI reads `./bitty-plugin.toml`. Reading from stdin is not
+supported.
+
+JSON reports have the shape `{ "file", "valid", "diagnostics" }`, where each
+diagnostic is `{ "severity", "code", "path", "message" }`.
+
+### Diagnostic codes
+
+| Code                               | Meaning                                    |
+| ---------------------------------- | ------------------------------------------ |
+| `manifest.size`                    | Manifest exceeds 256 KiB                   |
+| `manifest.encoding`                | File is not valid UTF-8                    |
+| `manifest.parse`                   | TOML syntax or duplicate-key error         |
+| `manifest.type`                    | Wrong TOML type for a field                |
+| `manifest.unknown-key`             | Key outside the accepted schema            |
+| `manifest.missing-key`             | Required table or key missing              |
+| `manifest.limit`                   | Count, length, or depth bound exceeded     |
+| `plugin.id.invalid`                | Plugin id grammar violation                |
+| `plugin.name.invalid`              | Empty name or NUL/ESC in a display string  |
+| `plugin.version.invalid`           | Version is not SemVer 2                    |
+| `plugin.license.invalid`           | License present but empty                  |
+| `plugin.description.invalid`       | NUL/ESC in description                     |
+| `compat.range.invalid`             | Version range contains invalid characters  |
+| `dependencies.id.invalid`          | Dependency id grammar violation            |
+| `dependencies.version.invalid`     | Dependency range contains invalid chars    |
+| `dependencies.self`                | Plugin depends on itself                   |
+| `services.interface.invalid`       | Interface name grammar violation           |
+| `services.version.invalid`         | Service version is not complete SemVer 2   |
+| `capabilities.invalid`             | Capability id shape/character violation    |
+| `capabilities.wildcard`            | Wildcard in a capability id                |
+| `capabilities.unknown`             | Capability head outside the closed set     |
+| `capabilities.param-required`      | Required `:PARAMETER` missing              |
+| `capabilities.param-forbidden`     | `:PARAMETER` on a non-parameterized head   |
+| `capabilities.value`               | Capability not declared as `= true`        |
+| `capabilities.filesystem.invalid`  | Filesystem request problem                 |
+| `capabilities.high-risk` (warning) | High-risk capability declared              |
+| `lazy.commands.invalid`            | Qualified command name invalid             |
+| `lazy.commands.owner`              | Command outside the plugin's own namespace |
+| `lazy.events.invalid`              | Event type invalid                         |
+| `lazy.claims.invalid`              | Claim name invalid                         |
+
+## Examples
+
+- [`examples/minimal-bitty-plugin.toml`](./examples/minimal-bitty-plugin.toml)
+- [`examples/full-bitty-plugin.toml`](./examples/full-bitty-plugin.toml)
+
+Both files are read by `tests/manifest.test.ts`, so the documented examples
+cannot drift from the validator.
+
+## Known gaps and open questions
+
+- The accepted RFC example writes a two-part service version (`"1.0"`), but the
+  reference host validates provided-service versions as complete SemVer
+  (`X.Y.Z`). The linter follows the host; the RFC example is stale and should
+  be corrected in `bitty-docs`.
+- The linter validates `plugin.version` as strict SemVer 2. The reference host
+  uses a looser minimal parser (for example it accepts `1.0.0-`); the linter is
+  therefore stricter, never more permissive.
+- `PX-1199` and the template task say `plugin.toml`; the accepted contract fixes
+  `bitty-plugin.toml`. The linter defaults to the accepted name. Confirm the
+  template name when R-TPL-1 is implemented.
+- The `description` key is treated as required because the accepted schema
+  marks only `license` optional; the host model stores it as a non-optional
+  string.
+- The linter rejects lazy commands that do not use the manifest's own plugin id
+  as their namespace. The reference host enforces ownership at registration
+  time instead; the SDK check is stricter and fail-closed.
+- Compatibility ranges are syntax-checked only. Range semantics and resolver
+  behavior remain owned by the host package layer.

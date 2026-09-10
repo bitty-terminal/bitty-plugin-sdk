@@ -1,0 +1,33 @@
+# Full valid bitty-plugin.toml (Plugin API v1) using only non-high-risk
+# capabilities. This exact file is validated by tests/manifest.test.ts so the
+# example cannot drift from the accepted contract it teaches.
+
+[plugin]
+id = "xuepoo.markdown"
+name = "Bitty Markdown"
+version = "0.9.0"
+description = "Render Markdown as rich blocks."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[dependencies]
+"xuepoo.gitcore" = ">=2.0"
+
+[services.provided]
+"markdown.render" = "1.0.0"
+
+[capabilities]
+terminal.semantic-read = true
+ui.rich = true
+
+[[capabilities.filesystem]]
+access = "read"
+paths = ["~/Documents/**/*.md"]
+
+[lazy]
+commands = ["xuepoo.markdown:toggle"]
+events = ["terminal.cwd-changed"]
+claims = ["workspaceline"]

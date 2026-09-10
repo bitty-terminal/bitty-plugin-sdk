@@ -1,8 +1,9 @@
 # Bitty Plugin SDK
 
 This repository is the future home of developer-facing support for Bitty
-plugins. It is currently unborn and pre-implementation: governance files exist,
-but there is no initial commit or usable SDK.
+plugins. It currently provides the accepted-contract validator for
+`bitty-plugin.toml` and the `bitty-plugin-lint` CLI; the Lua SDK, LuaLS
+declarations, and mock host remain pre-implementation.
 
 ## Ownership boundary
 
@@ -18,6 +19,24 @@ and the
 [security overview](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/security/overview.md)
 govern future SDK work. An SDK surface must derive from an accepted and verified
 host contract; it cannot create host behavior by documenting it first.
+
+## Manifest schema and linter
+
+The SDK validates `bitty-plugin.toml` against the accepted Plugin API v1
+manifest and capability contract in `bitty-docs`. Validation is fail-closed:
+unknown keys are rejected at every schema level, capability identifiers are
+checked against the closed v1 set, and every count and length bound is
+enforced before a manifest is accepted.
+
+```sh
+just test                                   # schema, limit, and CLI tests
+bun src/cli.ts bitty-plugin.toml            # human-readable report
+bun src/cli.ts --json bitty-plugin.toml     # machine-readable report
+```
+
+The schema, diagnostic codes, capability table, and known contract gaps are
+documented in [`docs/manifest.md`](docs/manifest.md), with validated examples
+under [`docs/examples/`](docs/examples/).
 
 ## Workflow mirror restore
 
@@ -46,12 +65,15 @@ at the source.
 This repository does not currently provide:
 
 - a Lua SDK, helper library, or LuaLS declarations;
-- public types, functions, errors, capabilities, or lifecycle APIs;
-- a plugin manifest or package schema;
-- examples, fixtures, mocks, conformance tools, or generated artifacts;
+- public Lua functions, host APIs, lifecycle APIs, or runtime capability
+  enforcement;
+- a mock host or conformance fixtures;
 - installation commands or a published package;
 - host-version compatibility, deprecation, or support promises; or
 - a release, release schedule, or publication channel.
+
+The `bitty-plugin-lint` CLI and the manifest validator are local developer
+tooling. They do not install, execute, or activate plugins.
 
 Repository existence and planned boundaries are not implementation or release
 evidence.
