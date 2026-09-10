@@ -95,6 +95,11 @@ export const HIGH_RISK_HEADS: ReadonlySet<string> = new Set([
 const CONTROL_OR_WHITESPACE = /[\p{Cc}\p{White_Space}]/u;
 const SEGMENT = /^[a-z][a-z0-9_-]*$/;
 
+/** UTF-8 byte length, matching the reference host's `str::len()` bounds. */
+function byteLength(value: string): number {
+  return Buffer.byteLength(value, "utf8");
+}
+
 /**
  * Validate one capability identifier against the closed v1 grammar.
  *
@@ -112,12 +117,12 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
     );
     return diagnostics;
   }
-  if (raw.length > MAX_CAPABILITY_LEN) {
+  if (byteLength(raw) > MAX_CAPABILITY_LEN) {
     diagnostics.push(
       error(
         "capabilities.invalid",
         path,
-        `capability id too long (${raw.length} > ${MAX_CAPABILITY_LEN})`,
+        `capability id too long (${byteLength(raw)} > ${MAX_CAPABILITY_LEN})`,
       ),
     );
     return diagnostics;
@@ -158,12 +163,12 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
       );
       return diagnostics;
     }
-    if (param.length > MAX_CAPABILITY_PARAM_LEN) {
+    if (byteLength(param) > MAX_CAPABILITY_PARAM_LEN) {
       diagnostics.push(
         error(
           "capabilities.invalid",
           path,
-          `capability parameter too long (${param.length} > ${MAX_CAPABILITY_PARAM_LEN})`,
+          `capability parameter too long (${byteLength(param)} > ${MAX_CAPABILITY_PARAM_LEN})`,
         ),
       );
       return diagnostics;

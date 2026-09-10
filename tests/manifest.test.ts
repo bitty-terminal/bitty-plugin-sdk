@@ -523,3 +523,175 @@ commands = [1]
     expect(codes(result)).toContain("manifest.type");
   });
 });
+
+describe("UTF-8 byte bounds", () => {
+  function pluginManifest(fields: {
+    readonly name?: string;
+    readonly description?: string;
+    readonly license?: string;
+  }): string {
+    const name = JSON.stringify(fields.name ?? "Example");
+    const description = JSON.stringify(fields.description ?? "Example plugin.");
+    const license =
+      fields.license === undefined
+        ? ""
+        : `license = ${JSON.stringify(fields.license)}\n`;
+    return `
+[plugin]
+id = "xuepoo.example"
+name = ${name}
+version = "0.1.0"
+description = ${description}
+${license}`;
+  }
+
+  test("name over 128 UTF-8 bytes is rejected", () => {
+    const result = lintManifestSource(
+      pluginManifest({ name: "é".repeat(128) }),
+    );
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.limit");
+  });
+
+  test("name at exactly 128 UTF-8 bytes is accepted", () => {
+    const result = lintManifestSource(pluginManifest({ name: "é".repeat(64) }));
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("description over 1024 UTF-8 bytes is rejected", () => {
+    const result = lintManifestSource(
+      pluginManifest({ description: "é".repeat(1024) }),
+    );
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.limit");
+  });
+
+  test("description at exactly 1024 UTF-8 bytes is accepted", () => {
+    const result = lintManifestSource(
+      pluginManifest({ description: "é".repeat(512) }),
+    );
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("license over 256 UTF-8 bytes is rejected", () => {
+    const result = lintManifestSource(
+      pluginManifest({ license: "é".repeat(256) }),
+    );
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.limit");
+  });
+
+  test("license at exactly 256 UTF-8 bytes is accepted", () => {
+    const result = lintManifestSource(
+      pluginManifest({ license: "é".repeat(128) }),
+    );
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("filesystem path over 512 UTF-8 bytes is rejected", () => {
+    const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = [${JSON.stringify("é".repeat(512))}]
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("capabilities.filesystem.invalid");
+  });
+
+  test("filesystem path at exactly 512 UTF-8 bytes is accepted", () => {
+    const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = [${JSON.stringify("é".repeat(256))}]
+`);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("total pattern text over 8 KiB of UTF-8 bytes is rejected", () => {
+    const paths = Array.from({ length: 17 }, () =>
+      JSON.stringify("é".repeat(256)),
+    ).join(", ");
+    const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = [${paths}]
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.limit");
+  });
+
+  test("total pattern text at exactly 8 KiB of UTF-8 bytes is accepted", () => {
+    const paths = Array.from({ length: 16 }, () =>
+      JSON.stringify("é".repeat(256)),
+    ).join(", ");
+    const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = [${paths}]
+`);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("lazy event type over 128 UTF-8 bytes is rejected", () => {
+    const result = lint(`
+[lazy]
+events = [${JSON.stringify("é".repeat(128))}]
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("lazy.events.invalid");
+  });
+
+  test("lazy event type at exactly 128 UTF-8 bytes is accepted", () => {
+    const result = lint(`
+[lazy]
+events = [${JSON.stringify("é".repeat(64))}]
+`);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("lazy claim over 64 UTF-8 bytes is rejected", () => {
+    const result = lint(`
+[lazy]
+claims = [${JSON.stringify("é".repeat(64))}]
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("lazy.claims.invalid");
+  });
+
+  test("lazy claim at exactly 64 UTF-8 bytes is accepted", () => {
+    const result = lint(`
+[lazy]
+claims = [${JSON.stringify("é".repeat(32))}]
+`);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("capability id over 512 UTF-8 bytes is rejected", () => {
+    const capability = `fs.read:${"漢".repeat(504)}`;
+    const result = lint(`
+[capabilities]
+${JSON.stringify(capability)} = true
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("capabilities.invalid");
+  });
+
+  test("capability id at exactly 512 UTF-8 bytes is accepted", () => {
+    const capability = `fs.read:${"漢".repeat(168)}`;
+    const result = lint(`
+[capabilities]
+${JSON.stringify(capability)} = true
+`);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("capability parameter over 1024 UTF-8 bytes is rejected", () => {
+    const capability = `fs.read:${"漢".repeat(342)}`;
+    const result = lint(`
+[capabilities]
+${JSON.stringify(capability)} = true
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("capabilities.invalid");
+  });
+});

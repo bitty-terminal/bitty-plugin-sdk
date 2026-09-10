@@ -59,6 +59,11 @@ const VERSION_REQ = /^[A-Za-z0-9 \t\n\f\r.\-+,<>=^~*|&]+$/;
 const SEMVER_2 =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
+/** UTF-8 byte length, matching the reference host's `str::len()` bounds. */
+function byteLength(value: string): number {
+  return Buffer.byteLength(value, "utf8");
+}
+
 function isTable(value: unknown): value is TomlTable {
   return (
     typeof value === "object" &&
@@ -321,12 +326,12 @@ function validatePluginSection(
       diagnostics.push(
         error("plugin.name.invalid", "plugin.name", "must not be empty"),
       );
-    } else if (name.length > MAX_NAME_LEN) {
+    } else if (byteLength(name) > MAX_NAME_LEN) {
       diagnostics.push(
         error(
           "manifest.limit",
           "plugin.name",
-          `name too long (${name.length} > ${MAX_NAME_LEN})`,
+          `name too long (${byteLength(name)} > ${MAX_NAME_LEN})`,
         ),
       );
     } else if (/[\u0000\u001b]/.test(name)) {
@@ -362,12 +367,12 @@ function validatePluginSection(
       diagnostics.push(
         error("manifest.type", "plugin.description", "expected a string"),
       );
-    } else if (description.length > MAX_DESCRIPTION_LEN) {
+    } else if (byteLength(description) > MAX_DESCRIPTION_LEN) {
       diagnostics.push(
         error(
           "manifest.limit",
           "plugin.description",
-          `description too long (${description.length} > ${MAX_DESCRIPTION_LEN})`,
+          `description too long (${byteLength(description)} > ${MAX_DESCRIPTION_LEN})`,
         ),
       );
     } else if (/[\u0000\u001b]/.test(description)) {
@@ -395,12 +400,12 @@ function validatePluginSection(
           "must not be empty when present",
         ),
       );
-    } else if (license.length > MAX_LICENSE_LEN) {
+    } else if (byteLength(license) > MAX_LICENSE_LEN) {
       diagnostics.push(
         error(
           "manifest.limit",
           "plugin.license",
-          `license too long (${license.length} > ${MAX_LICENSE_LEN})`,
+          `license too long (${byteLength(license)} > ${MAX_LICENSE_LEN})`,
         ),
       );
     }
@@ -543,8 +548,8 @@ function pathPatternProblem(raw: string): string | undefined {
   if (raw.length === 0) {
     return "must not be empty";
   }
-  if (raw.length > MAX_FS_PATH_LEN) {
-    return `too long (${raw.length} > ${MAX_FS_PATH_LEN})`;
+  if (byteLength(raw) > MAX_FS_PATH_LEN) {
+    return `too long (${byteLength(raw)} > ${MAX_FS_PATH_LEN})`;
   }
   if (CONTROL_OR_WHITESPACE.test(raw)) {
     return "must not contain control characters or whitespace";
@@ -645,7 +650,7 @@ function validateFilesystem(value: unknown, diagnostics: Diagnostic[]): void {
         );
         return;
       }
-      totalPatternBytes += pattern.length;
+      totalPatternBytes += byteLength(pattern);
     });
   });
 
@@ -777,14 +782,14 @@ function validateLazy(
         const eventPath = `lazy.events[${index}]`;
         if (
           event.length === 0 ||
-          event.length > MAX_EVENT_TYPE_LEN ||
+          byteLength(event) > MAX_EVENT_TYPE_LEN ||
           CONTROL_OR_WHITESPACE.test(event)
         ) {
           diagnostics.push(
             error(
               "lazy.events.invalid",
               eventPath,
-              `event type must be 1..${MAX_EVENT_TYPE_LEN} characters without whitespace or control characters`,
+              `event type must be 1..${MAX_EVENT_TYPE_LEN} bytes without whitespace or control characters`,
             ),
           );
         }
@@ -801,12 +806,12 @@ function validateLazy(
     } else {
       claims.forEach((claim: string, index: number): void => {
         const claimPath = `lazy.claims[${index}]`;
-        if (claim.length === 0 || claim.length > MAX_CLAIM_LEN) {
+        if (claim.length === 0 || byteLength(claim) > MAX_CLAIM_LEN) {
           diagnostics.push(
             error(
               "lazy.claims.invalid",
               claimPath,
-              `claim must be 1..${MAX_CLAIM_LEN} characters`,
+              `claim must be 1..${MAX_CLAIM_LEN} bytes`,
             ),
           );
         }
