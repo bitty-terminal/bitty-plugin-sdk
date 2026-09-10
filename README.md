@@ -2,8 +2,8 @@
 
 This repository is the future home of developer-facing support for Bitty
 plugins. It currently provides the accepted-contract validator for
-`bitty-plugin.toml` and the `bitty-plugin-lint` CLI; the Lua SDK, LuaLS
-declarations, and mock host remain pre-implementation.
+`bitty-plugin.toml`, the `bitty-plugin-lint` CLI, and generated Plugin API v1
+LuaLS declarations; the Lua helper SDK and mock host remain pre-implementation.
 
 ## Ownership boundary
 
@@ -38,6 +38,19 @@ The schema, diagnostic codes, capability table, and known contract gaps are
 documented in [`docs/manifest.md`](docs/manifest.md), with validated examples
 under [`docs/examples/`](docs/examples/).
 
+## Plugin API v1 LuaLS definitions
+
+`lua/bitty.d.lua` is generated from the accepted Plugin API v1 surface in
+`surface/bitty-plugin-api-v1.json` and checked for drift by `just check`
+(`just lua-defs-check`). The declarations cover L1 Control and the minimal L2
+UI surface only plus the closed v1 event set, and LuaLS conformance is verified
+with a clean positive example and a negative fixture for every excluded name.
+
+See [`docs/lua-defs.md`](docs/lua-defs.md) for LuaLS setup, coverage,
+exclusions, and validation commands, and
+[`lua/examples/minimal-init.lua`](lua/examples/minimal-init.lua) for a runnable
+example.
+
 ## Workflow mirror restore
 
 CarryCtx runtime state (`.git/carryctx/state.sqlite`) is never cloned. The
@@ -64,7 +77,7 @@ at the source.
 
 This repository does not currently provide:
 
-- a Lua SDK, helper library, or LuaLS declarations;
+- a Lua helper library or mock host;
 - public Lua functions, host APIs, lifecycle APIs, or runtime capability
   enforcement;
 - a mock host or conformance fixtures;

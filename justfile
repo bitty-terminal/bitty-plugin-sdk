@@ -10,7 +10,7 @@ lefthook-version := "2.1.10"
 
 default: check
 
-check: lint fmt-check type-check test
+check: lint fmt-check type-check test lua-defs-check
 
 # Install pinned dependencies from the lockfile before running code gates.
 install:
@@ -20,9 +20,21 @@ install:
 type-check: install
     bunx --bun tsc -p tsconfig.json --noEmit
 
-# Run the manifest validator and CLI test suites (no network).
+# Run the manifest validator, Lua definition, and CLI test suites (no network).
 test: install
     bun test
+
+# Fail when lua/bitty.d.lua drifts from surface/bitty-plugin-api-v1.json.
+lua-defs-check:
+    bun scripts/generate-lua-defs.ts --check
+
+# Regenerate lua/bitty.d.lua from the surface table.
+lua-defs-write:
+    bun scripts/generate-lua-defs.ts --write
+
+# LuaLS conformance check (skips with exit 0 when lua-language-server is absent).
+lua-defs-luals:
+    bun scripts/check-lua-luals.ts
 
 lint:
     bunx --bun markdownlint-cli2@{{markdownlint-cli2-version}}
