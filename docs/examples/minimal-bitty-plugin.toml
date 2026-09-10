@@ -1,0 +1,10 @@
+# Minimal valid bitty-plugin.toml (Plugin API v1).
+#
+# This exact file is validated by tests/manifest.test.ts so the example cannot
+# drift from the accepted contract it teaches.
+
+[plugin]
+id = "xuepoo.example"
+name = "Example"
+version = "0.1.0"
+description = "Minimal valid manifest."

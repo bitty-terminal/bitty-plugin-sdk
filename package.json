@@ -5,8 +5,16 @@
   "type": "module",
   "description": "Developer-facing support for Bitty terminal plugins.",
   "license": "MIT",
+  "bin": {
+    "bitty-plugin-lint": "./src/cli.ts"
+  },
   "devDependencies": {
     "@commitlint/cli": "21.2.2",
-    "@commitlint/config-conventional": "21.2.2"
+    "@commitlint/config-conventional": "21.2.2",
+    "@types/bun": "1.2.0",
+    "typescript": "5.7.2"
+  },
+  "dependencies": {
+    "smol-toml": "1.8.0"
   }
 }

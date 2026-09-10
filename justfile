@@ -10,7 +10,19 @@ lefthook-version := "2.1.10"
 
 default: check
 
-check: lint fmt-check
+check: lint fmt-check type-check test
+
+# Install pinned dependencies from the lockfile before running code gates.
+install:
+    bun install --frozen-lockfile
+
+# Type-check sources and tests against the strict tsconfig (no emit).
+type-check: install
+    bunx --bun tsc -p tsconfig.json --noEmit
+
+# Run the manifest validator and CLI test suites (no network).
+test: install
+    bun test
 
 lint:
     bunx --bun markdownlint-cli2@{{markdownlint-cli2-version}}
