@@ -34,3 +34,11 @@ commit-check message=".git/COMMIT_EDITMSG":
 
 hooks-install:
     bunx --bun lefthook@{{lefthook-version}} install
+
+# Publish a ctxpack snapshot to the bitty-plugin-sdk-workflow mirror (commander
+# merge closeout only; never a git hook). Dry run exports + validates without push.
+workflow-publish *args:
+    bash scripts/publish-ctxpack.sh {{args}}
+
+workflow-publish-dry *args:
+    bash scripts/publish-ctxpack.sh --dry-run {{args}}
