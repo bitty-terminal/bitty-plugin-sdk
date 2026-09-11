@@ -137,3 +137,10 @@ export const ALLOWED_LAZY_KEYS: ReadonlySet<string> = new Set([
   "events",
   "claims",
 ]);
+
+/** Keys accepted in one table-form `[lazy].commands` entry (ADR 0009). */
+export const ALLOWED_LAZY_COMMAND_KEYS: ReadonlySet<string> = new Set([
+  "id",
+  "args_schema",
+  "result_schema",
+]);

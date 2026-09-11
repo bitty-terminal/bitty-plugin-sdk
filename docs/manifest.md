@@ -1,7 +1,8 @@
 # Plugin manifest schema and `bitty-plugin-lint`
 
 Status: implemented by SDK task `CTX-0015` (R-SDK-2) for cross-repository gate
-`CTX-0221`. This document, `src/schema.ts`, and `src/capabilities.ts` are the
+`CTX-0221`; the ADR 0009 table form of `[lazy].commands` is implemented by
+`CTX-0019`. This document, `src/schema.ts`, and `src/capabilities.ts` are the
 machine-checked SDK surface; there is no separate JSON Schema artifact.
 
 ## Contract sources
@@ -10,6 +11,9 @@ machine-checked SDK surface; there is no separate JSON Schema artifact.
   [`docs/specifications/plugin-platform-rfc.md`](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/specifications/plugin-platform-rfc.md)
   (Plugin API v1 manifest, capability model, and hard limits; OQ-011, OQ-012,
   OQ-013).
+- ADR 0009 LUA-OQ-3:
+  [`docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md`](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md)
+  (bounded JSON Schema metadata and the `[lazy].commands` table extension).
 - Read-only reference host models at `bitty@1ea2f66`:
   `crates/bitty-plugin-host/src/manifest.rs`,
   `crates/bitty-plugin-host/src/capability.rs`, and
@@ -80,32 +84,58 @@ paths = ["~/Documents/**/*.md"]
 
 ### `[lazy]` (optional)
 
-| Key        | Rules                                                              |
-| ---------- | ------------------------------------------------------------------ |
-| `commands` | 1..128 qualified names (`plugin-id:resource`) owned by this plugin |
-| `events`   | 1..256 event types, 1..128 bytes, no whitespace or control chars   |
-| `claims`   | 1..64 bytes each                                                   |
+| Key        | Rules                                                            |
+| ---------- | ---------------------------------------------------------------- |
+| `commands` | 1..128 command entries: qualified name or table (see below)      |
+| `events`   | 1..256 event types, 1..128 bytes, no whitespace or control chars |
+| `claims`   | 1..64 bytes each                                                 |
+
+A `commands` entry uses the accepted string form or the ADR 0009 table form;
+both may be mixed in one array. The table form carries the bounded static
+schemas that drive lazy help and completion without a VM:
+
+```toml
+[lazy]
+commands = [
+  "xuepoo.markdown:toggle",
+  { id = "xuepoo.markdown:render", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } },
+]
+```
+
+Table-form rules (fail-closed):
+
+- Keys are limited to `id`, `args_schema`, and `result_schema`; any other key is
+  `manifest.unknown-key`.
+- `id` is required, must be a string, and is validated exactly like the string
+  form (qualified name grammar plus plugin-id ownership).
+- `args_schema` and `result_schema` are optional. Each must be a table in the
+  bounded JSON Schema subset shared with `bitty.commands.register`: depth at
+  most 16, at most 16 KiB per schema, `additionalProperties` explicit on object
+  schemas, and no remote `$ref` or unsupported keyword (`pattern`, `format`,
+  combinators). A violation is `lazy.commands.schema`.
+- A table entry counts toward the same 128-command limit as a string entry.
 
 ## Hard limits
 
-| Bound                          | Value                  |
-| ------------------------------ | ---------------------- |
-| Manifest size                  | 256 KiB                |
-| TOML nesting depth             | 8 levels               |
-| Lazy commands                  | 128                    |
-| Lazy event types               | 256                    |
-| Filesystem patterns per access | 32                     |
-| Total filesystem pattern text  | 8 KiB                  |
-| Provided services              | 16                     |
-| Plugin dependencies            | 8                      |
-| Capability identifier          | 512 bytes              |
-| Capability parameter           | 1024 bytes             |
-| Plugin id / name / description | 128 / 128 / 1024 bytes |
-| Version / version range        | 64 / 128 bytes         |
-| Qualified name / resource      | 256 / 128 bytes        |
-| Service interface / segment    | 128 / 64 bytes         |
-| Event type / claim             | 128 / 64 bytes         |
-| Filesystem path pattern        | 512 bytes              |
+| Bound                            | Value                  |
+| -------------------------------- | ---------------------- |
+| Manifest size                    | 256 KiB                |
+| TOML nesting depth               | 8 levels               |
+| Lazy commands                    | 128                    |
+| Lazy command schema depth / size | 16 levels / 16 KiB     |
+| Lazy event types                 | 256                    |
+| Filesystem patterns per access   | 32                     |
+| Total filesystem pattern text    | 8 KiB                  |
+| Provided services                | 16                     |
+| Plugin dependencies              | 8                      |
+| Capability identifier            | 512 bytes              |
+| Capability parameter             | 1024 bytes             |
+| Plugin id / name / description   | 128 / 128 / 1024 bytes |
+| Version / version range          | 64 / 128 bytes         |
+| Qualified name / resource        | 256 / 128 bytes        |
+| Service interface / segment      | 128 / 64 bytes         |
+| Event type / claim               | 128 / 64 bytes         |
+| Filesystem path pattern          | 512 bytes              |
 
 ## Capability identifiers
 
@@ -163,38 +193,39 @@ diagnostic is `{ "severity", "code", "path", "message" }`.
 
 ### Diagnostic codes
 
-| Code                               | Meaning                                    |
-| ---------------------------------- | ------------------------------------------ |
-| `manifest.size`                    | Manifest exceeds 256 KiB                   |
-| `manifest.encoding`                | File is not valid UTF-8                    |
-| `manifest.parse`                   | TOML syntax or duplicate-key error         |
-| `manifest.type`                    | Wrong TOML type for a field                |
-| `manifest.unknown-key`             | Key outside the accepted schema            |
-| `manifest.missing-key`             | Required table or key missing              |
-| `manifest.limit`                   | Count, length, or depth bound exceeded     |
-| `plugin.id.invalid`                | Plugin id grammar violation                |
-| `plugin.name.invalid`              | Empty name or NUL/ESC in a display string  |
-| `plugin.version.invalid`           | Version is not SemVer 2                    |
-| `plugin.license.invalid`           | License present but empty                  |
-| `plugin.description.invalid`       | NUL/ESC in description                     |
-| `compat.range.invalid`             | Version range contains invalid characters  |
-| `dependencies.id.invalid`          | Dependency id grammar violation            |
-| `dependencies.version.invalid`     | Dependency range contains invalid chars    |
-| `dependencies.self`                | Plugin depends on itself                   |
-| `services.interface.invalid`       | Interface name grammar violation           |
-| `services.version.invalid`         | Service version is not complete SemVer 2   |
-| `capabilities.invalid`             | Capability id shape/character violation    |
-| `capabilities.wildcard`            | Wildcard in a capability id                |
-| `capabilities.unknown`             | Capability head outside the closed set     |
-| `capabilities.param-required`      | Required `:PARAMETER` missing              |
-| `capabilities.param-forbidden`     | `:PARAMETER` on a non-parameterized head   |
-| `capabilities.value`               | Capability not declared as `= true`        |
-| `capabilities.filesystem.invalid`  | Filesystem request problem                 |
-| `capabilities.high-risk` (warning) | High-risk capability declared              |
-| `lazy.commands.invalid`            | Qualified command name invalid             |
-| `lazy.commands.owner`              | Command outside the plugin's own namespace |
-| `lazy.events.invalid`              | Event type invalid                         |
-| `lazy.claims.invalid`              | Claim name invalid                         |
+| Code                               | Meaning                                      |
+| ---------------------------------- | -------------------------------------------- |
+| `manifest.size`                    | Manifest exceeds 256 KiB                     |
+| `manifest.encoding`                | File is not valid UTF-8                      |
+| `manifest.parse`                   | TOML syntax or duplicate-key error           |
+| `manifest.type`                    | Wrong TOML type for a field                  |
+| `manifest.unknown-key`             | Key outside the accepted schema              |
+| `manifest.missing-key`             | Required table or key missing                |
+| `manifest.limit`                   | Count, length, or depth bound exceeded       |
+| `plugin.id.invalid`                | Plugin id grammar violation                  |
+| `plugin.name.invalid`              | Empty name or NUL/ESC in a display string    |
+| `plugin.version.invalid`           | Version is not SemVer 2                      |
+| `plugin.license.invalid`           | License present but empty                    |
+| `plugin.description.invalid`       | NUL/ESC in description                       |
+| `compat.range.invalid`             | Version range contains invalid characters    |
+| `dependencies.id.invalid`          | Dependency id grammar violation              |
+| `dependencies.version.invalid`     | Dependency range contains invalid chars      |
+| `dependencies.self`                | Plugin depends on itself                     |
+| `services.interface.invalid`       | Interface name grammar violation             |
+| `services.version.invalid`         | Service version is not complete SemVer 2     |
+| `capabilities.invalid`             | Capability id shape/character violation      |
+| `capabilities.wildcard`            | Wildcard in a capability id                  |
+| `capabilities.unknown`             | Capability head outside the closed set       |
+| `capabilities.param-required`      | Required `:PARAMETER` missing                |
+| `capabilities.param-forbidden`     | `:PARAMETER` on a non-parameterized head     |
+| `capabilities.value`               | Capability not declared as `= true`          |
+| `capabilities.filesystem.invalid`  | Filesystem request problem                   |
+| `capabilities.high-risk` (warning) | High-risk capability declared                |
+| `lazy.commands.invalid`            | Qualified command name invalid               |
+| `lazy.commands.owner`              | Command outside the plugin's own namespace   |
+| `lazy.commands.schema`             | Table-form command schema outside the subset |
+| `lazy.events.invalid`              | Event type invalid                           |
+| `lazy.claims.invalid`              | Claim name invalid                           |
 
 ## Examples
 
@@ -227,7 +258,7 @@ cannot drift from the validator.
 - The `env` family accepts exactly the `env:BITTY_*` suffix pattern from
   ADR 0006 and no other wildcard; a broader `env:BITTY_<PREFIX>_*` form would
   be a reviewed additive change, not an implicit widening.
-- ADR 0009 adds table forms for `[lazy].commands` entries and
-  `[services.provided]` entries (`args_schema`/`result_schema`); the merged
-  linter still accepts the string forms only. Tracked as a separate manifest
+- ADR 0009 also adds a table form for `[services.provided]` entries
+  (`{ version, args_schema?, result_schema? }`); the merged linter still
+  accepts the string version form only. Tracked as a separate manifest
   extension task.

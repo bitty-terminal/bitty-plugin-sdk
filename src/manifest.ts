@@ -12,9 +12,11 @@ import { parse, TomlError } from "smol-toml";
 
 import { validateCapabilityId } from "./capabilities.js";
 import { error, type Diagnostic } from "./diagnostics.js";
+import { schemaProblem } from "./json-schema.js";
 import {
   ALLOWED_COMPAT_KEYS,
   ALLOWED_FILESYSTEM_KEYS,
+  ALLOWED_LAZY_COMMAND_KEYS,
   ALLOWED_LAZY_KEYS,
   ALLOWED_PLUGIN_KEYS,
   ALLOWED_ROOT_KEYS,
@@ -708,6 +710,86 @@ function validateCapabilities(value: unknown, diagnostics: Diagnostic[]): void {
   }
 }
 
+function validateLazyCommandName(
+  command: string,
+  commandPath: string,
+  pluginId: string | undefined,
+  diagnostics: Diagnostic[],
+): void {
+  const problem = qualifiedNameProblem(command);
+  if (problem !== undefined) {
+    diagnostics.push(
+      error(
+        "lazy.commands.invalid",
+        commandPath,
+        `command ${quote(command)} is invalid: ${problem}`,
+      ),
+    );
+    return;
+  }
+  const prefix = command.slice(0, command.indexOf(":"));
+  if (pluginId !== undefined && prefix !== pluginId) {
+    diagnostics.push(
+      error(
+        "lazy.commands.owner",
+        commandPath,
+        `command namespace ${quote(prefix)} does not match plugin id ${quote(pluginId)}`,
+      ),
+    );
+  }
+}
+
+/**
+ * Validate one `[lazy].commands` entry: the accepted string form or the ADR
+ * 0009 table form `{ id, args_schema?, result_schema? }` with bounded JSON
+ * Schema metadata. Unknown table keys and schema fragments outside the
+ * supported subset stay rejected.
+ */
+function validateLazyCommandEntry(
+  entry: unknown,
+  index: number,
+  pluginId: string | undefined,
+  diagnostics: Diagnostic[],
+): void {
+  const commandPath = `lazy.commands[${index}]`;
+  if (typeof entry === "string") {
+    validateLazyCommandName(entry, commandPath, pluginId, diagnostics);
+    return;
+  }
+  if (!isTable(entry)) {
+    diagnostics.push(
+      error(
+        "manifest.type",
+        commandPath,
+        "expected a string or a table with id/args_schema/result_schema",
+      ),
+    );
+    return;
+  }
+
+  checkUnknownKeys(entry, ALLOWED_LAZY_COMMAND_KEYS, commandPath, diagnostics);
+
+  const id = entry.id;
+  if (typeof id !== "string") {
+    diagnostics.push(
+      error("manifest.type", `${commandPath}.id`, "expected a string id"),
+    );
+  } else {
+    validateLazyCommandName(id, `${commandPath}.id`, pluginId, diagnostics);
+  }
+
+  for (const field of ["args_schema", "result_schema"] as const) {
+    const schema = entry[field];
+    if (schema === undefined) continue;
+    const problem = schemaProblem(schema, field);
+    if (problem !== undefined) {
+      diagnostics.push(
+        error("lazy.commands.schema", `${commandPath}.${field}`, problem),
+      );
+    }
+  }
+}
+
 function validateLazy(
   value: unknown,
   pluginId: string | undefined,
@@ -721,9 +803,13 @@ function validateLazy(
 
   const commands = table.commands;
   if (commands !== undefined) {
-    if (!isStringArray(commands)) {
+    if (!Array.isArray(commands)) {
       diagnostics.push(
-        error("manifest.type", "lazy.commands", "expected an array of strings"),
+        error(
+          "manifest.type",
+          "lazy.commands",
+          "expected an array of command entries (string or table)",
+        ),
       );
     } else {
       if (commands.length > MAX_COMMANDS) {
@@ -735,29 +821,8 @@ function validateLazy(
           ),
         );
       }
-      commands.forEach((command: string, index: number): void => {
-        const commandPath = `lazy.commands[${index}]`;
-        const problem = qualifiedNameProblem(command);
-        if (problem !== undefined) {
-          diagnostics.push(
-            error(
-              "lazy.commands.invalid",
-              commandPath,
-              `command ${quote(command)} is invalid: ${problem}`,
-            ),
-          );
-          return;
-        }
-        const prefix = command.slice(0, command.indexOf(":"));
-        if (pluginId !== undefined && prefix !== pluginId) {
-          diagnostics.push(
-            error(
-              "lazy.commands.owner",
-              commandPath,
-              `command namespace ${quote(prefix)} does not match plugin id ${quote(pluginId)}`,
-            ),
-          );
-        }
+      commands.forEach((entry, index): void => {
+        validateLazyCommandEntry(entry, index, pluginId, diagnostics);
       });
     }
   }

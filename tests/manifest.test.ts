@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import { lintManifestSource, type LintResult } from "../src/manifest.js";
+import { loadManifestModel } from "../src/manifest-model.js";
 
 const PLUGIN = `
 [plugin]
@@ -560,6 +561,164 @@ claims = ["${"c".repeat(65)}"]
 commands = [1]
 `);
     expect(codes(result)).toContain("manifest.type");
+  });
+
+  test("table-form command with bounded schemas is accepted", () => {
+    const result = lint(`
+[lazy]
+commands = [
+  { id = "xuepoo.example:toggle", args_schema = { type = "object", properties = { value = { type = "string" } }, required = ["value"], additionalProperties = false }, result_schema = { type = "string" } },
+]
+`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("string and table command forms may be mixed", () => {
+    const result = lint(`
+[lazy]
+commands = [
+  "xuepoo.example:plain",
+  { id = "xuepoo.example:toggle", args_schema = { type = "string" } },
+]
+`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("table-form command with an unknown key is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", title = "Toggle" }]
+`);
+    expect(codes(result)).toContain("manifest.unknown-key");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.unknown-key")
+        ?.path,
+    ).toBe("lazy.commands[0].title");
+  });
+
+  test("table-form command without an id is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ args_schema = { type = "string" } }]
+`);
+    expect(codes(result)).toContain("manifest.type");
+    expect(result.diagnostics[0]?.path).toBe("lazy.commands[0].id");
+  });
+
+  test("table-form command with a non-string id is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = 1 }]
+`);
+    expect(codes(result)).toContain("manifest.type");
+    expect(result.diagnostics[0]?.path).toBe("lazy.commands[0].id");
+  });
+
+  test("table-form malformed command id is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "toggle" }]
+`);
+    expect(codes(result)).toContain("lazy.commands.invalid");
+    expect(result.diagnostics[0]?.path).toBe("lazy.commands[0].id");
+  });
+
+  test("table-form command outside the plugin namespace is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "other.plugin:toggle" }]
+`);
+    expect(codes(result)).toContain("lazy.commands.owner");
+    expect(result.diagnostics[0]?.path).toBe("lazy.commands[0].id");
+  });
+
+  test("table-form schema with an unsupported keyword is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", args_schema = { type = "string", pattern = "^a+$" } }]
+`);
+    expect(codes(result)).toContain("lazy.commands.schema");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "lazy.commands.schema")
+        ?.path,
+    ).toBe("lazy.commands[0].args_schema");
+  });
+
+  test("table-form object schema without explicit additionalProperties is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", result_schema = { type = "object", properties = { value = { type = "string" } } } }]
+`);
+    expect(codes(result)).toContain("lazy.commands.schema");
+  });
+
+  test("table-form schema with a non-table value is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", args_schema = "object" }]
+`);
+    expect(codes(result)).toContain("lazy.commands.schema");
+  });
+
+  test("table-form schema over 16 KiB is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", args_schema = { type = "string", description = "${"x".repeat(17 * 1024)}" } }]
+`);
+    expect(codes(result)).toContain("lazy.commands.schema");
+  });
+
+  test("table-form commands count toward the 128-command limit", () => {
+    const commands = Array.from(
+      { length: 129 },
+      (_value, index) => `{ id = "xuepoo.example:cmd${index}" }`,
+    ).join(", ");
+    const result = lint(`\n[lazy]\ncommands = [${commands}]\n`);
+    expect(codes(result)).toContain("manifest.limit");
+  });
+});
+
+describe("manifest model lazy commands", () => {
+  test("table-form commands contribute ids and static schemas", () => {
+    const model = loadManifestModel(`
+[plugin]
+id = "xuepoo.example"
+name = "Example"
+version = "0.1.0"
+description = "Example plugin."
+
+[lazy]
+commands = [
+  "xuepoo.example:plain",
+  { id = "xuepoo.example:toggle", args_schema = { type = "string" }, result_schema = { type = "boolean" } },
+]
+`);
+    expect(model.commands).toEqual([
+      "xuepoo.example:plain",
+      "xuepoo.example:toggle",
+    ]);
+    expect(model.commandSchemas.get("xuepoo.example:toggle")).toEqual({
+      argsSchema: { type: "string" },
+      resultSchema: { type: "boolean" },
+    });
+    expect(model.commandSchemas.has("xuepoo.example:plain")).toBe(false);
+  });
+
+  test("string-only commands keep the empty schema map", () => {
+    const model = loadManifestModel(`
+[plugin]
+id = "xuepoo.example"
+name = "Example"
+version = "0.1.0"
+description = "Example plugin."
+
+[lazy]
+commands = ["xuepoo.example:toggle"]
+`);
+    expect(model.commands).toEqual(["xuepoo.example:toggle"]);
+    expect(model.commandSchemas.size).toBe(0);
   });
 });
 
