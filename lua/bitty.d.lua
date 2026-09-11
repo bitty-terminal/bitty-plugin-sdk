@@ -236,7 +236,7 @@ function BittyEnvNamespace.has(name) end
 
 --- Consumer-side service resolution options for bitty.services.get.
 ---@class BittyServiceGetOpts
----@field version? string Version requirement in the accepted grammar, for example ">=2.0".
+---@field version string Version requirement in the accepted grammar, for example ">=2.0". Required: the accepted RFC defines no default requirement.
 ---@field optional? boolean When true, a missing provider returns nil instead of failing with E_SERVICE_RESOLUTION.
 
 --- Plain service table whose members are functions; calls are schema-validated by the host and
@@ -253,7 +253,7 @@ local BittyServicesNamespace = {}
 --- E_SERVICE_GONE.
 --- Errors: E_SERVICE_RESOLUTION, E_SERVICE_GONE.
 ---@param iface string
----@param opts? BittyServiceGetOpts
+---@param opts BittyServiceGetOpts
 ---@return BittyService|nil
 function BittyServicesNamespace.get(iface, opts) end
 

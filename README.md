@@ -44,8 +44,11 @@ under [`docs/examples/`](docs/examples/).
 `lua/bitty.d.lua` is generated from the accepted Plugin API v1 surface in
 `surface/bitty-plugin-api-v1.json` and checked for drift by `just check`
 (`just lua-defs-check`). The declarations cover L1 Control and the minimal L2
-UI surface only plus the closed v1 event set, and LuaLS conformance is verified
-with a clean positive example and a negative fixture for every excluded name.
+UI surface only plus the closed v1 event set. Every surface exclusion is
+enforced textually against the generated file by `tests/lua-defs.test.ts`; the
+LuaLS negative fixture samples excluded names, the excluded `raw` scope
+literal, and wrong-shape `services.get` calls. LuaLS conformance runs locally
+only: CI has no `lua-language-server`, so that check skips there.
 
 See [`docs/lua-defs.md`](docs/lua-defs.md) for LuaLS setup, coverage,
 exclusions, and validation commands, and
@@ -116,7 +119,8 @@ Future convenience APIs must remain least-privilege and must not grant ambient
 filesystem, process, network, clipboard, terminal-input, or host-management
 authority. Canonical security requirements override proposed ergonomics.
 
-Any future generated declarations, examples, fixtures, or packages require an
-explicitly scoped task, an accepted source contract, deterministic validation,
-and independent review. Nothing is generated, installed, published, or released
-by this README initialization.
+The generated declarations and mock-host conformance fixtures were produced
+under explicitly scoped tasks with accepted source contracts, deterministic
+validation, and independent review. Any further generated declarations,
+examples, fixtures, or packages require the same gates. Nothing is installed,
+published, or released by this README.

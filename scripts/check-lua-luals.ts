@@ -7,7 +7,9 @@
  *
  * Positive workspace: the generated definitions plus `lua/examples/minimal-init.lua`
  * must diagnose cleanly. Negative workspace: `tests/lua-defs/negative-fixture.lua`
- * must be rejected for every excluded identifier and literal.
+ * must be rejected for sampled excluded identifiers and literals plus wrong-shape
+ * `services.get` calls (missing `opts` and missing `opts.version`). The full
+ * exclusion list is enforced textually by `tests/lua-defs.test.ts`.
  */
 
 import { spawnSync } from "node:child_process";
@@ -159,11 +161,26 @@ export function runConformance(): ConformanceResult {
       ["undefined-field", "`task`"],
       ["undefined-field", "`protocol`"],
       ["assign-type-mismatch", '"raw"'],
+      ["missing-parameter", "requires 2 argument(s)"],
+      [
+        "missing-fields",
+        "Missing required fields in type `BittyServiceGetOpts`",
+      ],
     ];
     for (const [code, needle] of expected) {
       if (!hasDiagnostic(negativeResult, code, needle)) {
         problems.push(`negative workspace missing ${code} for ${needle}`);
       }
+    }
+    const missingFieldCount = negativeResult.diagnostics.filter(
+      (entry) =>
+        entry.code === "missing-fields" &&
+        entry.message.includes("BittyServiceGetOpts"),
+    ).length;
+    if (missingFieldCount < 2) {
+      problems.push(
+        "negative workspace must reject both version-less services.get option tables",
+      );
     }
     if (negativeResult.status === 0) {
       problems.push("negative workspace must report problems");

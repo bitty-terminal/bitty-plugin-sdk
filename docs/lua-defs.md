@@ -1,10 +1,12 @@
 # Plugin API v1 LuaLS definitions
 
 Status: implemented by SDK task `CTX-0014` (R-SDK-1) for cross-repository gate
-`CTX-0221`. The definitions in `lua/bitty.d.lua` are generated from the
-machine-readable surface table `surface/bitty-plugin-api-v1.json`; the drift
-check in `scripts/generate-lua-defs.ts` runs as part of `just check`. No other
-LuaLS artifact exists for Plugin API v1.
+`CTX-0221`; corrected by SDK task `CTX-0017` (required `services.get` option
+shape and validation-claim accuracy). The definitions in `lua/bitty.d.lua` are
+generated from the machine-readable surface table
+`surface/bitty-plugin-api-v1.json`; the drift check in
+`scripts/generate-lua-defs.ts` runs as part of `just check`. No other LuaLS
+artifact exists for Plugin API v1.
 
 ## Contract sources
 
@@ -20,8 +22,9 @@ LuaLS artifact exists for Plugin API v1.
   `TerminalClosed`/`TerminalExited`), the Rich Presentation RFC (`SceneNode`,
   zones), the CLI Contract RFC (JSON Schema limits), and the Configuration
   Model RFC (chord grammar).
-- Pinned revisions live in `sources` in `surface/bitty-plugin-api-v1.json` and
-  are regenerated into the `lua/bitty.d.lua` header.
+- Pinned revisions live in `sources` in `surface/bitty-plugin-api-v1.json`;
+  the generated header names each contract document by repository and path
+  only, so the surface table is the sole revision record.
 
 ## Artifacts
 
@@ -78,6 +81,10 @@ Semantics the annotations carry:
 - `bitty.env` is absent unless the manifest declares an `env:<KEY>`
   capability, so the field is optional (`env?`); the other namespaces are
   always present and ungranted functions fail closed with typed denials.
+- `bitty.services.get` requires `opts` and `opts.version`: the accepted
+  signature is `bitty.services.get(iface, opts)` with
+  `opts = { version = "...", optional? = boolean }`, and the accepted corpus
+  defines no default version requirement. Only `opts.optional` is optional.
 - The literal types keep accepted restrictions visible to authors:
   `scope = "semantic"` only, `when = "global"` only, the closed slot set, the
   closed event-name set, and the accepted snapshot attribute vocabulary.
@@ -124,8 +131,11 @@ against the generated file: no `bitty.api` alias, no flat
 `register_command`/`on_event`/`get_terminal_state` spellings, no panel
 providers, no `bitty.fs`/`process`/`network`/`clipboard`/`ipc`/`renderer`/
 `protocol` entry points, no Level 3 presentation namespaces, no singular
-`bitty.task`/`bitty.timer` spellings, and no `scope = "raw"` snapshot. The
-LuaLS negative fixture verifies that these names are rejected at author time.
+`bitty.task`/`bitty.timer` spellings, and no `scope = "raw"` snapshot.
+`tests/lua-defs.test.ts` checks the full list textually on every `just check`;
+the LuaLS negative fixture samples six excluded spellings plus the excluded
+`raw` scope literal and wrong-shape `services.get` calls to verify rejection at
+author time.
 
 ## Validation
 
@@ -137,10 +147,17 @@ just lua-defs-luals     # LuaLS conformance; skips with exit 0 when the binary i
 
 `just lua-defs-luals` runs `lua-language-server --check` twice: the generated
 definitions plus `lua/examples/minimal-init.lua` must diagnose cleanly, and
-`tests/lua-defs/negative-fixture.lua` must be rejected for every excluded
-identifier and the excluded `raw` scope literal. `bun test` also runs the same
-conformance check when `lua-language-server` is on `PATH` (or
+`tests/lua-defs/negative-fixture.lua` must be rejected for sampled excluded
+identifiers, the excluded `raw` scope literal, and wrong-shape `services.get`
+calls (missing `opts`, and `opts` without `version`). `bun test` also runs the
+same conformance check when `lua-language-server` is on `PATH` (or
 `LUA_LANGUAGE_SERVER` is set) and skips it otherwise.
+
+CI does not run LuaLS conformance. The Quality gates workflow installs no
+`lua-language-server`, so `just lua-defs-luals` skips there with exit 0 and
+only the deterministic `lua-defs-check` drift gate runs in CI. Run
+`just lua-defs-luals` locally (verified with `lua-language-server` 3.19.1) for
+the author-time diagnostic evidence.
 
 ## Compatibility
 

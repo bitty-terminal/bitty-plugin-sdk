@@ -10,4 +10,21 @@ local raw_scope = bitty.terminal.snapshot({ scope = "raw" })
 local singular = bitty.task.spawn
 local protocol = bitty.protocol
 
-print(alias_namespace, panel, state, legacy, raw_scope, singular, protocol)
+local missing_opts = bitty.services.get("bitty.example")
+local missing_version = bitty.services.get("bitty.example", {})
+local missing_version_with_optional = bitty.services.get("bitty.example", {
+  optional = true,
+})
+
+print(
+  alias_namespace,
+  panel,
+  state,
+  legacy,
+  raw_scope,
+  singular,
+  protocol,
+  missing_opts,
+  missing_version,
+  missing_version_with_optional
+)

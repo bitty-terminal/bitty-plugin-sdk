@@ -406,8 +406,7 @@
         {
           "name": "version",
           "type": "string",
-          "optional": true,
-          "doc": "Version requirement in the accepted grammar, for example \">=2.0\"."
+          "doc": "Version requirement in the accepted grammar, for example \">=2.0\". Required: the accepted RFC defines no default requirement."
         },
         {
           "name": "optional",
@@ -864,7 +863,7 @@
       "doc": "Resolves a provider before activation; a missing provider fails closed with E_SERVICE_RESOLUTION unless opts.optional is true, and provider disappearance makes in-flight calls fail closed with E_SERVICE_GONE.",
       "params": [
         { "name": "iface", "type": "string" },
-        { "name": "opts", "type": "BittyServiceGetOpts", "optional": true }
+        { "name": "opts", "type": "BittyServiceGetOpts" }
       ],
       "returns": [{ "type": "BittyService|nil" }]
     },
