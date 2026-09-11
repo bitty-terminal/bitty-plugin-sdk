@@ -1,0 +1,91 @@
+{
+  "name": "service resolution/liveness and host-owned tasks and timers",
+  "description": "Declared services resolve only against live providers and fail closed when gone; tasks and timers are generation-owned and run on the virtual clock; cancellation of spent handles returns false.",
+  "manifest": "manifests/full.toml",
+  "tags": ["services", "tasks", "timers", "lifecycle"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "services.provide",
+      "args": {
+        "iface": "conformance.greet",
+        "impl": { "greet": { "template": "hello {name}" } }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "tasks.spawn",
+      "args": { "run_result": null },
+      "capture": "task",
+      "counter": "task-runs"
+    },
+    {
+      "op": "call",
+      "surface": "timers.create",
+      "args": { "delay_ms": 100, "run_result": null },
+      "capture": "timer",
+      "counter": "timer-fires"
+    },
+    { "op": "end-activation" },
+    {
+      "op": "call",
+      "surface": "services.get",
+      "args": {
+        "iface": "conformance.greet",
+        "opts": { "version": ">=1.0.0" }
+      },
+      "capture": "svc"
+    },
+    {
+      "op": "call-service",
+      "service": "svc",
+      "method": "greet",
+      "args": { "name": "ada" },
+      "expect": { "result": "hello ada" }
+    },
+    { "op": "remove-service", "interface": "conformance.greet" },
+    {
+      "op": "call-service",
+      "service": "svc",
+      "method": "greet",
+      "args": { "name": "ada" },
+      "expect": { "denial": { "code": "E_SERVICE_GONE", "class": "runtime" } }
+    },
+    {
+      "op": "call",
+      "surface": "services.get",
+      "args": {
+        "iface": "conformance.greet",
+        "opts": { "version": ">=1.0.0" }
+      },
+      "expect": {
+        "denial": { "code": "E_SERVICE_RESOLUTION", "class": "resolution" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "services.get",
+      "args": { "iface": "conformance.greet", "opts": { "optional": true } },
+      "expect": { "result": null }
+    },
+    { "op": "drain-tasks" },
+    { "op": "expect-capture", "capture": "task-runs", "value": 1 },
+    { "op": "advance-time", "ms": 99 },
+    { "op": "expect-capture", "capture": "timer-fires", "value": 0 },
+    { "op": "advance-time", "ms": 1 },
+    { "op": "expect-capture", "capture": "timer-fires", "value": 1 },
+    {
+      "op": "call",
+      "surface": "timers.cancel",
+      "args": { "handle": { "$ref": "timer" } },
+      "expect": { "result": false }
+    },
+    {
+      "op": "call",
+      "surface": "tasks.cancel",
+      "args": { "handle": { "$ref": "task" } },
+      "expect": { "result": false }
+    }
+  ]
+}

@@ -364,6 +364,45 @@ fs.read = true
     expect(codes(result)).toContain("capabilities.param-forbidden");
   });
 
+  test("env capability accepts an exact key and the BITTY_* pattern", () => {
+    const result = lint(`
+[capabilities]
+"env:EDITOR" = true
+"env:BITTY_*" = true
+`);
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("env capability requires a key parameter", () => {
+    const result = lint(`
+[capabilities]
+env = true
+`);
+    expect(codes(result)).toContain("capabilities.param-required");
+  });
+
+  test("env capability rejects non-uppercase and overlong keys", () => {
+    const lowercase = lint(`
+[capabilities]
+"env:editor" = true
+`);
+    expect(codes(lowercase)).toContain("capabilities.invalid");
+    const overlong = lint(`
+[capabilities]
+"env:${"A".repeat(65)}" = true
+`);
+    expect(codes(overlong)).toContain("capabilities.invalid");
+  });
+
+  test("env capability accepts only the BITTY_* suffix wildcard", () => {
+    const result = lint(`
+[capabilities]
+"env:FOO_*" = true
+`);
+    expect(codes(result)).toContain("capabilities.invalid");
+  });
+
   test("high-risk capability is valid but warned", () => {
     const result = lint(`
 [capabilities]

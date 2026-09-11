@@ -24,6 +24,10 @@ type-check: install
 test: install
     bun test
 
+# Run the mock-host conformance fixtures and print per-case evidence.
+conformance: install
+    bun test tests/conformance.test.ts
+
 lint:
     bunx --bun markdownlint-cli2@{{markdownlint-cli2-version}}
 

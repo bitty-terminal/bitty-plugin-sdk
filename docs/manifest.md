@@ -128,6 +128,7 @@ validation instead of being ignored. Parameterized heads must carry a
 | `panel`     | `panel.provider`, `panel.create`, `panel.focus`, `panel.overlay`                                              |
 | `browser`   | `browser.embed`, `browser.navigation`, `browser.file-url`, `browser.storage`                                  |
 | `agent`     | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`                                 |
+| `env`       | `env:KEY`, `env:BITTY_*`                                                                                      |
 | `mcp`       | `mcp.invoke:TOOL`                                                                                             |
 | `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                        |
 
@@ -135,6 +136,15 @@ validation instead of being ignored. Parameterized heads must carry a
 for `terminal.input.all`, `terminal.raw-read`, `ui.protocol-register`,
 `debug.control`, `runtime.plugin-manage`, and `browser.embed` so reviewers and
 consent tooling can flag them.
+
+The `env` family carries the ADR 0006 form: an exact key (`env:EDITOR`, keys
+matching `^[A-Z_][A-Z0-9_]*$`, at most 64 bytes) or the single accepted suffix
+pattern `env:BITTY_*` for the narrow `BITTY_` namespace. The colon requires a
+quoted TOML key (`"env:EDITOR" = true`). An `env` entry without a parameter, a
+lowercase or overlong key, or any other wildcard form is rejected. Declaring
+`env:<KEY>` makes `bitty.env` present in the plugin VM; without a grant its
+functions fail closed (ADR 0009 LUA-OQ-2), and the SDK mock host models that
+behavior (see [`docs/mock-host.md`](mock-host.md)).
 
 ## CLI usage
 
@@ -214,3 +224,10 @@ cannot drift from the validator.
   time instead; the SDK check is stricter and fail-closed.
 - Compatibility ranges are syntax-checked only. Range semantics and resolver
   behavior remain owned by the host package layer.
+- The `env` family accepts exactly the `env:BITTY_*` suffix pattern from
+  ADR 0006 and no other wildcard; a broader `env:BITTY_<PREFIX>_*` form would
+  be a reviewed additive change, not an implicit widening.
+- ADR 0009 adds table forms for `[lazy].commands` entries and
+  `[services.provided]` entries (`args_schema`/`result_schema`); the merged
+  linter still accepts the string forms only. Tracked as a separate manifest
+  extension task.

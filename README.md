@@ -1,9 +1,10 @@
 # Bitty Plugin SDK
 
-This repository is the future home of developer-facing support for Bitty
-plugins. It currently provides the accepted-contract validator for
-`bitty-plugin.toml` and the `bitty-plugin-lint` CLI; the Lua SDK, LuaLS
-declarations, and mock host remain pre-implementation.
+This repository provides developer-facing support for Bitty plugins: the
+accepted-contract validator for `bitty-plugin.toml` with the
+`bitty-plugin-lint` CLI, and the Plugin API v1 mock host with its conformance
+fixtures. The Lua helper SDK and LuaLS declarations remain pre-implementation
+under their own tasks.
 
 ## Ownership boundary
 
@@ -38,6 +39,25 @@ The schema, diagnostic codes, capability table, and known contract gaps are
 documented in [`docs/manifest.md`](docs/manifest.md), with validated examples
 under [`docs/examples/`](docs/examples/).
 
+## Mock host and conformance fixtures
+
+The Plugin API v1 mock host models the accepted `bitty` host bridge for
+conformance testing: deny-by-default capability gates with the typed
+`E_CAPABILITY_DENIED` denial, the activation-only registration window,
+generation-owned handles, the closed v1 event set, bounded command/store/UI/
+snapshot data, services, and tasks/timers on a virtual clock. It performs no
+I/O, spawns no process, and opens no network.
+
+```sh
+just conformance                    # run the declarative fixture suite
+bun test tests/mock-host.test.ts    # unit-level behavior suite
+just check                          # all quality gates
+```
+
+Fixtures live under [`conformance/`](conformance/); the host contract mapping,
+fixture format, and diagnostic codes are documented in
+[`docs/mock-host.md`](docs/mock-host.md).
+
 ## Workflow mirror restore
 
 CarryCtx runtime state (`.git/carryctx/state.sqlite`) is never cloned. The
@@ -65,9 +85,7 @@ at the source.
 This repository does not currently provide:
 
 - a Lua SDK, helper library, or LuaLS declarations;
-- public Lua functions, host APIs, lifecycle APIs, or runtime capability
-  enforcement;
-- a mock host or conformance fixtures;
+- public Lua functions or host APIs beyond the test-double mock host;
 - installation commands or a published package;
 - host-version compatibility, deprecation, or support promises; or
 - a release, release schedule, or publication channel.

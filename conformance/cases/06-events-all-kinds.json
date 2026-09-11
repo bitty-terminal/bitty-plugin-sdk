@@ -1,0 +1,552 @@
+{
+  "name": "closed v1 event set round-trips with sequences and immutable payloads",
+  "description": "Every kind in the closed 17-name v1 set is subscribed and published once; each handler receives the frozen envelope with the host-assigned monotonic sequence and the exact bounded payload.",
+  "manifest": "manifests/full.toml",
+  "tags": ["events", "round-trip"],
+  "steps": [
+    {
+      "op": "begin-activation"
+    },
+    {
+      "op": "subscribe",
+      "event": "plugin.activated",
+      "capture": "ev-plugin.activated"
+    },
+    {
+      "op": "subscribe",
+      "event": "plugin.suspended",
+      "capture": "ev-plugin.suspended"
+    },
+    {
+      "op": "subscribe",
+      "event": "plugin.disposed",
+      "capture": "ev-plugin.disposed"
+    },
+    {
+      "op": "subscribe",
+      "event": "handler.violation",
+      "capture": "ev-handler.violation"
+    },
+    {
+      "op": "subscribe",
+      "event": "terminal.opened",
+      "capture": "ev-terminal.opened"
+    },
+    {
+      "op": "subscribe",
+      "event": "terminal.closed",
+      "capture": "ev-terminal.closed"
+    },
+    {
+      "op": "subscribe",
+      "event": "terminal.title-changed",
+      "capture": "ev-terminal.title-changed"
+    },
+    {
+      "op": "subscribe",
+      "event": "terminal.cwd-changed",
+      "capture": "ev-terminal.cwd-changed"
+    },
+    {
+      "op": "subscribe",
+      "event": "terminal.bell",
+      "capture": "ev-terminal.bell"
+    },
+    {
+      "op": "subscribe",
+      "event": "focus.changed",
+      "capture": "ev-focus.changed"
+    },
+    {
+      "op": "subscribe",
+      "event": "selection.changed",
+      "capture": "ev-selection.changed"
+    },
+    {
+      "op": "subscribe",
+      "event": "process.exited",
+      "capture": "ev-process.exited"
+    },
+    {
+      "op": "subscribe",
+      "event": "config.reloaded",
+      "capture": "ev-config.reloaded"
+    },
+    {
+      "op": "subscribe",
+      "event": "intercept.command-dispatch",
+      "capture": "ev-intercept.command-dispatch"
+    },
+    {
+      "op": "subscribe",
+      "event": "intercept.terminal-spawn",
+      "capture": "ev-intercept.terminal-spawn"
+    },
+    {
+      "op": "subscribe",
+      "event": "intercept.paste",
+      "capture": "ev-intercept.paste"
+    },
+    {
+      "op": "subscribe",
+      "event": "intercept.open-url",
+      "capture": "ev-intercept.open-url"
+    },
+    {
+      "op": "publish",
+      "event": "plugin.activated",
+      "payload": {},
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "plugin.suspended",
+      "payload": {},
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "plugin.disposed",
+      "payload": {},
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "handler.violation",
+      "payload": {},
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "terminal.opened",
+      "payload": {
+        "terminal_id": 1,
+        "runtime_id": 2,
+        "generation": 1
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "terminal.closed",
+      "payload": {
+        "terminal_id": 1,
+        "runtime_id": 2,
+        "reason": "exit"
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "terminal.title-changed",
+      "payload": {
+        "title": "title",
+        "terminal_id": 1,
+        "runtime_id": 2
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "terminal.cwd-changed",
+      "payload": {
+        "cwd": "/tmp",
+        "terminal_id": 1,
+        "runtime_id": 2
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "terminal.bell",
+      "payload": {},
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "focus.changed",
+      "payload": {
+        "view_id": 1
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "selection.changed",
+      "payload": {
+        "view_id": 1,
+        "terminal_id": 1
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "process.exited",
+      "payload": {
+        "terminal_id": 1,
+        "runtime_id": 2,
+        "exit_code": 0
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "config.reloaded",
+      "payload": {},
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "intercept.command-dispatch",
+      "payload": {
+        "action": "run",
+        "origin": "user",
+        "preview": "ls"
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "intercept.terminal-spawn",
+      "payload": {
+        "action": "spawn",
+        "origin": "user",
+        "preview": "sh"
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "intercept.paste",
+      "payload": {
+        "action": "paste",
+        "origin": "user",
+        "preview": "text"
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "publish",
+      "event": "intercept.open-url",
+      "payload": {
+        "action": "open",
+        "origin": "user",
+        "preview": "https://example.invalid"
+      },
+      "expect": {
+        "result": {
+          "delivered": 1,
+          "vetoed": false
+        }
+      }
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-plugin.activated",
+      "events": [
+        {
+          "kind": "plugin.activated",
+          "sequence": 1,
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-plugin.suspended",
+      "events": [
+        {
+          "kind": "plugin.suspended",
+          "sequence": 2,
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-plugin.disposed",
+      "events": [
+        {
+          "kind": "plugin.disposed",
+          "sequence": 3,
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-handler.violation",
+      "events": [
+        {
+          "kind": "handler.violation",
+          "sequence": 4,
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-terminal.opened",
+      "events": [
+        {
+          "kind": "terminal.opened",
+          "sequence": 5,
+          "payload": {
+            "terminal_id": 1,
+            "runtime_id": 2,
+            "generation": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-terminal.closed",
+      "events": [
+        {
+          "kind": "terminal.closed",
+          "sequence": 6,
+          "payload": {
+            "terminal_id": 1,
+            "runtime_id": 2,
+            "reason": "exit"
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-terminal.title-changed",
+      "events": [
+        {
+          "kind": "terminal.title-changed",
+          "sequence": 7,
+          "payload": {
+            "title": "title",
+            "terminal_id": 1,
+            "runtime_id": 2
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-terminal.cwd-changed",
+      "events": [
+        {
+          "kind": "terminal.cwd-changed",
+          "sequence": 8,
+          "payload": {
+            "cwd": "/tmp",
+            "terminal_id": 1,
+            "runtime_id": 2
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-terminal.bell",
+      "events": [
+        {
+          "kind": "terminal.bell",
+          "sequence": 9,
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-focus.changed",
+      "events": [
+        {
+          "kind": "focus.changed",
+          "sequence": 10,
+          "payload": {
+            "view_id": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-selection.changed",
+      "events": [
+        {
+          "kind": "selection.changed",
+          "sequence": 11,
+          "payload": {
+            "view_id": 1,
+            "terminal_id": 1
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-process.exited",
+      "events": [
+        {
+          "kind": "process.exited",
+          "sequence": 12,
+          "payload": {
+            "terminal_id": 1,
+            "runtime_id": 2,
+            "exit_code": 0
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-config.reloaded",
+      "events": [
+        {
+          "kind": "config.reloaded",
+          "sequence": 13,
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-intercept.command-dispatch",
+      "events": [
+        {
+          "kind": "intercept.command-dispatch",
+          "sequence": 14,
+          "payload": {
+            "action": "run",
+            "origin": "user",
+            "preview": "ls"
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-intercept.terminal-spawn",
+      "events": [
+        {
+          "kind": "intercept.terminal-spawn",
+          "sequence": 15,
+          "payload": {
+            "action": "spawn",
+            "origin": "user",
+            "preview": "sh"
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-intercept.paste",
+      "events": [
+        {
+          "kind": "intercept.paste",
+          "sequence": 16,
+          "payload": {
+            "action": "paste",
+            "origin": "user",
+            "preview": "text"
+          }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-intercept.open-url",
+      "events": [
+        {
+          "kind": "intercept.open-url",
+          "sequence": 17,
+          "payload": {
+            "action": "open",
+            "origin": "user",
+            "preview": "https://example.invalid"
+          }
+        }
+      ]
+    }
+  ]
+}

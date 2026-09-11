@@ -1,0 +1,122 @@
+{
+  "name": "UI slot/node gate and semantic terminal snapshot",
+  "description": "UI mount/update require ui.rich, the overlay slot additionally requires ui.overlay, excluded node kinds and unknown slots are validation failures, ui.update returns false for stale handles, and terminal snapshots require terminal.semantic-read and reject the raw scope.",
+  "manifest": "manifests/full.toml",
+  "tags": ["ui", "terminal", "capability"],
+  "steps": [
+    { "op": "grant", "capability": "ui.rich" },
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Row",
+          "children": [{ "kind": "Text", "text": "one" }]
+        }
+      },
+      "capture": "block"
+    },
+    {
+      "op": "call",
+      "surface": "ui.update",
+      "args": {
+        "handle": { "$ref": "block" },
+        "component": { "kind": "Text", "text": "two" }
+      },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "statusline",
+        "component": { "kind": "Image", "src": "x" }
+      },
+      "expect": {
+        "denial": { "code": "E_UI_COMPONENT_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "nowhere",
+        "component": { "kind": "Text", "text": "x" }
+      },
+      "expect": {
+        "denial": { "code": "E_UI_COMPONENT_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "overlay",
+        "component": { "kind": "Text", "text": "x" }
+      },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "ui.overlay" },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "overlay",
+        "component": { "kind": "Text", "text": "x" }
+      },
+      "capture": "overlay"
+    },
+    { "op": "grant", "capability": "terminal.semantic-read" },
+    {
+      "op": "set-terminal-snapshot",
+      "snapshot": {
+        "version": 1,
+        "terminal_id": 7,
+        "runtime_id": 9,
+        "generation": 1,
+        "snapshot_generation": 2,
+        "width": 80,
+        "height": 1,
+        "rows": [{ "text": "hello", "spans": [] }],
+        "cursor": { "row": 0, "col": 5, "visible": true },
+        "modes": { "alternate_screen": false },
+        "title": "fixture"
+      }
+    },
+    {
+      "op": "call",
+      "surface": "terminal.snapshot",
+      "args": { "scope": "semantic" },
+      "expect": {
+        "result": {
+          "version": 1,
+          "terminal_id": 7,
+          "runtime_id": 9,
+          "generation": 1,
+          "snapshot_generation": 2,
+          "width": 80,
+          "height": 1,
+          "rows": [{ "text": "hello", "spans": [] }],
+          "cursor": { "row": 0, "col": 5, "visible": true },
+          "modes": { "alternate_screen": false },
+          "title": "fixture"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "terminal.snapshot",
+      "args": { "scope": "raw" },
+      "expect": {
+        "denial": {
+          "code": "E_SNAPSHOT_SCOPE_UNSUPPORTED",
+          "class": "validation"
+        }
+      }
+    }
+  ]
+}
