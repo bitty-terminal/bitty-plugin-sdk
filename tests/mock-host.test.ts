@@ -466,6 +466,19 @@ describe("closed event set round-trips", () => {
     ).toBe(HOST_CODES.EVENT_PAYLOAD_INVALID);
   });
 
+  test("handler violation messages stay bounded", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.events.subscribe("terminal.bell", () => {
+      throw new Error("x".repeat(4096));
+    });
+    host.endActivation();
+    host.publish("terminal.bell", {});
+    const violation = host.handlerViolations[0];
+    expect(violation).toBeDefined();
+    expect((violation?.message.length ?? 0) <= 515).toBe(true);
+  });
+
   test("throwing handlers are recorded and do not stop delivery", () => {
     const host = makeHost();
     activate(host);
@@ -593,6 +606,14 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     expect(
       denial(() =>
         host.bitty.ui.mount("statusline", { kind: "Image", src: "x" }),
+      ).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+    expect(
+      denial(() =>
+        host.bitty.ui.mount("top", {
+          kind: "Text",
+          text: "x".repeat(MOCK_LIMITS.SNAPSHOT_MAX_BYTES),
+        }),
       ).code,
     ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
     expect(

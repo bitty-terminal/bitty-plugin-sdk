@@ -1171,6 +1171,14 @@ export class MockHost {
     if (problem !== undefined) {
       fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "component");
     }
+    if (jsonBytes(component) > MOCK_LIMITS.SNAPSHOT_MAX_BYTES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `component exceeds ${MOCK_LIMITS.SNAPSHOT_MAX_BYTES} bytes`,
+        "component",
+      );
+    }
     const handle = this.nextHandle();
     this.blocks.set(handle, {
       generation: this.generation,
@@ -1194,6 +1202,14 @@ export class MockHost {
     const problem = componentProblem(component);
     if (problem !== undefined) {
       fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "component");
+    }
+    if (jsonBytes(component) > MOCK_LIMITS.SNAPSHOT_MAX_BYTES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `component exceeds ${MOCK_LIMITS.SNAPSHOT_MAX_BYTES} bytes`,
+        "component",
+      );
     }
     block.component = deepFreeze(deepCopy(component));
     block.version += 1;
@@ -1445,7 +1461,7 @@ export class MockHost {
     this.handlerViolations.push({
       class: "runtime",
       code: HOST_CODES.HANDLER_VIOLATION,
-      message,
+      message: message.length > 512 ? `${message.slice(0, 512)}...` : message,
     });
     if (this.deliveringViolation) return;
     this.deliveringViolation = true;
