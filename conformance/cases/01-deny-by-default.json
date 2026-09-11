@@ -1,0 +1,61 @@
+{
+  "name": "deny-by-default capability denial and explicit grant",
+  "description": "Ungranted gated surfaces fail closed with the typed runtime denial; an explicit grant enables the call and revocation disables it again. Ungated store access works without any capability.",
+  "manifest": "manifests/full.toml",
+  "tags": ["deny-by-default", "capability"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "notify.show",
+      "args": { "title": "hello" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": { "slot": "top", "component": { "kind": "Text", "text": "x" } },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "terminal.snapshot",
+      "args": { "scope": "semantic" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "store.set",
+      "args": { "key": "deny.default", "value": 1 },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "store.get",
+      "args": { "key": "deny.default" },
+      "expect": { "result": 1 }
+    },
+    { "op": "grant", "capability": "platform.notify" },
+    {
+      "op": "call",
+      "surface": "notify.show",
+      "args": { "title": "hello", "urgency": "low" },
+      "expect": { "result": true }
+    },
+    { "op": "revoke", "capability": "platform.notify" },
+    {
+      "op": "call",
+      "surface": "notify.show",
+      "args": { "title": "hello" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    }
+  ]
+}

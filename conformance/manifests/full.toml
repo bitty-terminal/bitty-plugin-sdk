@@ -1,0 +1,46 @@
+[plugin]
+id = "conformance.full"
+name = "Conformance Full"
+version = "1.0.0"
+description = "Full-surface manifest for Plugin API v1 mock-host conformance."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[services.provided]
+"conformance.greet" = "1.0.0"
+
+[capabilities]
+platform.notify = true
+ui.rich = true
+ui.overlay = true
+terminal.semantic-read = true
+
+[lazy]
+commands = [
+  "conformance.full:hello",
+  "conformance.full:echo",
+  "conformance.full:bad-result",
+]
+events = [
+  "plugin.activated",
+  "plugin.suspended",
+  "plugin.disposed",
+  "handler.violation",
+  "terminal.opened",
+  "terminal.closed",
+  "terminal.title-changed",
+  "terminal.cwd-changed",
+  "terminal.bell",
+  "focus.changed",
+  "selection.changed",
+  "process.exited",
+  "config.reloaded",
+  "intercept.command-dispatch",
+  "intercept.terminal-spawn",
+  "intercept.paste",
+  "intercept.open-url",
+]
+claims = ["tabline"]

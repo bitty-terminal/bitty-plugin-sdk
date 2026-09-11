@@ -1,0 +1,18 @@
+[plugin]
+id = "conformance.minimal"
+name = "Conformance Minimal"
+version = "1.0.0"
+description = "Least-privilege manifest with no declared capabilities."
+license = "MIT"
+
+[compat]
+plugin-api = "^1.0"
+
+[lazy]
+commands = ["conformance.minimal:hello"]
+events = [
+  "plugin.activated",
+  "plugin.suspended",
+  "plugin.disposed",
+  "terminal.bell",
+]

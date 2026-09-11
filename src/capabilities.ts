@@ -27,6 +27,7 @@ export const CAPABILITY_FAMILIES: readonly string[] = [
   "agent",
   "mcp",
   "ai",
+  "env",
 ];
 
 /** Every closed capability head; parameterized heads carry a `:PARAMETER`. */
@@ -92,6 +93,15 @@ export const HIGH_RISK_HEADS: ReadonlySet<string> = new Set([
   "browser.embed",
 ]);
 
+/** Maximum `env:<KEY>` parameter length in bytes (ADR 0006 key bound). */
+export const MAX_ENV_KEY_LEN = 64;
+
+/** Exact environment key grammar accepted after `env:` (ADR 0006). */
+export const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
+
+/** The single accepted environment suffix-wildcard form (ADR 0006). */
+export const ENV_PATTERN = "BITTY_*";
+
 const CONTROL_OR_WHITESPACE = /[\p{Cc}\p{White_Space}]/u;
 const SEGMENT = /^[a-z][a-z0-9_-]*$/;
 
@@ -150,6 +160,40 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
         "wildcards are not allowed (deny-by-default, no allow-all)",
       ),
     );
+    return diagnostics;
+  }
+
+  if (head === "env") {
+    if (param === undefined) {
+      diagnostics.push(
+        error(
+          "capabilities.param-required",
+          path,
+          `capability 'env' requires ':KEY' or the '${ENV_PATTERN}' pattern`,
+        ),
+      );
+      return diagnostics;
+    }
+    if (param !== ENV_PATTERN && !ENV_KEY_PATTERN.test(param)) {
+      diagnostics.push(
+        error(
+          "capabilities.invalid",
+          path,
+          `env capability parameter must match ${ENV_KEY_PATTERN.source} or be '${ENV_PATTERN}'`,
+        ),
+      );
+      return diagnostics;
+    }
+    if (byteLength(param) > MAX_ENV_KEY_LEN) {
+      diagnostics.push(
+        error(
+          "capabilities.invalid",
+          path,
+          `env capability parameter too long (${byteLength(param)} > ${MAX_ENV_KEY_LEN})`,
+        ),
+      );
+      return diagnostics;
+    }
     return diagnostics;
   }
   if (param !== undefined) {

@@ -1,0 +1,38 @@
+{
+  "name": "undeclared authority cannot be exercised even when granted",
+  "description": "A least-privilege manifest declares no capabilities. Explicit stale grants are ignored by the capability check: execution requires both declaration and grant. Ungated surfaces keep working.",
+  "manifest": "manifests/minimal.toml",
+  "tags": ["deny-by-default", "capability"],
+  "grants": ["platform.notify", "ui.rich"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "notify.show",
+      "args": { "title": "hello" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": { "slot": "top", "component": { "kind": "Text", "text": "x" } },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "settings.set",
+      "args": { "key": "mode", "value": "dark" },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "settings.get",
+      "args": { "key": "mode" },
+      "expect": { "result": "dark" }
+    }
+  ]
+}

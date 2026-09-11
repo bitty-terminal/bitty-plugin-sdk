@@ -1,0 +1,47 @@
+{
+  "name": "interception handlers veto with false and approve otherwise",
+  "description": "The four v1 interception points are veto/approve only. A false return vetoes; any other return approves; payloads stay bounded sanitized metadata.",
+  "manifest": "manifests/full.toml",
+  "tags": ["events", "interception"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "subscribe",
+      "event": "intercept.paste",
+      "capture": "paste",
+      "handler": { "decision": "veto" }
+    },
+    {
+      "op": "subscribe",
+      "event": "intercept.open-url",
+      "capture": "open-url",
+      "handler": { "decision": "approve" }
+    },
+    {
+      "op": "publish",
+      "event": "intercept.paste",
+      "payload": { "action": "paste", "origin": "user", "preview": "abc" },
+      "expect": { "result": { "delivered": 1, "vetoed": true } }
+    },
+    {
+      "op": "publish",
+      "event": "intercept.open-url",
+      "payload": {
+        "action": "open",
+        "origin": "user",
+        "preview": "https://example.invalid"
+      },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "expect-event",
+      "capture": "paste",
+      "events": [
+        {
+          "kind": "intercept.paste",
+          "payload": { "action": "paste", "origin": "user", "preview": "abc" }
+        }
+      ]
+    }
+  ]
+}

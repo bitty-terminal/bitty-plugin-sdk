@@ -1,0 +1,83 @@
+{
+  "name": "command registration, argument and result schema validation",
+  "description": "Commands are reserved in the manifest, dispatch validates arguments before run and results after run, and schemas outside the supported bounded subset fail closed at registration.",
+  "manifest": "manifests/full.toml",
+  "tags": ["commands", "registration", "schema"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "register",
+      "command": {
+        "id": "echo",
+        "title": "Echo",
+        "args_schema": {
+          "type": "object",
+          "properties": { "value": { "type": "string" } },
+          "required": ["value"],
+          "additionalProperties": false
+        },
+        "result_schema": { "type": "string" },
+        "echo_arg": "value"
+      },
+      "capture": "echo"
+    },
+    {
+      "op": "register",
+      "command": {
+        "id": "bad-result",
+        "title": "Bad result",
+        "result_schema": { "type": "integer" },
+        "run_result": "not-an-integer"
+      }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.full:echo",
+      "args": { "value": "hi" },
+      "expect": { "result": "hi" }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.full:echo",
+      "args": { "value": 1 },
+      "expect": {
+        "denial": { "code": "E_ARGS_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.full:bad-result",
+      "args": {},
+      "expect": {
+        "denial": { "code": "E_RESULT_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "register",
+      "command": {
+        "id": "hello",
+        "title": "Unsupported schema",
+        "args_schema": { "type": "string", "pattern": "^a+$" },
+        "run_result": null
+      },
+      "expect": {
+        "denial": { "code": "E_SCHEMA_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.full:missing",
+      "args": {},
+      "expect": {
+        "denial": { "code": "E_COMMAND_UNDECLARED", "class": "validation" }
+      }
+    },
+    {
+      "op": "register",
+      "command": { "id": "echo", "title": "Echo again", "run_result": null },
+      "expect": {
+        "denial": { "code": "E_COMMAND_DUPLICATE", "class": "validation" }
+      }
+    }
+  ]
+}

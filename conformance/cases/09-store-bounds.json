@@ -1,0 +1,103 @@
+{
+  "name": "store key grammar, round-trip, delete, and bounded value rejection",
+  "description": "Store keys match the accepted grammar; values are JSON-compatible bounded data; set(key, nil) deletes; invalid keys and over-depth values fail closed.",
+  "manifest": "manifests/full.toml",
+  "tags": ["store"],
+  "steps": [
+    {
+      "op": "begin-activation"
+    },
+    {
+      "op": "call",
+      "surface": "store.set",
+      "args": {
+        "key": "good.key-1",
+        "value": {
+          "a": [1, 2]
+        }
+      },
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "op": "call",
+      "surface": "store.get",
+      "args": {
+        "key": "good.key-1"
+      },
+      "expect": {
+        "result": {
+          "a": [1, 2]
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "store.set",
+      "args": {
+        "key": "good.key-1",
+        "value": null
+      },
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "op": "call",
+      "surface": "store.get",
+      "args": {
+        "key": "good.key-1"
+      },
+      "expect": {
+        "result": null
+      }
+    },
+    {
+      "op": "call",
+      "surface": "store.set",
+      "args": {
+        "key": "Bad",
+        "value": 1
+      },
+      "expect": {
+        "denial": {
+          "code": "E_STORE_KEY_INVALID",
+          "class": "validation"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "store.set",
+      "args": {
+        "key": "deep",
+        "value": {
+          "a": {
+            "a": {
+              "a": {
+                "a": {
+                  "a": {
+                    "a": {
+                      "a": {
+                        "a": {
+                          "a": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "denial": {
+          "code": "E_STORE_VALUE_INVALID",
+          "class": "validation"
+        }
+      }
+    }
+  ]
+}

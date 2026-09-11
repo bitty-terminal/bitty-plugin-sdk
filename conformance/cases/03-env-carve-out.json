@@ -1,0 +1,64 @@
+{
+  "name": "env carve-out: absent unless declared, denied until granted, allowlisted reads only",
+  "description": "ADR 0006 / ADR 0009 LUA-OQ-2: bitty.env is present because the manifest declares env capabilities, but functions fail closed with E_CAPABILITY_DENIED until a grant exists. With a grant only allowlisted keys resolve; other keys are indistinguishable from unset.",
+  "manifest": "manifests/env-declared.toml",
+  "tags": ["env", "deny-by-default", "capability"],
+  "environment": {
+    "FIXTURE_KEY_ONE": "value-one",
+    "FIXTURE_KEY_TWO": "value-two",
+    "BITTY_THEME": "dark",
+    "OTHER": "other"
+  },
+  "steps": [
+    { "op": "begin-activation" },
+    { "op": "expect-bitty-env", "present": true },
+    {
+      "op": "call",
+      "surface": "env.get",
+      "args": { "name": "FIXTURE_KEY_ONE" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "env:FIXTURE_KEY_ONE" },
+    { "op": "grant", "capability": "env:BITTY_*" },
+    {
+      "op": "call",
+      "surface": "env.get",
+      "args": { "name": "FIXTURE_KEY_ONE" },
+      "expect": { "result": "value-one" }
+    },
+    {
+      "op": "call",
+      "surface": "env.get",
+      "args": { "name": "FIXTURE_KEY_TWO" },
+      "expect": { "result": null }
+    },
+    {
+      "op": "call",
+      "surface": "env.has",
+      "args": { "name": "FIXTURE_KEY_ONE" },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "env.has",
+      "args": { "name": "OTHER" },
+      "expect": { "result": false }
+    },
+    {
+      "op": "call",
+      "surface": "env.get",
+      "args": { "name": "BITTY_THEME" },
+      "expect": { "result": "dark" }
+    },
+    {
+      "op": "call",
+      "surface": "env.get",
+      "args": { "name": "lowercase" },
+      "expect": {
+        "denial": { "code": "E_ENV_KEY_INVALID", "class": "validation" }
+      }
+    }
+  ]
+}

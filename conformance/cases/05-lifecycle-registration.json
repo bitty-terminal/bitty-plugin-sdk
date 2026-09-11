@@ -1,0 +1,110 @@
+{
+  "name": "registration window, lifecycle delivery, and generation invalidation",
+  "description": "Registration calls are valid only while init.lua activation runs; plugin.activated/plugin.disposed are delivered around the window; generation-owned handles and calls are invalid after disposal; the store survives reload.",
+  "manifest": "manifests/full.toml",
+  "tags": ["lifecycle", "registration"],
+  "steps": [
+    { "op": "begin-activation" },
+    { "op": "subscribe", "event": "plugin.activated", "capture": "activated" },
+    { "op": "subscribe", "event": "plugin.suspended", "capture": "suspended" },
+    { "op": "subscribe", "event": "plugin.disposed", "capture": "disposed" },
+    {
+      "op": "register",
+      "command": {
+        "id": "hello",
+        "title": "Hello",
+        "run_result": "hello"
+      },
+      "capture": "hello-handle"
+    },
+    {
+      "op": "call",
+      "surface": "store.set",
+      "args": { "key": "persisted", "value": { "n": 1 } },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "tasks.spawn",
+      "args": { "run_result": null },
+      "capture": "task"
+    },
+    {
+      "op": "call",
+      "surface": "timers.create",
+      "args": { "delay_ms": 100, "run_result": null },
+      "capture": "timer"
+    },
+    { "op": "end-activation" },
+    {
+      "op": "expect-event",
+      "capture": "activated",
+      "events": [{ "kind": "plugin.activated", "payload": {} }]
+    },
+    {
+      "op": "register",
+      "command": { "id": "echo", "title": "Echo", "run_result": null },
+      "expect": {
+        "denial": { "code": "E_REGISTRATION_CLOSED", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "keymaps.suggest",
+      "args": { "chord": "ctrl+p", "command": "conformance.full:hello" },
+      "expect": {
+        "denial": { "code": "E_REGISTRATION_CLOSED", "class": "validation" }
+      }
+    },
+    { "op": "grant", "capability": "ui.rich" },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": { "slot": "top", "component": { "kind": "Text", "text": "x" } },
+      "capture": "block"
+    },
+    { "op": "dispose" },
+    {
+      "op": "expect-event",
+      "capture": "disposed",
+      "events": [{ "kind": "plugin.disposed", "payload": {} }]
+    },
+    {
+      "op": "call",
+      "surface": "store.get",
+      "args": { "key": "persisted" },
+      "expect": {
+        "denial": { "code": "E_GENERATION_DISPOSED", "class": "runtime" }
+      }
+    },
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "store.get",
+      "args": { "key": "persisted" },
+      "expect": { "result": { "n": 1 } }
+    },
+    {
+      "op": "call",
+      "surface": "tasks.cancel",
+      "args": { "handle": { "$ref": "task" } },
+      "expect": { "result": false }
+    },
+    {
+      "op": "call",
+      "surface": "timers.cancel",
+      "args": { "handle": { "$ref": "timer" } },
+      "expect": { "result": false }
+    },
+    {
+      "op": "call",
+      "surface": "ui.update",
+      "args": {
+        "handle": { "$ref": "block" },
+        "component": { "kind": "Text", "text": "y" }
+      },
+      "expect": { "result": false }
+    },
+    { "op": "end-activation" }
+  ]
+}

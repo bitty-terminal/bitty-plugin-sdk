@@ -1,0 +1,752 @@
+/**
+ * Mock-host behavior tests for Plugin API v1 (R-SDK-3).
+ *
+ * Every assertion maps to the accepted contract: ADR 0009 resolutions
+ * (LUA-OQ-1..12) and the accepted Plugin API v1 Lua Surface RFC. The mock host
+ * must be no more permissive than the production host contract: ungranted
+ * capabilities fail closed with the typed denial, registration is confined to
+ * the activation window, generation-owned handles are invalid after disposal,
+ * and the closed v1 event set round-trips with bounded immutable payloads.
+ */
+
+import { describe, expect, test } from "bun:test";
+
+import {
+  ACCEPTED_HOST_CODES,
+  HOST_CODES,
+  HostError,
+  type HostDiagnostic,
+} from "../src/host-diagnostics.js";
+import {
+  ENV_MAX_VALUE_BYTES,
+  EVENT_KINDS,
+  EVENT_MAX_BYTES,
+  MOCK_LIMITS,
+  PLUGIN_API_VERSION,
+  UI_SLOTS,
+  UI_V1_EXCLUDED_NODE_KINDS,
+  UI_V1_NODE_KINDS,
+} from "../src/host-surface.js";
+import { MockHost } from "../src/mock-host.js";
+
+const MANIFEST = `
+[plugin]
+id = "conformance.basic"
+name = "Conformance Basic"
+version = "1.0.0"
+description = "Mock-host unit fixture."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+platform.notify = true
+ui.rich = true
+ui.overlay = true
+terminal.semantic-read = true
+"env:FIXTURE_KEY" = true
+
+[lazy]
+commands = [
+  "conformance.basic:hello",
+  "conformance.basic:echo",
+  "conformance.basic:bad-result",
+]
+events = [
+  "plugin.activated",
+  "plugin.suspended",
+  "plugin.disposed",
+  "handler.violation",
+  "terminal.opened",
+  "terminal.closed",
+  "terminal.title-changed",
+  "terminal.cwd-changed",
+  "terminal.bell",
+  "focus.changed",
+  "selection.changed",
+  "process.exited",
+  "config.reloaded",
+  "intercept.command-dispatch",
+  "intercept.terminal-spawn",
+  "intercept.paste",
+  "intercept.open-url",
+]
+`;
+
+function makeHost(
+  manifestSource = MANIFEST,
+  environment: Readonly<Record<string, string>> = { FIXTURE_KEY: "fixture" },
+): MockHost {
+  return new MockHost({ manifestSource, environment });
+}
+
+function denial(run: () => unknown): HostDiagnostic {
+  try {
+    run();
+  } catch (cause) {
+    if (cause instanceof HostError) return cause.diagnostic;
+    throw cause;
+  }
+  throw new Error("expected a HostError");
+}
+
+function activate(host: MockHost): void {
+  host.beginActivation();
+}
+
+describe("surface", () => {
+  test("module root reports the accepted api version and namespaces", () => {
+    const host = makeHost();
+    expect(host.bitty.api_version).toBe(PLUGIN_API_VERSION);
+    expect(PLUGIN_API_VERSION).toBe("1.0.0");
+    for (const namespace of [
+      "commands",
+      "events",
+      "keymaps",
+      "settings",
+      "store",
+      "notify",
+      "ui",
+      "terminal",
+      "services",
+      "tasks",
+      "timers",
+    ] as const) {
+      expect(host.bitty[namespace]).toBeDefined();
+    }
+  });
+
+  test("closed v1 event set matches the accepted classes", () => {
+    expect(EVENT_KINDS).toHaveLength(17);
+    const byClass = { lifecycle: 0, observation: 0, interception: 0 };
+    for (const spec of EVENT_KINDS) byClass[spec.class] += 1;
+    expect(byClass).toEqual({ lifecycle: 4, observation: 9, interception: 4 });
+    expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
+      "plugin.activated",
+    );
+    expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
+      "intercept.open-url",
+    );
+  });
+
+  test("accepted host codes stay separate from mock-owned codes", () => {
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.CAPABILITY_DENIED)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.STORE_QUOTA)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.BUDGET_TASK)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.REGISTRATION_CLOSED)).toBe(false);
+  });
+});
+
+describe("deny-by-default capabilities", () => {
+  test("declared but ungranted fails closed with the typed denial", () => {
+    const host = makeHost();
+    activate(host);
+    const diagnostic = denial(() => host.bitty.notify.show({ title: "hello" }));
+    expect(diagnostic.code).toBe(HOST_CODES.CAPABILITY_DENIED);
+    expect(diagnostic.class).toBe("runtime");
+    expect(host.notifications).toHaveLength(0);
+  });
+
+  test("granted capability works and is captured host-side", () => {
+    const host = makeHost();
+    host.grant("platform.notify");
+    activate(host);
+    expect(host.bitty.notify.show({ title: "hello", urgency: "low" })).toBe(
+      true,
+    );
+    expect(host.notifications).toEqual([
+      { title: "hello", urgency: "low", body: undefined },
+    ]);
+  });
+
+  test("revocation fails closed again", () => {
+    const host = makeHost();
+    host.grant("platform.notify");
+    activate(host);
+    expect(host.bitty.notify.show({ title: "hello" })).toBe(true);
+    host.revoke("platform.notify");
+    const diagnostic = denial(() => host.bitty.notify.show({ title: "hello" }));
+    expect(diagnostic.code).toBe(HOST_CODES.CAPABILITY_DENIED);
+    expect(host.notifications).toHaveLength(1);
+  });
+
+  test("a grant for an undeclared capability cannot be exercised", () => {
+    const host = makeHost(MANIFEST.replace("platform.notify = true\n", ""));
+    host.grant("platform.notify");
+    activate(host);
+    const diagnostic = denial(() => host.bitty.notify.show({ title: "hello" }));
+    expect(diagnostic.code).toBe(HOST_CODES.CAPABILITY_DENIED);
+  });
+
+  test("every gated surface maps to its accepted capability", () => {
+    const host = makeHost();
+    activate(host);
+    expect(
+      denial(() => host.bitty.ui.mount("top", { kind: "Text", text: "hi" }))
+        .code,
+    ).toBe(HOST_CODES.CAPABILITY_DENIED);
+    expect(
+      denial(() => host.bitty.terminal.snapshot({ scope: "semantic" })).code,
+    ).toBe(HOST_CODES.CAPABILITY_DENIED);
+  });
+});
+
+describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
+  test("bitty.env is absent unless the manifest declares an env capability", () => {
+    const host = makeHost(MANIFEST.replace('"env:FIXTURE_KEY" = true\n', ""));
+    expect(host.bitty.env).toBeUndefined();
+  });
+
+  test("declared but ungranted env functions fail closed with E_CAPABILITY_DENIED", () => {
+    const host = makeHost();
+    activate(host);
+    expect(host.bitty.env).toBeDefined();
+    const diagnostic = denial(() => host.bitty.env?.get("FIXTURE_KEY"));
+    expect(diagnostic.code).toBe(HOST_CODES.CAPABILITY_DENIED);
+    expect(diagnostic.class).toBe("runtime");
+  });
+
+  test("granted env reads only the allowlisted key", () => {
+    const host = makeHost(undefined, {
+      FIXTURE_KEY: "fixture",
+      OTHER_KEY: "other",
+    });
+    host.grant("env:FIXTURE_KEY");
+    activate(host);
+    expect(host.bitty.env?.get("FIXTURE_KEY")).toBe("fixture");
+    expect(host.bitty.env?.get("OTHER_KEY")).toBeNull();
+    expect(host.bitty.env?.has("FIXTURE_KEY")).toBe(true);
+    expect(host.bitty.env?.has("OTHER_KEY")).toBe(false);
+    expect(host.bitty.env?.get("UNSET_KEY")).toBeNull();
+  });
+
+  test("invalid and oversized env keys and values fail with the accepted codes", () => {
+    const host = makeHost(undefined, { FIXTURE_KEY: "x".repeat(5000) });
+    host.grant("env:FIXTURE_KEY");
+    activate(host);
+    expect(denial(() => host.bitty.env?.get("lowercase")).code).toBe(
+      HOST_CODES.ENV_KEY_INVALID,
+    );
+    const diagnostic = denial(() => host.bitty.env?.get("FIXTURE_KEY"));
+    expect(diagnostic.code).toBe(HOST_CODES.ENV_VALUE_TOO_LARGE);
+    expect(ENV_MAX_VALUE_BYTES).toBe(4096);
+  });
+});
+
+describe("registration window and lifecycle", () => {
+  test("registration is valid only while the generation is activating", () => {
+    const host = makeHost();
+    activate(host);
+    const handle = host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => "hello",
+    });
+    expect(handle).toBeGreaterThan(0);
+    host.endActivation();
+    const diagnostic = denial(() =>
+      host.bitty.commands.register({
+        id: "echo",
+        title: "Echo",
+        run: () => "echo",
+      }),
+    );
+    expect(diagnostic.code).toBe(HOST_CODES.REGISTRATION_CLOSED);
+    expect(diagnostic.class).toBe("validation");
+  });
+
+  test("unreserved and duplicate command names are rejected", () => {
+    const host = makeHost();
+    activate(host);
+    expect(
+      denial(() =>
+        host.bitty.commands.register({
+          id: "unknown",
+          title: "Unknown",
+          run: () => null,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.COMMAND_UNDECLARED);
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => "hello",
+    });
+    expect(
+      denial(() =>
+        host.bitty.commands.register({
+          id: "hello",
+          title: "Hello again",
+          run: () => "hello",
+        }),
+      ).code,
+    ).toBe(HOST_CODES.COMMAND_DUPLICATE);
+  });
+
+  test("plugin.activated is delivered after registration closes", () => {
+    const host = makeHost();
+    activate(host);
+    const received: string[] = [];
+    host.bitty.events.subscribe("plugin.activated", (event) => {
+      received.push(event.kind);
+    });
+    host.endActivation();
+    expect(received).toEqual(["plugin.activated"]);
+  });
+
+  test("dispose delivers plugin.disposed and invalidates generation handles", () => {
+    const host = makeHost();
+    activate(host);
+    const received: string[] = [];
+    host.bitty.events.subscribe("plugin.disposed", (event) => {
+      received.push(event.kind);
+    });
+    const task = host.bitty.tasks.spawn(() => 1);
+    const timer = host.bitty.timers.create(10, () => 1);
+    host.endActivation();
+    host.dispose();
+    expect(received).toEqual(["plugin.disposed"]);
+    const diagnostic = denial(() => host.bitty.store.get("anything"));
+    expect(diagnostic.code).toBe(HOST_CODES.GENERATION_DISPOSED);
+    activate(host);
+    host.endActivation();
+    expect(host.bitty.tasks.cancel(task)).toBe(false);
+    expect(host.bitty.timers.cancel(timer)).toBe(false);
+  });
+
+  test("store persists across generation disposal and reload", () => {
+    const host = makeHost();
+    activate(host);
+    expect(host.bitty.store.set("counter", 3)).toBe(true);
+    host.endActivation();
+    host.dispose();
+    activate(host);
+    expect(host.bitty.store.get("counter")).toBe(3);
+  });
+
+  test("ui.update returns false for a stale generation handle", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    const block = host.bitty.ui.mount("top", { kind: "Text", text: "one" });
+    host.endActivation();
+    expect(host.bitty.ui.update(block, { kind: "Text", text: "two" })).toBe(
+      true,
+    );
+    host.dispose();
+    activate(host);
+    expect(host.bitty.ui.update(block, { kind: "Text", text: "three" })).toBe(
+      false,
+    );
+  });
+
+  test("lifecycle state transitions are bounded", () => {
+    const host = makeHost();
+    expect(denial(() => host.endActivation()).code).toBe(
+      HOST_CODES.LIFECYCLE_STATE,
+    );
+    activate(host);
+    expect(denial(() => host.beginActivation()).code).toBe(
+      HOST_CODES.LIFECYCLE_STATE,
+    );
+    host.endActivation();
+    expect(host.suspend()).toBeUndefined();
+    expect(denial(() => host.suspend()).code).toBe(HOST_CODES.LIFECYCLE_STATE);
+  });
+});
+
+describe("closed event set round-trips", () => {
+  test("every kind is known and unknown kinds are rejected", () => {
+    const host = makeHost();
+    activate(host);
+    expect(
+      denial(() =>
+        host.bitty.events.subscribe("terminal.raw-changed", () => {}),
+      ).code,
+    ).toBe(HOST_CODES.EVENT_UNKNOWN);
+    const limited = makeHost(
+      MANIFEST.replace(/events = \[[\s\S]*?\n\]/, 'events = ["terminal.bell"]'),
+    );
+    activate(limited);
+    expect(
+      denial(() => limited.bitty.events.subscribe("terminal.opened", () => {}))
+        .code,
+    ).toBe(HOST_CODES.EVENT_UNDECLARED);
+  });
+
+  test("observation events deliver frozen envelopes with bounded payloads", () => {
+    const host = makeHost();
+    activate(host);
+    const events: unknown[] = [];
+    host.bitty.events.subscribe("terminal.opened", (event) => {
+      events.push(event);
+    });
+    host.endActivation();
+    const result = host.publish("terminal.opened", {
+      terminal_id: 1,
+      runtime_id: 2,
+      generation: 3,
+    });
+    expect(result).toEqual({ delivered: 1, vetoed: false });
+    const event = events[0] as {
+      kind: string;
+      sequence: number;
+      payload: Record<string, unknown>;
+    };
+    expect(event.kind).toBe("terminal.opened");
+    expect(event.sequence).toBeGreaterThan(0);
+    expect(event.payload).toEqual({
+      terminal_id: 1,
+      runtime_id: 2,
+      generation: 3,
+    });
+    expect(Object.isFrozen(event)).toBe(true);
+    expect(Object.isFrozen(event.payload)).toBe(true);
+  });
+
+  test("payload validation rejects missing fields and oversized payloads", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.events.subscribe("terminal.opened", () => {});
+    host.endActivation();
+    expect(denial(() => host.publish("terminal.opened", {})).code).toBe(
+      HOST_CODES.EVENT_PAYLOAD_INVALID,
+    );
+    const oversized = {
+      title: "x".repeat(EVENT_MAX_BYTES),
+      terminal_id: 1,
+      runtime_id: 2,
+    };
+    expect(
+      denial(() => host.publish("terminal.title-changed", oversized)).code,
+    ).toBe(HOST_CODES.EVENT_PAYLOAD_TOO_LARGE);
+  });
+
+  test("interception handlers veto with false and approve otherwise", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.events.subscribe("intercept.paste", () => false);
+    host.endActivation();
+    expect(
+      host.publish("intercept.paste", {
+        action: "paste",
+        origin: "user",
+        preview: "abc",
+      }),
+    ).toEqual({ delivered: 1, vetoed: true });
+    const approving = makeHost();
+    activate(approving);
+    approving.bitty.events.subscribe("intercept.paste", () => undefined);
+    approving.endActivation();
+    expect(
+      approving.publish("intercept.paste", {
+        action: "paste",
+        origin: "user",
+        preview: "abc",
+      }),
+    ).toEqual({ delivered: 1, vetoed: false });
+  });
+
+  test("interception payloads reject fields outside the bounded preview shape", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.events.subscribe("intercept.paste", () => true);
+    host.endActivation();
+    expect(
+      denial(() =>
+        host.publish("intercept.paste", {
+          action: "paste",
+          origin: "user",
+          preview: "abc",
+          text: "forbidden",
+        }),
+      ).code,
+    ).toBe(HOST_CODES.EVENT_PAYLOAD_INVALID);
+  });
+
+  test("handler violation messages stay bounded", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.events.subscribe("terminal.bell", () => {
+      throw new Error("x".repeat(4096));
+    });
+    host.endActivation();
+    host.publish("terminal.bell", {});
+    const violation = host.handlerViolations[0];
+    expect(violation).toBeDefined();
+    expect((violation?.message.length ?? 0) <= 515).toBe(true);
+  });
+
+  test("throwing handlers are recorded and do not stop delivery", () => {
+    const host = makeHost();
+    activate(host);
+    const delivered: number[] = [];
+    host.bitty.events.subscribe("terminal.bell", () => {
+      throw new Error("boom");
+    });
+    host.bitty.events.subscribe("terminal.bell", (event) => {
+      delivered.push(event.sequence);
+    });
+    host.endActivation();
+    expect(host.publish("terminal.bell", {})).toEqual({
+      delivered: 2,
+      vetoed: false,
+    });
+    expect(delivered).toHaveLength(1);
+    expect(host.handlerViolations).toHaveLength(1);
+    expect(host.handlerViolations[0]?.code).toBe(HOST_CODES.HANDLER_VIOLATION);
+  });
+});
+
+describe("commands and bounded schemas", () => {
+  test("dispatch validates args before run and results after run", () => {
+    const host = makeHost();
+    let calls = 0;
+    activate(host);
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      args_schema: {
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+        additionalProperties: false,
+      },
+      result_schema: { type: "string" },
+      run: (args) => {
+        calls += 1;
+        return (args as { value: string }).value;
+      },
+    });
+    host.endActivation();
+    expect(
+      host.dispatchCommand("conformance.basic:echo", { value: "hi" }),
+    ).toBe("hi");
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", { value: 1 }))
+        .code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+    expect(calls).toBe(1);
+  });
+
+  test("invalid result and unsupported schema keywords fail closed", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.commands.register({
+      id: "bad-result",
+      title: "Bad result",
+      result_schema: { type: "integer" },
+      run: () => "not an integer",
+    });
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:bad-result", {}))
+        .code,
+    ).toBe(HOST_CODES.RESULT_INVALID);
+    expect(
+      denial(() =>
+        host.bitty.commands.register({
+          id: "hello",
+          title: "Pattern",
+          args_schema: { type: "string", pattern: "^a+$" },
+          run: () => null,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.SCHEMA_INVALID);
+  });
+});
+
+describe("store, ui, terminal, services, tasks, and timers", () => {
+  test("store enforces key grammar, value bounds, and quota", () => {
+    const host = makeHost();
+    activate(host);
+    expect(host.bitty.store.set("good.key-1", { a: [1, 2] })).toBe(true);
+    expect(host.bitty.store.get("good.key-1")).toEqual({ a: [1, 2] });
+    expect(host.bitty.store.set("good.key-1", null)).toBe(true);
+    expect(host.bitty.store.get("good.key-1")).toBeNull();
+    expect(denial(() => host.bitty.store.set("Bad", 1)).code).toBe(
+      HOST_CODES.STORE_KEY_INVALID,
+    );
+    const deep: Record<string, unknown> = {};
+    let cursor = deep;
+    for (let i = 0; i < MOCK_LIMITS.STORE_MAX_DEPTH + 1; i += 1) {
+      const next: Record<string, unknown> = {};
+      cursor["child"] = next;
+      cursor = next;
+    }
+    expect(denial(() => host.bitty.store.set("deep", deep as never)).code).toBe(
+      HOST_CODES.STORE_VALUE_INVALID,
+    );
+    const chunk = "x".repeat(2048);
+    let quota: HostDiagnostic | undefined;
+    for (let i = 0; i < 200 && quota === undefined; i += 1) {
+      try {
+        host.bitty.store.set(`chunk-${i}`, chunk);
+      } catch (cause) {
+        if (cause instanceof HostError) quota = cause.diagnostic;
+        else throw cause;
+      }
+    }
+    expect(quota?.code).toBe(HOST_CODES.STORE_QUOTA);
+  });
+
+  test("ui accepts v1 nodes and rejects excluded node kinds and slots", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    const block = host.bitty.ui.mount("top", {
+      kind: "Row",
+      children: [{ kind: "Text", text: "hi" }],
+    });
+    expect(block).toBeGreaterThan(0);
+    expect(UI_V1_NODE_KINDS).toContain("List");
+    expect(UI_V1_EXCLUDED_NODE_KINDS).toContain("Image");
+    expect(UI_SLOTS).toContain("overlay");
+    expect(
+      denial(() =>
+        host.bitty.ui.mount("statusline", { kind: "Image", src: "x" }),
+      ).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+    expect(
+      denial(() =>
+        host.bitty.ui.mount("top", {
+          kind: "Text",
+          text: "x".repeat(MOCK_LIMITS.SNAPSHOT_MAX_BYTES),
+        }),
+      ).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+    expect(
+      denial(() => host.bitty.ui.mount("nowhere", { kind: "Text", text: "x" }))
+        .code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+  });
+
+  test("overlay slot requires ui.overlay in addition to ui.rich", () => {
+    const host = makeHost(MANIFEST.replace("ui.overlay = true\n", ""));
+    host.grant("ui.rich");
+    activate(host);
+    expect(
+      denial(() => host.bitty.ui.mount("overlay", { kind: "Text", text: "x" }))
+        .code,
+    ).toBe(HOST_CODES.CAPABILITY_DENIED);
+    expect(
+      host.bitty.ui.mount("top", { kind: "Text", text: "x" }),
+    ).toBeGreaterThan(0);
+  });
+
+  test("terminal snapshot rejects raw scope and oversized snapshots", () => {
+    const host = makeHost();
+    host.grant("terminal.semantic-read");
+    activate(host);
+    const snapshot = {
+      version: 1 as const,
+      terminal_id: 7,
+      runtime_id: 9,
+      generation: 1,
+      snapshot_generation: 2,
+      width: 80,
+      height: 1,
+      rows: [{ text: "hello", spans: [] }],
+      cursor: { row: 0, col: 5, visible: true },
+      modes: { alternate_screen: false },
+      title: "fixture",
+    };
+    host.setTerminalSnapshot(snapshot);
+    expect(host.bitty.terminal.snapshot({ scope: "semantic" })).toEqual(
+      snapshot,
+    );
+    expect(
+      denial(() => host.bitty.terminal.snapshot({ scope: "raw" })).code,
+    ).toBe(HOST_CODES.SNAPSHOT_SCOPE_UNSUPPORTED);
+    host.setTerminalSnapshot({
+      ...snapshot,
+      title: "x".repeat(MOCK_LIMITS.SNAPSHOT_MAX_BYTES),
+    });
+    expect(
+      denial(() => host.bitty.terminal.snapshot({ scope: "semantic" })).code,
+    ).toBe(HOST_CODES.SNAPSHOT_TOO_LARGE);
+  });
+
+  test("services resolve declared providers and fail closed when gone", () => {
+    const manifest = `${MANIFEST}
+[services.provided]
+"conformance.greet" = "1.0.0"
+`;
+    const host = makeHost(manifest);
+    activate(host);
+    host.bitty.services.provide("conformance.greet", {
+      hello: (args) => `hello ${(args as { name: string }).name}`,
+    });
+    host.endActivation();
+    const service = host.bitty.services.get("conformance.greet", {
+      version: ">=1.0.0",
+    });
+    expect(service?.hello?.({ name: "ada" })).toBe("hello ada");
+    host.removeService("conformance.greet");
+    expect(denial(() => service?.hello?.({ name: "ada" })).code).toBe(
+      HOST_CODES.SERVICE_GONE,
+    );
+    expect(
+      denial(() =>
+        host.bitty.services.get("conformance.greet", { version: ">=1.0.0" }),
+      ).code,
+    ).toBe(HOST_CODES.SERVICE_RESOLUTION);
+    expect(
+      host.bitty.services.get("conformance.greet", { optional: true }),
+    ).toBeUndefined();
+  });
+
+  test("tasks and timers enforce caps and virtual time", () => {
+    const host = makeHost();
+    activate(host);
+    let fires = 0;
+    const task = host.bitty.tasks.spawn(() => {
+      fires += 1;
+    });
+    const timer = host.bitty.timers.create(50, () => {
+      fires += 1;
+    });
+    host.endActivation();
+    host.drainTasks();
+    expect(fires).toBe(1);
+    host.advanceTimers(49);
+    expect(fires).toBe(1);
+    host.advanceTimers(1);
+    expect(fires).toBe(2);
+    expect(host.bitty.timers.cancel(timer)).toBe(false);
+    expect(host.bitty.tasks.cancel(task)).toBe(false);
+    host.dispose();
+    activate(host);
+    expect(() => {
+      for (let i = 0; i < MOCK_LIMITS.TASKS_MAX + 2; i += 1) {
+        host.bitty.tasks.spawn(() => null);
+      }
+    }).toThrow(HostError);
+    expect(host.bitty.timers.create(1, () => null)).toBeGreaterThan(0);
+  });
+
+  test("settings stay inside the plugin namespace", () => {
+    const host = makeHost();
+    activate(host);
+    expect(host.bitty.settings.set("view.density", "compact")).toBe(true);
+    expect(host.bitty.settings.get("view.density")).toBe("compact");
+    expect(denial(() => host.bitty.settings.get("..escape")).code).toBe(
+      HOST_CODES.SETTINGS_KEY_INVALID,
+    );
+  });
+});
+
+describe("manifest integration", () => {
+  test("the mock host refuses an invalid manifest", () => {
+    expect(
+      () =>
+        new MockHost({
+          manifestSource: MANIFEST.replace(
+            'id = "conformance.basic"',
+            'id = "Bad"',
+          ),
+        }),
+    ).toThrow();
+  });
+});

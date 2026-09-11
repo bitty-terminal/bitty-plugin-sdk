@@ -1,0 +1,16 @@
+[plugin]
+id = "conformance.env"
+name = "Conformance Env"
+version = "1.0.0"
+description = "Manifest declaring exact and patterned env capabilities."
+license = "MIT"
+
+[compat]
+plugin-api = "^1.0"
+
+[capabilities]
+"env:FIXTURE_KEY_ONE" = true
+"env:BITTY_*" = true
+
+[lazy]
+events = ["terminal.bell"]

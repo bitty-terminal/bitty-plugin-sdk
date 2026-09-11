@@ -24,6 +24,10 @@ type-check: install
 test: install
     bun test
 
+# Run the mock-host conformance fixtures and print per-case evidence.
+conformance: install
+    bun test tests/conformance.test.ts
+
 # Fail when lua/bitty.d.lua drifts from surface/bitty-plugin-api-v1.json.
 lua-defs-check:
     bun scripts/generate-lua-defs.ts --check

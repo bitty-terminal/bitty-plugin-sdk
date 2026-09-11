@@ -1,0 +1,26 @@
+{
+  "name": "bitty.env absent without declaration and undeclared event subscriptions rejected",
+  "description": "Without an env capability the namespace is absent, not denied. Event subscription is limited to manifest-declared types: the closed v1 set alone is not enough.",
+  "manifest": "manifests/minimal.toml",
+  "tags": ["env", "events", "registration"],
+  "steps": [
+    { "op": "begin-activation" },
+    { "op": "expect-bitty-env", "present": false },
+    {
+      "op": "subscribe",
+      "event": "terminal.opened",
+      "capture": "opened",
+      "expect": {
+        "denial": { "code": "E_EVENT_UNDECLARED", "class": "validation" }
+      }
+    },
+    {
+      "op": "subscribe",
+      "event": "terminal.raw-changed",
+      "capture": "raw",
+      "expect": {
+        "denial": { "code": "E_EVENT_UNKNOWN", "class": "validation" }
+      }
+    }
+  ]
+}
