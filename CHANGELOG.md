@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Accept the ADR 0009 table form `{ id, args_schema?, result_schema? }` for
+  `[lazy].commands` entries in the manifest linter and model, with bounded JSON
+  Schema validation matching `bitty.commands.register` and a conformance case
+  (CTX-0019 / R-SDK-2 extension).
 - Add the Plugin API v1 mock host (deny-by-default capability gates, lifecycle
   and registration window, closed event set, bounded store/UI/terminal/service/
   task/timer surfaces) and the declarative conformance fixture suite, with

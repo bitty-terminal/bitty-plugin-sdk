@@ -1,0 +1,90 @@
+{
+  "name": "table-form lazy command declarations with bounded static schemas",
+  "description": "ADR 0009 LUA-OQ-3: [lazy].commands accepts the table form { id, args_schema?, result_schema? } alongside the string form; every declared id is reserved and the declared bounded schemas validate dispatch arguments.",
+  "manifest": "manifests/lazy-table.toml",
+  "tags": ["commands", "schema", "registration"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "register",
+      "command": {
+        "id": "ping",
+        "title": "Ping",
+        "run_result": "pong"
+      }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.lazy:ping",
+      "args": {},
+      "expect": { "result": "pong" }
+    },
+    {
+      "op": "register",
+      "command": {
+        "id": "echo",
+        "title": "Echo",
+        "args_schema": {
+          "type": "object",
+          "properties": { "value": { "type": "string" } },
+          "required": ["value"],
+          "additionalProperties": false
+        },
+        "result_schema": { "type": "string" },
+        "echo_arg": "value"
+      }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.lazy:echo",
+      "args": { "value": "hi" },
+      "expect": { "result": "hi" }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.lazy:echo",
+      "args": { "value": 1 },
+      "expect": {
+        "denial": { "code": "E_ARGS_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "register",
+      "command": {
+        "id": "clamp",
+        "title": "Clamp",
+        "args_schema": {
+          "type": "object",
+          "properties": {
+            "value": { "type": "integer", "minimum": 0, "maximum": 9 }
+          },
+          "required": ["value"],
+          "additionalProperties": false
+        },
+        "echo_arg": "value"
+      }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.lazy:clamp",
+      "args": { "value": 5 },
+      "expect": { "result": 5 }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.lazy:clamp",
+      "args": { "value": 10 },
+      "expect": {
+        "denial": { "code": "E_ARGS_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.lazy:missing",
+      "args": {},
+      "expect": {
+        "denial": { "code": "E_COMMAND_UNDECLARED", "class": "validation" }
+      }
+    }
+  ]
+}

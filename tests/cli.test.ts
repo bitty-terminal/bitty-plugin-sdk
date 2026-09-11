@@ -12,6 +12,9 @@ const MINIMAL_EXAMPLE = fileURLToPath(
 const INVALID_EXAMPLE = fileURLToPath(
   new URL("./fixtures/invalid/unknown-key.toml", import.meta.url),
 );
+const TABLE_COMMANDS_FIXTURE = fileURLToPath(
+  new URL("./fixtures/valid/lazy-commands-table.toml", import.meta.url),
+);
 const CLI_ENTRY = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
 const tempDirs: string[] = [];
@@ -64,6 +67,14 @@ describe("runCli", () => {
     const code = runCli([INVALID_EXAMPLE], stream.io);
     expect(code).toBe(1);
     expect(stream.out.join("\n")).toContain("manifest.unknown-key");
+  });
+
+  test("table-form lazy commands exit 0", () => {
+    const stream = capture();
+    const code = runCli([TABLE_COMMANDS_FIXTURE], stream.io);
+    expect(code).toBe(0);
+    expect(stream.out.join("\n")).toContain("valid");
+    expect(stream.err).toEqual([]);
   });
 
   test("--json prints a machine-readable report", () => {

@@ -1,6 +1,7 @@
 # Full valid bitty-plugin.toml (Plugin API v1) using only non-high-risk
-# capabilities. This exact file is validated by tests/manifest.test.ts so the
-# example cannot drift from the accepted contract it teaches.
+# capabilities, including the ADR 0009 table form for [lazy].commands. This
+# exact file is validated by tests/manifest.test.ts so the example cannot drift
+# from the accepted contract it teaches.
 
 [plugin]
 id = "xuepoo.markdown"
@@ -28,6 +29,9 @@ access = "read"
 paths = ["~/Documents/**/*.md"]
 
 [lazy]
-commands = ["xuepoo.markdown:toggle"]
+commands = [
+  "xuepoo.markdown:toggle",
+  { id = "xuepoo.markdown:render", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } },
+]
 events = ["terminal.cwd-changed"]
 claims = ["workspaceline"]

@@ -1,0 +1,21 @@
+# Table-form [lazy].commands manifest for ADR 0009 LUA-OQ-3 conformance.
+# The linter and the manifest model must accept mixed string and table command
+# declarations, and the host must reserve every declared qualified name.
+
+[plugin]
+id = "conformance.lazy"
+name = "Conformance Lazy Table"
+version = "1.0.0"
+description = "Table-form lazy command declarations for conformance."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[lazy]
+commands = [
+  "conformance.lazy:ping",
+  { id = "conformance.lazy:echo", args_schema = { type = "object", properties = { value = { type = "string" } }, required = ["value"], additionalProperties = false }, result_schema = { type = "string" } },
+  { id = "conformance.lazy:clamp", args_schema = { type = "object", properties = { value = { type = "integer", minimum = 0, maximum = 9 } }, required = ["value"], additionalProperties = false } },
+]

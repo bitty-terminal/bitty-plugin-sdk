@@ -263,7 +263,8 @@ The suite covers deny-by-default and explicit grants (including grants for
 undeclared capabilities), the `bitty.env` carve-out, the registration window
 and generation invalidation, store persistence across reloads, round-trips for
 every kind of the closed event set, interception veto, command schema
-validation, store bounds, UI/terminal gates, and service/task/timer behavior.
+validation, table-form `[lazy].commands` reservations, store bounds,
+UI/terminal gates, and service/task/timer behavior.
 
 ## Known gaps
 
@@ -272,9 +273,10 @@ validation, store bounds, UI/terminal gates, and service/task/timer behavior.
   `surface/bitty-plugin-api-v1.json` in `tests/conformance.test.ts`. LuaLS
   semantics beyond those identifiers (type shapes) remain owned by R-SDK-1 and
   are not restated by the mock.
-- **Manifest table forms.** ADR 0009 adds table forms for `[lazy].commands`
-  and `[services.provided]`; the merged R-SDK-2 linter accepts only string
-  forms, so the mock cannot exercise static/dynamic equivalence yet.
+- **Manifest table forms.** ADR 0009 `[lazy].commands` table entries are
+  accepted by the linter and modeled with their static schemas (CTX-0019); the
+  `[services.provided]` table form and static/dynamic schema-equivalence checks
+  remain host-bridge work.
 - **Strict schema subset.** The mock validates a strict JSON Schema subset and
   rejects schemas using `pattern`, `format`, `$ref`, or composition keywords
   at registration. This is deliberate fail-closed behavior (never more

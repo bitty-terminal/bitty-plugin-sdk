@@ -12,8 +12,15 @@
 import { parse } from "smol-toml";
 
 import { error, type Diagnostic } from "./diagnostics.js";
+import type { JsonSchema } from "./json-schema.js";
 import { lintManifestSource } from "./manifest.js";
 import { MANIFEST_MAX_DEPTH } from "./schema.js";
+
+/** Bounded static schema metadata declared by one table-form lazy command. */
+export interface LazyCommandSchema {
+  readonly argsSchema?: JsonSchema;
+  readonly resultSchema?: JsonSchema;
+}
 
 /** Closed declaration set read from an accepted manifest. */
 export interface ManifestModel {
@@ -23,6 +30,7 @@ export interface ManifestModel {
   readonly pluginApiRange?: string;
   readonly capabilities: readonly string[];
   readonly commands: readonly string[];
+  readonly commandSchemas: ReadonlyMap<string, LazyCommandSchema>;
   readonly events: readonly string[];
   readonly claims: readonly string[];
   readonly providedServices: ReadonlyMap<string, string>;
@@ -103,6 +111,41 @@ function readStringArray(value: unknown): string[] {
     : [];
 }
 
+/**
+ * Read `[lazy].commands` from both accepted forms: the string form and the
+ * ADR 0009 table form `{ id, args_schema?, result_schema? }`. Ids keep
+ * declaration order; static schemas are exposed per qualified command id so
+ * lazy help/completion can derive without a VM.
+ */
+function readLazyCommands(value: unknown): {
+  commands: string[];
+  schemas: Map<string, LazyCommandSchema>;
+} {
+  const commands: string[] = [];
+  const schemas = new Map<string, LazyCommandSchema>();
+  if (!Array.isArray(value)) return { commands, schemas };
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      commands.push(entry);
+      continue;
+    }
+    if (!isTable(entry) || typeof entry.id !== "string") continue;
+    commands.push(entry.id);
+    const declared: { argsSchema?: JsonSchema; resultSchema?: JsonSchema } = {};
+    if (isTable(entry.args_schema)) declared.argsSchema = entry.args_schema;
+    if (isTable(entry.result_schema)) {
+      declared.resultSchema = entry.result_schema;
+    }
+    if (
+      declared.argsSchema !== undefined ||
+      declared.resultSchema !== undefined
+    ) {
+      schemas.set(entry.id, declared);
+    }
+  }
+  return { commands, schemas };
+}
+
 function readProvidedServices(services: unknown): ReadonlyMap<string, string> {
   const provided = new Map<string, string>();
   if (!isTable(services)) return provided;
@@ -140,6 +183,7 @@ export function loadManifestModel(source: string): ManifestModel {
   const version = typeof plugin.version === "string" ? plugin.version : "";
   const pluginApiRange =
     typeof compat["plugin-api"] === "string" ? compat["plugin-api"] : undefined;
+  const lazyCommands = readLazyCommands(lazy.commands);
 
   return {
     pluginId,
@@ -147,7 +191,8 @@ export function loadManifestModel(source: string): ManifestModel {
     version,
     ...(pluginApiRange === undefined ? {} : { pluginApiRange }),
     capabilities: readCapabilities(capabilities),
-    commands: readStringArray(lazy.commands),
+    commands: lazyCommands.commands,
+    commandSchemas: lazyCommands.schemas,
     events: readStringArray(lazy.events),
     claims: readStringArray(lazy.claims),
     providedServices: readProvidedServices(parsed.services),
