@@ -12,7 +12,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { runConformanceDirectory } from "../src/conformance.js";
-import { EVENT_KINDS, MOCK_LIMITS } from "../src/host-surface.js";
+import {
+  CAPABILITY_GATED_SURFACE,
+  EVENT_KINDS,
+  MOCK_LIMITS,
+  PLUGIN_API_VERSION,
+  SNAPSHOT_SCOPE_ONLY,
+  V1_SURFACE_FUNCTIONS,
+} from "../src/host-surface.js";
 
 const CONFORMANCE_DIR = join(import.meta.dir, "..", "conformance");
 const CASES_DIR = join(CONFORMANCE_DIR, "cases");
@@ -125,5 +132,61 @@ describe("accepted surface agreement", () => {
     expect(MOCK_LIMITS.SNAPSHOT_MAX_BYTES).toBe(256 * 1024);
     expect(MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES).toBe(16 * 1024);
     expect(MOCK_LIMITS.COMMAND_SCHEMA_MAX_DEPTH).toBe(16);
+  });
+
+  test("R-SDK-1 surface table agrees with the mock host model", () => {
+    const surface = JSON.parse(
+      readFileSync(
+        join(import.meta.dir, "..", "surface", "bitty-plugin-api-v1.json"),
+        "utf8",
+      ),
+    ) as {
+      module: string;
+      api_version: string;
+      functions: Array<{ path: string; capabilities: string[] }>;
+      events: Array<{ name: string; class: string }>;
+      excludedArgumentLiterals: Array<{
+        path: string;
+        argument: string;
+        value: string;
+      }>;
+    };
+    expect(surface.module).toBe("bitty");
+    expect(surface.api_version).toBe(PLUGIN_API_VERSION);
+
+    expect(surface.functions.map((entry) => entry.path).sort()).toEqual(
+      [...V1_SURFACE_FUNCTIONS].sort(),
+    );
+    expect(surface.events.map((entry) => entry.name)).toEqual(
+      EVENT_KINDS.map((entry) => entry.kind),
+    );
+    surface.events.forEach((entry, index) => {
+      const spec = EVENT_KINDS[index];
+      expect(spec).toBeDefined();
+      expect(entry.class.toLowerCase()).toBe(spec?.class ?? "");
+    });
+
+    const modeledCaps = new Map(
+      CAPABILITY_GATED_SURFACE.filter(
+        (entry) => !entry.surface.endsWith(":overlay"),
+      ).map((entry) => [
+        entry.surface.slice("bitty.".length),
+        entry.capability,
+      ]),
+    );
+    for (const fn of surface.functions) {
+      const expected = fn.capabilities.join("|");
+      const actual = modeledCaps.get(fn.path) ?? "";
+      expect(actual).toBe(expected);
+    }
+
+    const excludedRaw = surface.excludedArgumentLiterals.find(
+      (entry) =>
+        entry.path === "terminal.snapshot" &&
+        entry.argument === "scope" &&
+        entry.value === "raw",
+    );
+    expect(excludedRaw).toBeDefined();
+    expect(SNAPSHOT_SCOPE_ONLY).toBe("semantic");
   });
 });

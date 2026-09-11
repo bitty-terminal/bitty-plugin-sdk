@@ -84,7 +84,38 @@ export const CAPABILITY_GATED_SURFACE: readonly CapabilityGate[] = [
   { surface: "bitty.ui.update", capability: "ui.rich" },
   { surface: "bitty.ui.mount:overlay", capability: "ui.overlay" },
   { surface: "bitty.terminal.snapshot", capability: "terminal.semantic-read" },
+  { surface: "bitty.env.get", capability: "env:<KEY>" },
+  { surface: "bitty.env.has", capability: "env:<KEY>" },
 ];
+
+/**
+ * Modeled function paths, matching `surface/bitty-plugin-api-v1.json`
+ * (R-SDK-1) after its `bitty.` module prefix.
+ */
+export const V1_SURFACE_FUNCTIONS: readonly string[] = [
+  "commands.register",
+  "events.subscribe",
+  "keymaps.suggest",
+  "settings.get",
+  "settings.set",
+  "store.get",
+  "store.set",
+  "notify.show",
+  "env.get",
+  "env.has",
+  "services.get",
+  "services.provide",
+  "ui.mount",
+  "ui.update",
+  "terminal.snapshot",
+  "tasks.spawn",
+  "tasks.cancel",
+  "timers.create",
+  "timers.cancel",
+];
+
+/** The only snapshot scope accepted in v1 (`scope = "raw"` is excluded). */
+export const SNAPSHOT_SCOPE_ONLY = "semantic";
 
 /** The `bitty.env` capability family prefix (ADR 0006). */
 export const ENV_CAPABILITY_PREFIX = "env:";

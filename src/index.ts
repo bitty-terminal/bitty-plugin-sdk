@@ -55,10 +55,12 @@ export {
   MOCK_LIMITS,
   OBSERVATION_KINDS,
   PLUGIN_API_VERSION,
+  SNAPSHOT_SCOPE_ONLY,
   STORE_KEY_PATTERN,
   UI_SLOTS,
   UI_V1_EXCLUDED_NODE_KINDS,
   UI_V1_NODE_KINDS,
+  V1_SURFACE_FUNCTIONS,
 } from "./host-surface.js";
 export type { EventClass, EventKindSpec } from "./host-surface.js";
 export { schemaProblem, valueProblem } from "./json-schema.js";

@@ -2,9 +2,9 @@
 
 This repository provides developer-facing support for Bitty plugins: the
 accepted-contract validator for `bitty-plugin.toml` with the
-`bitty-plugin-lint` CLI, and the Plugin API v1 mock host with its conformance
-fixtures. The Lua helper SDK and LuaLS declarations remain pre-implementation
-under their own tasks.
+`bitty-plugin-lint` CLI, generated Plugin API v1 LuaLS declarations, and the
+Plugin API v1 mock host with its conformance fixtures. The Lua helper SDK
+remains pre-implementation under its own task.
 
 ## Ownership boundary
 
@@ -38,6 +38,19 @@ bun src/cli.ts --json bitty-plugin.toml     # machine-readable report
 The schema, diagnostic codes, capability table, and known contract gaps are
 documented in [`docs/manifest.md`](docs/manifest.md), with validated examples
 under [`docs/examples/`](docs/examples/).
+
+## Plugin API v1 LuaLS definitions
+
+`lua/bitty.d.lua` is generated from the accepted Plugin API v1 surface in
+`surface/bitty-plugin-api-v1.json` and checked for drift by `just check`
+(`just lua-defs-check`). The declarations cover L1 Control and the minimal L2
+UI surface only plus the closed v1 event set, and LuaLS conformance is verified
+with a clean positive example and a negative fixture for every excluded name.
+
+See [`docs/lua-defs.md`](docs/lua-defs.md) for LuaLS setup, coverage,
+exclusions, and validation commands, and
+[`lua/examples/minimal-init.lua`](lua/examples/minimal-init.lua) for a runnable
+example.
 
 ## Mock host and conformance fixtures
 
@@ -84,8 +97,9 @@ at the source.
 
 This repository does not currently provide:
 
-- a Lua SDK, helper library, or LuaLS declarations;
-- public Lua functions or host APIs beyond the test-double mock host;
+- a Lua helper SDK or library;
+- public Lua functions or host APIs beyond the generated declarations and the
+  test-double mock host;
 - installation commands or a published package;
 - host-version compatibility, deprecation, or support promises; or
 - a release, release schedule, or publication channel.

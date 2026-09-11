@@ -2,11 +2,12 @@
 
 Status: implemented by SDK task `CTX-0016` (R-SDK-3) for the cross-repository
 gate `CTX-0221`. The task depends on R-SDK-1 (LuaLS definitions) and R-SDK-2
-(manifest schema + `bitty-plugin-lint`). R-SDK-2 is merged; R-SDK-1 was still
-open at implementation time, so the mock host derives from the accepted
-`bitty-docs` contracts directly and must be reconciled with the R-SDK-1
-`surface/bitty-plugin-api-v1.json` table when that lands (tracked as a known
-gap below).
+(manifest schema + `bitty-plugin-lint`), both merged. The mock host derives
+identifiers from the accepted `bitty-docs` contracts; `tests/conformance.test.ts`
+additionally checks the modeled function paths, capability gates, event set,
+and raw-snapshot exclusion against the merged R-SDK-1
+`surface/bitty-plugin-api-v1.json` table so the mock, types, and docs cannot
+drift apart.
 
 The mock host is a **test double**, not a host implementation. It performs no
 I/O, spawns no process, opens no network, reads no secret, and holds no real
@@ -31,6 +32,10 @@ conformance tests can run deterministically on Bun only.
 - Bounded JSON Schema model:
   [CLI Contract RFC](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/specifications/cli-contract-rfc.md)
   as resolved by ADR 0009 LUA-OQ-3.
+- Machine-readable surface table (R-SDK-1):
+  `surface/bitty-plugin-api-v1.json`, generated into `lua/bitty.d.lua` (see
+  `docs/lua-defs.md`); `tests/conformance.test.ts` asserts agreement with this
+  table.
 - Reference host evidence (read-only): `bitty` `1ea2f66`
   `crates/bitty-plugin-host/src/{event,capability,host,manifest}.rs`.
 
@@ -262,11 +267,11 @@ validation, store bounds, UI/terminal gates, and service/task/timer behavior.
 
 ## Known gaps
 
-- **R-SDK-1 dependency.** `lua/bitty.d.lua` and
-  `surface/bitty-plugin-api-v1.json` were not merged when this mock host
-  landed. The identifiers here are copied from the accepted RFC/ADR text; a
-  follow-up must add a drift check against the R-SDK-1 surface table so mocks,
-  types, and docs cannot diverge.
+- **R-SDK-1 drift coverage.** The modeled function paths, capability gates,
+  event names/classes, and the raw-snapshot exclusion are checked against
+  `surface/bitty-plugin-api-v1.json` in `tests/conformance.test.ts`. LuaLS
+  semantics beyond those identifiers (type shapes) remain owned by R-SDK-1 and
+  are not restated by the mock.
 - **Manifest table forms.** ADR 0009 adds table forms for `[lazy].commands`
   and `[services.provided]`; the merged R-SDK-2 linter accepts only string
   forms, so the mock cannot exercise static/dynamic equivalence yet.

@@ -1,0 +1,1125 @@
+{
+  "format": "bitty-plugin-api-surface/v1",
+  "module": "bitty",
+  "api_version": "1.0.0",
+  "output": "lua/bitty.d.lua",
+  "sources": [
+    {
+      "repository": "bitty-docs",
+      "path": "docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md",
+      "status": "accepted",
+      "revision": "e94d86ef6bcf4865a84119828756952e50f10266"
+    },
+    {
+      "repository": "bitty-docs",
+      "path": "docs/specifications/plugin-api-v1-lua-surface-rfc.md",
+      "status": "accepted",
+      "revision": "e94d86ef6bcf4865a84119828756952e50f10266"
+    }
+  ],
+  "types": [
+    {
+      "name": "BittyCommandHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned handle returned by bitty.commands.register."
+    },
+    {
+      "name": "BittySubscriptionHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned handle returned by bitty.events.subscribe."
+    },
+    {
+      "name": "BittyKeymapHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned handle returned by bitty.keymaps.suggest."
+    },
+    {
+      "name": "BittyServiceHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned handle returned by bitty.services.provide."
+    },
+    {
+      "name": "BittyBlockHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned block_id returned by bitty.ui.mount and accepted by bitty.ui.update."
+    },
+    {
+      "name": "BittyTaskHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned task handle returned by bitty.tasks.spawn; invalid after generation disposal."
+    },
+    {
+      "name": "BittyTimerHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned timer handle returned by bitty.timers.create; invalid after generation disposal."
+    },
+    {
+      "name": "BittyJsonSchema",
+      "kind": "alias",
+      "type": "table",
+      "doc": "Bounded JSON Schema fragment as accepted by the CLI Contract RFC and ADR 0009: depth at most 16, bounded string fields, explicit additionalProperties flag, at most CMD_SCHEMA_MAX_BYTES (16 KiB) per schema, no remote $ref, and no unbounded patterns."
+    },
+    {
+      "name": "BittyCommandDef",
+      "kind": "class",
+      "doc": "Command registration definition for bitty.commands.register; valid only during init.lua activation.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "doc": "Plugin-local command segment matching ^[a-z][a-z0-9-]{0,63}$; the host qualifies it to <plugin-id>:<id>."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "doc": "Bounded display text; host-rendered, never markup."
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "optional": true,
+          "doc": "Bounded display text."
+        },
+        {
+          "name": "args_schema",
+          "type": "BittyJsonSchema",
+          "optional": true,
+          "doc": "Argument schema validated by the host before dispatch."
+        },
+        {
+          "name": "result_schema",
+          "type": "BittyJsonSchema",
+          "optional": true,
+          "doc": "Result schema validated by the host before the result is returned."
+        },
+        {
+          "name": "run",
+          "type": "fun(args: table): any",
+          "doc": "Command body; args is a plain table already validated against args_schema."
+        }
+      ]
+    },
+    {
+      "name": "BittyCommandsNamespace",
+      "kind": "class",
+      "doc": "Command registration surface (L1). Registration is valid only while init.lua executes."
+    },
+    {
+      "name": "BittyEventName",
+      "kind": "alias",
+      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
+      "doc": "Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error."
+    },
+    {
+      "name": "BittyEmptyPayload",
+      "kind": "class",
+      "doc": "Event payload with no fields for lifecycle, signal, and coalescable observation events."
+    },
+    {
+      "name": "BittyTerminalOpenedPayload",
+      "kind": "class",
+      "doc": "terminal.opened payload delivering the accepted identity tuple.",
+      "fields": [
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "doc": "Terminal identity."
+        },
+        {
+          "name": "runtime_id",
+          "type": "integer",
+          "doc": "Live PTY incarnation identity."
+        },
+        {
+          "name": "generation",
+          "type": "integer",
+          "doc": "Registry generation that allocated the terminal; lets consumers detect stale identities."
+        }
+      ]
+    },
+    {
+      "name": "BittyTerminalClosedPayload",
+      "kind": "class",
+      "doc": "terminal.closed payload; emitted once per terminal as a cold-path event.",
+      "fields": [
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "doc": "Terminal identity."
+        },
+        {
+          "name": "runtime_id",
+          "type": "integer",
+          "doc": "Live PTY incarnation identity."
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "doc": "Bounded closed reason derived from the accepted TerminalClosed shape."
+        }
+      ]
+    },
+    {
+      "name": "BittyTerminalTitleChangedPayload",
+      "kind": "class",
+      "doc": "terminal.title-changed payload with attribution.",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "doc": "Bounded title text (EVENT_MAX_BYTES)."
+        },
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "doc": "Terminal identity."
+        },
+        {
+          "name": "runtime_id",
+          "type": "integer",
+          "doc": "Live PTY incarnation identity."
+        }
+      ]
+    },
+    {
+      "name": "BittyTerminalCwdChangedPayload",
+      "kind": "class",
+      "doc": "terminal.cwd-changed payload with attribution; treat cwd as sensitive-capable display data.",
+      "fields": [
+        {
+          "name": "cwd",
+          "type": "string",
+          "doc": "Bounded current working directory."
+        },
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "doc": "Terminal identity."
+        },
+        {
+          "name": "runtime_id",
+          "type": "integer",
+          "doc": "Live PTY incarnation identity."
+        }
+      ]
+    },
+    {
+      "name": "BittyFocusChangedPayload",
+      "kind": "class",
+      "doc": "focus.changed payload; coalescable.",
+      "fields": [
+        {
+          "name": "view_id",
+          "type": "integer",
+          "doc": "Focused view identity."
+        },
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "optional": true,
+          "doc": "Attached terminal identity when the focused view has one."
+        }
+      ]
+    },
+    {
+      "name": "BittySelectionChangedPayload",
+      "kind": "class",
+      "doc": "selection.changed payload; coalescable and carries no selection text in v1.",
+      "fields": [
+        { "name": "view_id", "type": "integer", "doc": "View identity." },
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "optional": true,
+          "doc": "Attached terminal identity when the view has one."
+        }
+      ]
+    },
+    {
+      "name": "BittyProcessExitedPayload",
+      "kind": "class",
+      "doc": "process.exited payload carrying the accepted exit-status field.",
+      "fields": [
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "doc": "Terminal identity."
+        },
+        {
+          "name": "runtime_id",
+          "type": "integer",
+          "doc": "Live PTY incarnation identity."
+        },
+        {
+          "name": "exit_code",
+          "type": "integer",
+          "doc": "Process exit status."
+        }
+      ]
+    },
+    {
+      "name": "BittyInterceptPayload",
+      "kind": "class",
+      "doc": "Interception payload with bounded sanitized metadata; rewriting content is not expressible.",
+      "fields": [
+        { "name": "action", "type": "string", "doc": "Bounded action label." },
+        { "name": "origin", "type": "string", "doc": "Bounded origin label." },
+        {
+          "name": "preview",
+          "type": "string",
+          "doc": "Bounded sanitized preview; intercept.paste never carries paste text without clipboard.read."
+        }
+      ]
+    },
+    {
+      "name": "BittyEventPayload",
+      "kind": "alias",
+      "type": "BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyInterceptPayload",
+      "doc": "Union of the closed v1 event payload shapes."
+    },
+    {
+      "name": "BittyEvent",
+      "kind": "class",
+      "doc": "Immutable bounded event envelope delivered to subscribed handlers.",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "BittyEventName",
+          "doc": "Event name from the closed v1 set."
+        },
+        {
+          "name": "sequence",
+          "type": "integer",
+          "doc": "Monotonic delivery sequence."
+        },
+        {
+          "name": "payload",
+          "type": "BittyEventPayload",
+          "doc": "Immutable payload copy, never a live core object."
+        }
+      ]
+    },
+    {
+      "name": "BittyEventHandler",
+      "kind": "alias",
+      "type": "fun(event: BittyEvent): boolean|nil",
+      "doc": "Observation and lifecycle return values are ignored; interception handlers return false to veto and anything else to approve."
+    },
+    {
+      "name": "BittyEventsNamespace",
+      "kind": "class",
+      "doc": "Event subscription surface (L1). Subscriptions must match manifest-declared event types."
+    },
+    {
+      "name": "BittyKeymapSuggestion",
+      "kind": "class",
+      "doc": "Key-binding suggestion for bitty.keymaps.suggest; suggestions never override user or workspace mappings.",
+      "fields": [
+        {
+          "name": "chord",
+          "type": "string",
+          "doc": "Chord in the shipped configuration grammar: trimmed, case-insensitive modifiers joined with + (ctrl, alt, shift, super); single-character keys require a modifier."
+        },
+        {
+          "name": "command",
+          "type": "string",
+          "doc": "Qualified name of a command registered by the same generation."
+        },
+        {
+          "name": "when",
+          "type": "\"global\"",
+          "optional": true,
+          "doc": "v1 context; must be absent or \"global\", any other value is a registration error."
+        }
+      ]
+    },
+    {
+      "name": "BittyKeymapsNamespace",
+      "kind": "class",
+      "doc": "Key-binding suggestion surface (L1); suggestions are declarations with no forced mutation."
+    },
+    {
+      "name": "BittySettingsValue",
+      "kind": "alias",
+      "type": "boolean|number|string|table",
+      "doc": "Plugin settings value; typed schema, merge, and reload semantics are owned by the accepted Configuration Model RFC."
+    },
+    {
+      "name": "BittySettingsNamespace",
+      "kind": "class",
+      "doc": "Plugin settings surface (L1); keys are dot paths relative to plugins.<owner>.<name> only."
+    },
+    {
+      "name": "BittyStoreValue",
+      "kind": "alias",
+      "type": "boolean|number|string|table",
+      "doc": "JSON-compatible plain data: depth at most 8, at most 1024 nodes, at most 8 KiB serialized (STORE_MAX_VALUE_BYTES); functions, metatables, cycles, and non-finite numbers are rejected."
+    },
+    {
+      "name": "BittyStoreNamespace",
+      "kind": "class",
+      "doc": "Quota-bounded persistent key-value area scoped to the plugin id and persisted across generations; STORE_QUOTA_BYTES default 256 KiB."
+    },
+    {
+      "name": "BittyNotifyPayload",
+      "kind": "class",
+      "doc": "Notification payload gated by platform.notify and subject to host rate policy.",
+      "fields": [
+        { "name": "title", "type": "string", "doc": "Bounded title text." },
+        {
+          "name": "body",
+          "type": "string",
+          "optional": true,
+          "doc": "Bounded body text."
+        },
+        {
+          "name": "urgency",
+          "type": "\"low\"|\"normal\"|\"critical\"",
+          "optional": true,
+          "doc": "Urgency level."
+        }
+      ]
+    },
+    {
+      "name": "BittyNotifyNamespace",
+      "kind": "class",
+      "doc": "Notification surface (L1) gated by platform.notify."
+    },
+    {
+      "name": "BittyEnvNamespace",
+      "kind": "class",
+      "optional": true,
+      "doc": "Environment read surface (L1) accepted by ADR 0006. This sub-table is absent unless the manifest declares an env:<KEY> capability; when declared but not granted its functions fail closed with E_CAPABILITY_DENIED and never enumerate keys."
+    },
+    {
+      "name": "BittyServiceGetOpts",
+      "kind": "class",
+      "doc": "Consumer-side service resolution options for bitty.services.get.",
+      "fields": [
+        {
+          "name": "version",
+          "type": "string",
+          "optional": true,
+          "doc": "Version requirement in the accepted grammar, for example \">=2.0\"."
+        },
+        {
+          "name": "optional",
+          "type": "boolean",
+          "optional": true,
+          "doc": "When true, a missing provider returns nil instead of failing with E_SERVICE_RESOLUTION."
+        }
+      ]
+    },
+    {
+      "name": "BittyService",
+      "kind": "alias",
+      "type": "table<string, fun(...): any>",
+      "doc": "Plain service table whose members are functions; calls are schema-validated by the host and return plain values, never cross-VM handles."
+    },
+    {
+      "name": "BittyServicesNamespace",
+      "kind": "class",
+      "doc": "Service consumer and provider surface (L1); provider declarations live in the manifest [services.provided] table form."
+    },
+    {
+      "name": "BittyUiSlot",
+      "kind": "alias",
+      "type": "\"terminal\"|\"top\"|\"bottom\"|\"left\"|\"right\"|\"tabline\"|\"statusline\"|\"overlay\"",
+      "doc": "Accepted closed slot set. tabline is an exclusive claim; status components compose; overlay is non-focusable presentation content."
+    },
+    {
+      "name": "BittySceneNode",
+      "kind": "alias",
+      "type": "table",
+      "doc": "Bounded declarative component table shaped by the accepted SceneNode contract; v1 accepts Text, Row, Column, and List subtrees only. Exact table encoding is owned by the accepted Rich Presentation RFC."
+    },
+    {
+      "name": "BittyUiNamespace",
+      "kind": "class",
+      "doc": "Declarative UI contribution surface (L2); rich content requires ui.rich and the overlay slot requires ui.overlay."
+    },
+    {
+      "name": "BittySnapshotOpts",
+      "kind": "class",
+      "doc": "Terminal snapshot options; only the semantic scope is accepted in v1.",
+      "fields": [
+        {
+          "name": "scope",
+          "type": "\"semantic\"",
+          "doc": "The only accepted v1 scope."
+        },
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "optional": true,
+          "doc": "Target terminal; defaults to the focused view's attached terminal and requires terminal.semantic-read."
+        }
+      ]
+    },
+    {
+      "name": "BittyCellColor",
+      "kind": "alias",
+      "type": "\"default\"|integer|string",
+      "doc": "Color value: \"default\", a palette index 0..255, or an \"#RRGGBB\" string."
+    },
+    {
+      "name": "BittyCellAttrs",
+      "kind": "class",
+      "doc": "Non-default cell attributes carried by a snapshot span; false boolean flags are omitted.",
+      "fields": [
+        {
+          "name": "bold",
+          "type": "boolean",
+          "optional": true,
+          "doc": "Bold attribute."
+        },
+        {
+          "name": "faint",
+          "type": "boolean",
+          "optional": true,
+          "doc": "Faint attribute."
+        },
+        {
+          "name": "italic",
+          "type": "boolean",
+          "optional": true,
+          "doc": "Italic attribute."
+        },
+        {
+          "name": "blink",
+          "type": "boolean",
+          "optional": true,
+          "doc": "Blink attribute."
+        },
+        {
+          "name": "inverse",
+          "type": "boolean",
+          "optional": true,
+          "doc": "Inverse attribute."
+        },
+        {
+          "name": "invisible",
+          "type": "boolean",
+          "optional": true,
+          "doc": "Invisible attribute."
+        },
+        {
+          "name": "strikethrough",
+          "type": "boolean",
+          "optional": true,
+          "doc": "Strikethrough attribute."
+        },
+        {
+          "name": "underline",
+          "type": "\"none\"|\"single\"|\"double\"|\"curly\"|\"dotted\"|\"dashed\"",
+          "optional": true,
+          "doc": "Underline style."
+        },
+        {
+          "name": "fg",
+          "type": "BittyCellColor",
+          "optional": true,
+          "doc": "Foreground color."
+        },
+        {
+          "name": "bg",
+          "type": "BittyCellColor",
+          "optional": true,
+          "doc": "Background color."
+        },
+        {
+          "name": "underline_color",
+          "type": "BittyCellColor",
+          "optional": true,
+          "doc": "Underline color."
+        }
+      ]
+    },
+    {
+      "name": "BittyCellSpan",
+      "kind": "class",
+      "doc": "Half-open column range [start, end) carrying only non-default attributes.",
+      "fields": [
+        {
+          "name": "start",
+          "type": "integer",
+          "doc": "Inclusive start column."
+        },
+        { "name": "end", "type": "integer", "doc": "Exclusive end column." },
+        {
+          "name": "attrs",
+          "type": "BittyCellAttrs",
+          "doc": "Non-default attributes for the range."
+        }
+      ]
+    },
+    {
+      "name": "BittySnapshotRow",
+      "kind": "class",
+      "doc": "One visible snapshot row with its semantic spans.",
+      "fields": [
+        {
+          "name": "text",
+          "type": "string",
+          "doc": "Visible row text as UTF-8."
+        },
+        {
+          "name": "spans",
+          "type": "BittyCellSpan[]",
+          "doc": "Attribute spans over the row."
+        }
+      ]
+    },
+    {
+      "name": "BittySnapshotCursor",
+      "kind": "class",
+      "doc": "Cursor position within the snapshot region.",
+      "fields": [
+        { "name": "row", "type": "integer", "doc": "Cursor row." },
+        { "name": "col", "type": "integer", "doc": "Cursor column." },
+        {
+          "name": "visible",
+          "type": "boolean",
+          "doc": "Whether the cursor is visible."
+        }
+      ]
+    },
+    {
+      "name": "BittySnapshotModes",
+      "kind": "class",
+      "doc": "Bounded mode flags reflected by the snapshot.",
+      "fields": [
+        {
+          "name": "alternate_screen",
+          "type": "boolean",
+          "doc": "Whether the alternate screen is active; zones may be absent while true."
+        }
+      ]
+    },
+    {
+      "name": "BittyZoneKind",
+      "kind": "alias",
+      "type": "\"prompt\"|\"input\"|\"command\"|\"output\"|\"unknown\"",
+      "doc": "Semantic zone kinds derived from committed terminal state (OSC 7/133); unknown covers terminals without shell integration."
+    },
+    {
+      "name": "BittyZoneRange",
+      "kind": "class",
+      "doc": "Line range of a semantic zone.",
+      "fields": [
+        {
+          "name": "start_line",
+          "type": "integer",
+          "doc": "First line of the zone."
+        },
+        {
+          "name": "end_line",
+          "type": "integer",
+          "doc": "Last line of the zone."
+        }
+      ]
+    },
+    {
+      "name": "BittyZoneMetadata",
+      "kind": "class",
+      "doc": "Bounded untrusted zone metadata; values are never expanded or executed.",
+      "fields": [
+        {
+          "name": "cwd",
+          "type": "string",
+          "optional": true,
+          "doc": "Zone working directory."
+        },
+        {
+          "name": "host",
+          "type": "string",
+          "optional": true,
+          "doc": "Zone host name."
+        },
+        {
+          "name": "command",
+          "type": "string",
+          "optional": true,
+          "doc": "Command text."
+        },
+        {
+          "name": "exit_code",
+          "type": "integer",
+          "optional": true,
+          "doc": "Command exit status."
+        }
+      ]
+    },
+    {
+      "name": "BittySemanticZone",
+      "kind": "class",
+      "doc": "Semantic zone in a terminal snapshot.",
+      "fields": [
+        { "name": "kind", "type": "BittyZoneKind", "doc": "Zone kind." },
+        {
+          "name": "range",
+          "type": "BittyZoneRange",
+          "doc": "Zone line range."
+        },
+        {
+          "name": "metadata",
+          "type": "BittyZoneMetadata",
+          "optional": true,
+          "doc": "Bounded zone metadata."
+        }
+      ]
+    },
+    {
+      "name": "BittyTerminalSnapshot",
+      "kind": "class",
+      "doc": "Read-only semantic snapshot of the visible viewport; a serialized snapshot over SNAPSHOT_MAX_BYTES (256 KiB) is rejected with E_SNAPSHOT_TOO_LARGE rather than truncated.",
+      "fields": [
+        {
+          "name": "version",
+          "type": "integer",
+          "doc": "Snapshot contract version (1)."
+        },
+        {
+          "name": "terminal_id",
+          "type": "integer",
+          "doc": "Terminal identity."
+        },
+        {
+          "name": "runtime_id",
+          "type": "integer",
+          "doc": "Live PTY incarnation identity."
+        },
+        {
+          "name": "generation",
+          "type": "integer",
+          "doc": "Registry generation."
+        },
+        {
+          "name": "snapshot_generation",
+          "type": "integer",
+          "doc": "Terminal damage generation reflected by the snapshot."
+        },
+        {
+          "name": "width",
+          "type": "integer",
+          "doc": "Grid columns in the snapshot region."
+        },
+        {
+          "name": "height",
+          "type": "integer",
+          "doc": "Grid rows in the snapshot region."
+        },
+        {
+          "name": "rows",
+          "type": "BittySnapshotRow[]",
+          "doc": "Visible rows, top-down."
+        },
+        {
+          "name": "cursor",
+          "type": "BittySnapshotCursor",
+          "doc": "Cursor state."
+        },
+        { "name": "modes", "type": "BittySnapshotModes", "doc": "Mode flags." },
+        { "name": "title", "type": "string", "doc": "Bounded title text." },
+        {
+          "name": "zones",
+          "type": "BittySemanticZone[]",
+          "optional": true,
+          "doc": "Semantic zones; may be absent."
+        }
+      ]
+    },
+    {
+      "name": "BittyTerminalNamespace",
+      "kind": "class",
+      "doc": "Read-only terminal observation surface (L2) gated by terminal.semantic-read; there is no write path to grid, cursor, modes, or scrollback in v1."
+    },
+    {
+      "name": "BittyTasksNamespace",
+      "kind": "class",
+      "doc": "Host-owned task surface (L1) capped at 64 live tasks per plugin; exceeding the cap fails with E_BUDGET_TASK and never queues silently."
+    },
+    {
+      "name": "BittyTimersNamespace",
+      "kind": "class",
+      "doc": "Host-owned one-shot timer surface (L1) capped at 32 live timers per plugin; exceeding the cap fails with E_BUDGET_TIMER."
+    }
+  ],
+  "functions": [
+    {
+      "path": "commands.register",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Registers a plugin command; valid only during init.lua activation. The qualified name must already be reserved in the manifest [lazy].commands, duplicate qualified names are rejected at graph construction, and a later registration attempt is a registration error.",
+      "params": [{ "name": "def", "type": "BittyCommandDef" }],
+      "returns": [{ "type": "BittyCommandHandle" }]
+    },
+    {
+      "path": "events.subscribe",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Subscribes to one closed v1 event name; the type must be declared for the plugin. Observation and lifecycle handler results are ignored; interception handlers return false to veto, anything else to approve.",
+      "params": [
+        { "name": "name", "type": "BittyEventName" },
+        { "name": "handler", "type": "BittyEventHandler" }
+      ],
+      "returns": [{ "type": "BittySubscriptionHandle" }]
+    },
+    {
+      "path": "keymaps.suggest",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Suggests a key binding for a command registered by the same generation; the accepted precedence user > workspace > first-party/default > plugin always applies and conflicts produce diagnostics for user resolution.",
+      "params": [{ "name": "def", "type": "BittyKeymapSuggestion" }],
+      "returns": [{ "type": "BittyKeymapHandle" }]
+    },
+    {
+      "path": "settings.get",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Reads a key relative to plugins.<owner>.<name>; plugins cannot read outside their own namespace.",
+      "params": [{ "name": "key", "type": "string" }],
+      "returns": [{ "type": "BittySettingsValue" }]
+    },
+    {
+      "path": "settings.set",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Writes a key relative to plugins.<owner>.<name>; plugins cannot write outside their own namespace.",
+      "params": [
+        { "name": "key", "type": "string" },
+        { "name": "value", "type": "BittySettingsValue" }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "store.get",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Reads a persisted value by key; keys match ^[a-z0-9][a-z0-9._-]{0,127}$ and the store survives suspension, reload, and generation disposal.",
+      "params": [{ "name": "key", "type": "string" }],
+      "returns": [{ "type": "BittyStoreValue|nil" }]
+    },
+    {
+      "path": "store.set",
+      "level": "L1",
+      "capabilities": [],
+      "errors": ["E_STORE_VALUE_INVALID", "E_STORE_QUOTA"],
+      "doc": "Writes or, with nil, deletes a persisted value; writes are synchronous and fail closed on value invalidity or quota overflow without partial writes.",
+      "params": [
+        { "name": "key", "type": "string" },
+        { "name": "value", "type": "BittyStoreValue|nil" }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "notify.show",
+      "level": "L1",
+      "capabilities": ["platform.notify"],
+      "errors": ["E_CAPABILITY_DENIED"],
+      "doc": "Shows a host-rendered notification via the platform.notify capability, subject to host rate policy.",
+      "params": [{ "name": "payload", "type": "BittyNotifyPayload" }],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "env.get",
+      "level": "L1",
+      "capabilities": ["env:<KEY>"],
+      "errors": [
+        "E_ENV_KEY_INVALID",
+        "E_ENV_VALUE_TOO_LARGE",
+        "E_CAPABILITY_DENIED"
+      ],
+      "doc": "Reads a desensitized environment value for a bounded ASCII key matching ^[A-Z_][A-Z0-9_]*$ (1..64); keys outside the allowlist return nil, indistinguishable from an unset variable. Available only when the namespace is declared.",
+      "params": [{ "name": "name", "type": "string" }],
+      "returns": [{ "type": "string|nil" }]
+    },
+    {
+      "path": "env.has",
+      "level": "L1",
+      "capabilities": ["env:<KEY>"],
+      "errors": ["E_ENV_KEY_INVALID", "E_CAPABILITY_DENIED"],
+      "doc": "Reports presence without exposing the value beyond the trace surface. Available only when the namespace is declared.",
+      "params": [{ "name": "name", "type": "string" }],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "services.get",
+      "level": "L1",
+      "capabilities": [],
+      "errors": ["E_SERVICE_RESOLUTION", "E_SERVICE_GONE"],
+      "doc": "Resolves a provider before activation; a missing provider fails closed with E_SERVICE_RESOLUTION unless opts.optional is true, and provider disappearance makes in-flight calls fail closed with E_SERVICE_GONE.",
+      "params": [
+        { "name": "iface", "type": "string" },
+        { "name": "opts", "type": "BittyServiceGetOpts", "optional": true }
+      ],
+      "returns": [{ "type": "BittyService|nil" }]
+    },
+    {
+      "path": "services.provide",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Provides an interface implementation during activation; the interface, version, and bounded schemas must already be declared in the manifest [services.provided] table form, and arguments and results are schema-validated by the host.",
+      "params": [
+        { "name": "iface", "type": "string" },
+        { "name": "impl", "type": "BittyService" }
+      ],
+      "returns": [{ "type": "BittyServiceHandle" }]
+    },
+    {
+      "path": "ui.mount",
+      "level": "L2",
+      "capabilities": ["ui.rich"],
+      "errors": ["E_CAPABILITY_DENIED", "E_UI_COMPONENT_INVALID"],
+      "doc": "Mounts declarative component content into an accepted semantic slot; rich content requires ui.rich and the overlay slot additionally requires ui.overlay. Host layout owns placement and decoration, and there are no global coordinates, shaders, pipelines, glyph injection, native windows, or renderer handles.",
+      "params": [
+        { "name": "slot", "type": "BittyUiSlot" },
+        { "name": "component", "type": "BittySceneNode" }
+      ],
+      "returns": [{ "type": "BittyBlockHandle" }]
+    },
+    {
+      "path": "ui.update",
+      "level": "L2",
+      "capabilities": ["ui.rich"],
+      "errors": ["E_CAPABILITY_DENIED", "E_UI_COMPONENT_INVALID"],
+      "doc": "Replaces a block's scene subtree under the same block_id with an incremented version; returns false for a stale or foreign handle and raises E_UI_COMPONENT_INVALID for a component that violates the scene contract.",
+      "params": [
+        { "name": "handle", "type": "BittyBlockHandle" },
+        { "name": "component", "type": "BittySceneNode" }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "terminal.snapshot",
+      "level": "L2",
+      "capabilities": ["terminal.semantic-read"],
+      "errors": ["E_CAPABILITY_DENIED", "E_SNAPSHOT_TOO_LARGE"],
+      "doc": "Returns a read-only semantic snapshot of the visible viewport; only the semantic scope is accepted in v1 and there is no raw scope, scrollback, or full-grid selection.",
+      "params": [{ "name": "opts", "type": "BittySnapshotOpts" }],
+      "returns": [{ "type": "BittyTerminalSnapshot" }]
+    },
+    {
+      "path": "tasks.spawn",
+      "level": "L1",
+      "capabilities": [],
+      "errors": ["E_BUDGET_TASK"],
+      "doc": "Spawns a host-owned task wrapping a Lua continuation; handles are generation-owned and all generation N handles fail closed after disposal.",
+      "params": [{ "name": "fn", "type": "fun(): any" }],
+      "returns": [{ "type": "BittyTaskHandle" }]
+    },
+    {
+      "path": "tasks.cancel",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Cancels a task cooperatively at the next host slice; cancellation releases the cap slot and there is no Lua-visible abort hook in v1.",
+      "params": [{ "name": "task_id", "type": "BittyTaskHandle" }],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "timers.create",
+      "level": "L1",
+      "capabilities": [],
+      "errors": ["E_BUDGET_TIMER"],
+      "doc": "Creates a generation-owned one-shot timer; repeating timers are a 1.x minor addition.",
+      "params": [
+        { "name": "delay_ms", "type": "integer" },
+        { "name": "callback", "type": "fun(): any" }
+      ],
+      "returns": [{ "type": "BittyTimerHandle" }]
+    },
+    {
+      "path": "timers.cancel",
+      "level": "L1",
+      "capabilities": [],
+      "errors": [],
+      "doc": "Cancels a timer and releases the cap slot; handles from a disposed generation fail closed.",
+      "params": [{ "name": "timer_id", "type": "BittyTimerHandle" }],
+      "returns": [{ "type": "boolean" }]
+    }
+  ],
+  "events": [
+    {
+      "name": "plugin.activated",
+      "class": "Lifecycle",
+      "payload": "BittyEmptyPayload"
+    },
+    {
+      "name": "plugin.suspended",
+      "class": "Lifecycle",
+      "payload": "BittyEmptyPayload"
+    },
+    {
+      "name": "plugin.disposed",
+      "class": "Lifecycle",
+      "payload": "BittyEmptyPayload"
+    },
+    {
+      "name": "handler.violation",
+      "class": "Lifecycle",
+      "payload": "BittyEmptyPayload"
+    },
+    {
+      "name": "terminal.opened",
+      "class": "Observation",
+      "payload": "BittyTerminalOpenedPayload"
+    },
+    {
+      "name": "terminal.closed",
+      "class": "Observation",
+      "payload": "BittyTerminalClosedPayload"
+    },
+    {
+      "name": "terminal.title-changed",
+      "class": "Observation",
+      "payload": "BittyTerminalTitleChangedPayload"
+    },
+    {
+      "name": "terminal.cwd-changed",
+      "class": "Observation",
+      "payload": "BittyTerminalCwdChangedPayload"
+    },
+    {
+      "name": "terminal.bell",
+      "class": "Observation",
+      "payload": "BittyEmptyPayload"
+    },
+    {
+      "name": "focus.changed",
+      "class": "Observation",
+      "payload": "BittyFocusChangedPayload"
+    },
+    {
+      "name": "selection.changed",
+      "class": "Observation",
+      "payload": "BittySelectionChangedPayload"
+    },
+    {
+      "name": "process.exited",
+      "class": "Observation",
+      "payload": "BittyProcessExitedPayload"
+    },
+    {
+      "name": "config.reloaded",
+      "class": "Observation",
+      "payload": "BittyEmptyPayload"
+    },
+    {
+      "name": "intercept.command-dispatch",
+      "class": "Interception",
+      "payload": "BittyInterceptPayload"
+    },
+    {
+      "name": "intercept.terminal-spawn",
+      "class": "Interception",
+      "payload": "BittyInterceptPayload"
+    },
+    {
+      "name": "intercept.paste",
+      "class": "Interception",
+      "payload": "BittyInterceptPayload"
+    },
+    {
+      "name": "intercept.open-url",
+      "class": "Interception",
+      "payload": "BittyInterceptPayload"
+    }
+  ],
+  "exclusions": [
+    {
+      "path": "bitty.api",
+      "reason": "No bitty.api alias namespace; the module root is bitty and there is one spelling per concept."
+    },
+    {
+      "path": "bitty.register_command",
+      "reason": "Flat command spelling rejected; the accepted spelling is bitty.commands.register."
+    },
+    {
+      "path": "bitty.on_event",
+      "reason": "Flat event spelling rejected; the accepted spelling is bitty.events.subscribe."
+    },
+    {
+      "path": "bitty.get_terminal_state",
+      "reason": "Flat terminal spelling rejected; the accepted spelling is bitty.terminal.snapshot."
+    },
+    {
+      "path": "bitty.ui.register_panel",
+      "reason": "Panel providers are post-v1.0; bitty.ui.mount contributes declarative slot content only."
+    },
+    {
+      "path": "bitty.fs",
+      "reason": "No filesystem entry point in v1; fs.* grants remain a separate capability path."
+    },
+    {
+      "path": "bitty.process",
+      "reason": "No process entry point in v1."
+    },
+    {
+      "path": "bitty.network",
+      "reason": "No network entry point in v1."
+    },
+    {
+      "path": "bitty.clipboard",
+      "reason": "No clipboard entry point in v1; intercept.paste never carries paste text without clipboard.read."
+    },
+    {
+      "path": "bitty.ipc",
+      "reason": "No IPC entry point in v1."
+    },
+    {
+      "path": "bitty.renderer",
+      "reason": "No renderer handle in v1; the renderer stays replaceable."
+    },
+    {
+      "path": "bitty.protocol",
+      "reason": "Level 4 protocol registration is excluded; no OSC/APC handler registration."
+    },
+    {
+      "path": "bitty.decorations",
+      "reason": "Level 3 presentation is excluded in v1."
+    },
+    {
+      "path": "bitty.annotations",
+      "reason": "Level 3 presentation is excluded in v1."
+    },
+    {
+      "path": "bitty.highlighting",
+      "reason": "Level 3 presentation is excluded in v1."
+    },
+    {
+      "path": "bitty.task",
+      "reason": "Singular task namespace rejected; the accepted spelling is bitty.tasks."
+    },
+    {
+      "path": "bitty.timer",
+      "reason": "Singular timer namespace rejected; the accepted spelling is bitty.timers."
+    },
+    {
+      "path": "bitty.ui.protocol-register",
+      "reason": "Level 4 protocol registration is excluded in v1."
+    }
+  ],
+  "excludedArgumentLiterals": [
+    {
+      "path": "terminal.snapshot",
+      "argument": "scope",
+      "value": "raw",
+      "reason": "The raw snapshot scope is explicitly excluded from v1; only semantic is accepted."
+    }
+  ]
+}
