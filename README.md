@@ -6,6 +6,21 @@ accepted-contract validator for `bitty-plugin.toml` with the
 Plugin API v1 mock host with its conformance fixtures. The Lua helper SDK
 remains pre-implementation under its own task.
 
+## See the project workflow (CarryCtx)
+
+CarryCtx engineering state (tasks, sessions, checkpoints) is not cloned. A
+fresh clone restores it from the in-repo `refs/heads/carryctx-snapshots`
+branch:
+
+```sh
+just workflow-import-dry   # fetch + validate the snapshot; no DB writes
+just workflow-import       # initialize CarryCtx state if needed, then import
+```
+
+Then `carryctx stats` reports the restored tasks, sessions, and checkpoints.
+Provenance, redaction, and `--force` behavior are covered under the
+repository snapshot documentation below.
+
 ## Ownership boundary
 
 This repository will own SDK-specific implementation evidence and contributor
