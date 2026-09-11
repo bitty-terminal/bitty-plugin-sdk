@@ -158,6 +158,27 @@ describe("generated definitions", () => {
     }
   });
 
+  test("require services.get opts and opts.version per the accepted signature", () => {
+    const get = surface.functions.find((fn) => fn.path === "services.get");
+    expect(
+      get?.params.map((param) => [param.name, param.optional ?? false]),
+    ).toEqual([
+      ["iface", false],
+      ["opts", false],
+    ]);
+    const opts = surface.types.find(
+      (type) => type.name === "BittyServiceGetOpts",
+    );
+    const version = opts?.fields?.find((field) => field.name === "version");
+    const optional = opts?.fields?.find((field) => field.name === "optional");
+    expect(version?.optional ?? false).toBe(false);
+    expect(optional?.optional).toBe(true);
+    expect(defs).toContain("---@param opts BittyServiceGetOpts");
+    expect(defs).not.toContain("---@param opts? BittyServiceGetOpts");
+    expect(defs).toMatch(/^---@field version string\b/m);
+    expect(defs).not.toMatch(/^---@field version\? string\b/m);
+  });
+
   test("declare every type and no undeclared globals", () => {
     for (const type of surface.types) {
       const pattern = new RegExp(
