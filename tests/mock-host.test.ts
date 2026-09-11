@@ -679,10 +679,25 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
       hello: (args) => `hello ${(args as { name: string }).name}`,
     });
     host.endActivation();
+    const get = host.bitty.services.get as unknown as (
+      iface: string,
+      opts?: unknown,
+    ) => unknown;
     const service = host.bitty.services.get("conformance.greet", {
       version: ">=1.0.0",
     });
     expect(service?.hello?.({ name: "ada" })).toBe("hello ada");
+    const missingOpts = denial(() => get("conformance.greet"));
+    expect(missingOpts.code).toBe(HOST_CODES.SERVICE_VERSION_INVALID);
+    expect(missingOpts.class).toBe("validation");
+    expect(missingOpts.path).toBe("opts");
+    const missingVersion = denial(() => get("conformance.greet", {}));
+    expect(missingVersion.code).toBe(HOST_CODES.SERVICE_VERSION_INVALID);
+    expect(missingVersion.class).toBe("validation");
+    expect(missingVersion.path).toBe("opts.version");
+    expect(
+      denial(() => get("conformance.greet", { optional: true })).code,
+    ).toBe(HOST_CODES.SERVICE_VERSION_INVALID);
     host.removeService("conformance.greet");
     expect(denial(() => service?.hello?.({ name: "ada" })).code).toBe(
       HOST_CODES.SERVICE_GONE,
@@ -693,7 +708,10 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
       ).code,
     ).toBe(HOST_CODES.SERVICE_RESOLUTION);
     expect(
-      host.bitty.services.get("conformance.greet", { optional: true }),
+      host.bitty.services.get("conformance.greet", {
+        version: ">=1.0.0",
+        optional: true,
+      }),
     ).toBeUndefined();
   });
 

@@ -93,7 +93,7 @@ export interface ResolvedService {
 
 /** Options accepted by `bitty.services.get`. */
 export interface ServiceGetOptions {
-  readonly version?: string;
+  readonly version: string;
   readonly optional?: boolean;
 }
 
@@ -458,7 +458,7 @@ export class MockHost {
       snapshot(opts?: SnapshotOptions): Record<string, unknown>;
     };
     readonly services: {
-      get(iface: string, opts?: ServiceGetOptions): ResolvedService | undefined;
+      get(iface: string, opts: ServiceGetOptions): ResolvedService | undefined;
       provide(iface: string, impl: Record<string, ServiceMethod>): number;
     };
     readonly tasks: {
@@ -549,7 +549,7 @@ export class MockHost {
       services: {
         get: (
           iface: string,
-          opts?: ServiceGetOptions,
+          opts: ServiceGetOptions,
         ): ResolvedService | undefined => this.servicesGet(iface, opts),
         provide: (iface: string, impl: Record<string, ServiceMethod>): number =>
           this.servicesProvide(iface, impl),
@@ -1296,9 +1296,25 @@ export class MockHost {
 
   private servicesGet(
     iface: string,
-    opts: ServiceGetOptions = {},
+    opts: ServiceGetOptions,
   ): ResolvedService | undefined {
     this.assertAlive();
+    if (!isPlainObject(opts)) {
+      fail(
+        "validation",
+        HOST_CODES.SERVICE_VERSION_INVALID,
+        "services.get requires opts",
+        "opts",
+      );
+    }
+    if (typeof opts.version !== "string" || opts.version.length === 0) {
+      fail(
+        "validation",
+        HOST_CODES.SERVICE_VERSION_INVALID,
+        "services.get requires opts.version",
+        "opts.version",
+      );
+    }
     const record = this.services.get(iface);
     const optional = opts.optional === true;
     if (record === undefined || !record.alive) {
