@@ -92,7 +92,7 @@ waits on wall-clock time.
 | `env`      | Absent unless declared; denied until granted; granted allowlist only; 4 KiB value bound                 |
 | `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; v1 node kinds only; generation-owned block handles   |
 | `terminal` | `terminal.semantic-read` gate; `scope = "semantic"` only; 256 KiB snapshot bound; read-only copy        |
-| `services` | Declared providers only; version requirement; `E_SERVICE_RESOLUTION`; liveness-checked calls            |
+| `services` | Declared providers only; required `opts.version`; `E_SERVICE_RESOLUTION`; liveness-checked calls        |
 | `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles          |
 | `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles          |
 
@@ -180,7 +180,8 @@ for an accepted code): registration and lifecycle state (`E_REGISTRATION_CLOSED`
 keymaps and definitions (`E_KEYMAP_WHEN_UNSUPPORTED`, `E_KEYMAP_CHORD_INVALID`,
 `E_KEYMAP_COMMAND_UNKNOWN`, `E_DEF_INVALID`), store and settings keys
 (`E_STORE_KEY_INVALID`, `E_SETTINGS_KEY_INVALID`), snapshot scope
-(`E_SNAPSHOT_SCOPE_UNSUPPORTED`), services (`E_SERVICE_UNDECLARED`,
+(`E_SNAPSHOT_SCOPE_UNSUPPORTED`), services (`E_SERVICE_UNDECLARED`; a missing
+`opts` or `opts.version` fails the accepted required-argument validation with
 `E_SERVICE_VERSION_INVALID`), and `E_HANDLER_VIOLATION` for recorded handler
 faults.
 

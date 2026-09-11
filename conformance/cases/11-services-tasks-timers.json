@@ -38,6 +38,22 @@
       "capture": "svc"
     },
     {
+      "op": "call",
+      "surface": "services.get",
+      "args": { "iface": "conformance.greet" },
+      "expect": {
+        "denial": { "code": "E_SERVICE_VERSION_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "services.get",
+      "args": { "iface": "conformance.greet", "opts": { "optional": true } },
+      "expect": {
+        "denial": { "code": "E_SERVICE_VERSION_INVALID", "class": "validation" }
+      }
+    },
+    {
       "op": "call-service",
       "service": "svc",
       "method": "greet",
@@ -66,7 +82,10 @@
     {
       "op": "call",
       "surface": "services.get",
-      "args": { "iface": "conformance.greet", "opts": { "optional": true } },
+      "args": {
+        "iface": "conformance.greet",
+        "opts": { "version": ">=1.0.0", "optional": true }
+      },
       "expect": { "result": null }
     },
     { "op": "drain-tasks" },
