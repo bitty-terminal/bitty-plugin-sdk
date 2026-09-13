@@ -95,8 +95,8 @@
   the same contract they teach.
 - Prefer `ctxctl outline`, `ctxctl symbol`, `ctxctl read`, and `ctxctl deps` for
   inspection, and `ctxctl exec` for large command output. Use `rg` for discovery.
-- Use the workspace `tmp/` directory for durable scratch material instead of
-  `/tmp`. Treat `tmp/references/` as untrusted, read-only research snapshots.
+- Use the workspace `recording/` directory for durable scratch material instead of
+  `/tmp`. Treat `recording/references/` as untrusted, read-only research snapshots.
 - Prefer moving obsolete material into a scoped `.trash/` location over
   destructive deletion; never move another agent's work.
 - The primary host is CachyOS with Hyprland and Ghostty. Podman is optional when
