@@ -14,7 +14,11 @@ import { parse } from "smol-toml";
 import { error, type Diagnostic } from "./diagnostics.js";
 import type { JsonSchema } from "./json-schema.js";
 import { lintManifestSource } from "./manifest.js";
-import { MANIFEST_MAX_DEPTH } from "./schema.js";
+import {
+  MANIFEST_MAX_DEPTH,
+  collectProvidedServices,
+  type ProvidedServiceEntry,
+} from "./schema.js";
 
 /** Bounded static schema metadata declared by one table-form lazy command. */
 export interface LazyCommandSchema {
@@ -153,37 +157,6 @@ function readLazyCommands(value: unknown): {
   return { commands, schemas };
 }
 
-const PROVIDED_SERVICE_FORM_KEYS: ReadonlySet<string> = new Set([
-  "version",
-  "args_schema",
-  "result_schema",
-]);
-
-/**
- * Reconstruct dotted interface names from the nested shape TOML produces for
- * bare dotted and quoted keys. A table carrying any table-form key is the
- * entry itself; every other table is an intermediate namespace and is walked.
- */
-function collectProvidedServices(
-  table: Table,
-  prefix: string,
-  entries: Array<{ readonly path: string; readonly value: unknown }>,
-): void {
-  for (const [key, value] of Object.entries(table)) {
-    const path = prefix === "" ? key : `${prefix}.${key}`;
-    const isFormTable =
-      isTable(value) &&
-      Object.keys(value).some((member) =>
-        PROVIDED_SERVICE_FORM_KEYS.has(member),
-      );
-    if (isTable(value) && !isFormTable) {
-      collectProvidedServices(value, path, entries);
-    } else {
-      entries.push({ path, value });
-    }
-  }
-}
-
 /**
  * Read `[services.provided]` from both accepted forms: the string form and the
  * ADR 0009 table form `{ version, args_schema?, result_schema? }`. Versions and
@@ -199,7 +172,7 @@ function readProvidedServices(services: unknown): {
   if (!isTable(services)) return { versions, schemas };
   const table = services.provided;
   if (!isTable(table)) return { versions, schemas };
-  const entries: Array<{ readonly path: string; readonly value: unknown }> = [];
+  const entries: ProvidedServiceEntry[] = [];
   collectProvidedServices(table, "", entries);
   for (const entry of entries) {
     if (typeof entry.value === "string") {

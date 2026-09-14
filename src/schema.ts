@@ -151,3 +151,51 @@ export const ALLOWED_LAZY_COMMAND_KEYS: ReadonlySet<string> = new Set([
   "args_schema",
   "result_schema",
 ]);
+
+/** One flattened `[services.provided]` entry: dotted path plus raw value. */
+export interface ProvidedServiceEntry {
+  readonly path: string;
+  readonly value: unknown;
+}
+
+function isServiceRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Shared `[services.provided]` walker: reconstruct dotted interface names
+ * from the nested shape TOML produces for bare dotted and quoted keys. A
+ * table carrying any table-form key is the entry itself; an empty table is
+ * also an entry so the validator rejects it instead of dropping it silently;
+ * every other table is an intermediate namespace and is walked. A string leaf
+ * is always the accepted string form.
+ *
+ * Kept interpretation (CTX-0027, option a): bare `foo.version = "1.0.0"`
+ * parses to `{ foo: { version: "1.0.0" } }`, byte-identical to the minimal
+ * table form for `foo`, so it stays the table form. Authors must quote
+ * interface names whose segments collide with form keys
+ * (`"foo.version" = "1.0.0"`).
+ */
+export function collectProvidedServices(
+  table: Record<string, unknown>,
+  prefix: string,
+  entries: ProvidedServiceEntry[],
+): void {
+  for (const [key, value] of Object.entries(table)) {
+    const path = prefix === "" ? key : `${prefix}.${key}`;
+    const isFormTable =
+      isServiceRecord(value) &&
+      Object.keys(value).some((member) =>
+        ALLOWED_SERVICES_PROVIDED_KEYS.has(member),
+      );
+    if (
+      isServiceRecord(value) &&
+      !isFormTable &&
+      Object.keys(value).length > 0
+    ) {
+      collectProvidedServices(value, path, entries);
+    } else {
+      entries.push({ path, value });
+    }
+  }
+}

@@ -45,6 +45,8 @@ import {
   MAX_VERSION_LEN,
   MAX_VERSION_REQ_LEN,
   REQUIRED_PLUGIN_KEYS,
+  collectProvidedServices,
+  type ProvidedServiceEntry,
 } from "./schema.js";
 
 /** Outcome of linting one manifest source. */
@@ -499,39 +501,6 @@ function validateDependencies(
   }
 }
 
-/** Keys that mark a `[services.provided]` value as the ADR 0009 table form. */
-const PROVIDED_SERVICE_FORM_KEYS: ReadonlySet<string> = new Set([
-  "version",
-  "args_schema",
-  "result_schema",
-]);
-
-/**
- * Reconstruct dotted interface names from the nested shape TOML produces for
- * bare dotted and quoted keys. A table carrying any table-form key is the
- * entry itself; every other table is an intermediate namespace and is walked.
- * A string leaf is always the accepted string form.
- */
-function collectProvidedServices(
-  table: TomlTable,
-  prefix: string,
-  entries: Array<{ readonly path: string; readonly value: unknown }>,
-): void {
-  for (const [key, value] of Object.entries(table)) {
-    const path = `${prefix}.${key}`;
-    const isFormTable =
-      isTable(value) &&
-      Object.keys(value).some((member) =>
-        PROVIDED_SERVICE_FORM_KEYS.has(member),
-      );
-    if (isTable(value) && !isFormTable) {
-      collectProvidedServices(value, path, entries);
-    } else {
-      entries.push({ path, value });
-    }
-  }
-}
-
 /**
  * Validate one `[services.provided]` entry: the accepted string form or the
  * ADR 0009 table form `{ version, args_schema?, result_schema? }` with bounded
@@ -602,7 +571,7 @@ function validateServices(value: unknown, diagnostics: Diagnostic[]): void {
   if (provided === undefined) {
     return;
   }
-  const entries: Array<{ readonly path: string; readonly value: unknown }> = [];
+  const entries: ProvidedServiceEntry[] = [];
   collectProvidedServices(provided, "services.provided", entries);
   if (entries.length > MAX_PROVIDED_SERVICES) {
     diagnostics.push(

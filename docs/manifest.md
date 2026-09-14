@@ -90,7 +90,11 @@ Table-form rules (fail-closed):
 Quote interface names whose segments include `version`, `args_schema`, or
 `result_schema` — for example `"foo.version" = "1.0.0"`: TOML parses a bare
 dotted key like `foo.version = "1.0.0"` as a nested table, which the walker
-would read as the table form instead of the string form for `foo.version`.
+reads as the table form for `foo` instead of the string form for
+`foo.version`. This is intentional and stable: after parsing, the bare form
+is byte-identical to the minimal table form, so no validator can tell them
+apart. An empty table (`empty = {}`) is never a namespace: it is rejected
+with `manifest.type` because the table form requires `version`.
 
 ### `[capabilities]` (optional)
 
