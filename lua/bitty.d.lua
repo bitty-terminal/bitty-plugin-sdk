@@ -284,6 +284,7 @@ local BittyUiNamespace = {}
 --- decoration, and there are no global coordinates, shaders, pipelines, glyph injection, native
 --- windows, or renderer handles.
 --- Capabilities: ui.rich.
+--- Conditional capabilities: ui.overlay (when slot == "overlay").
 --- Errors: E_CAPABILITY_DENIED, E_UI_COMPONENT_INVALID.
 ---@param slot BittyUiSlot
 ---@param component BittySceneNode
