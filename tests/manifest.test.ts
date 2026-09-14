@@ -369,6 +369,88 @@ describe("services", () => {
     const result = lint(`\n[services.provided]\n${rows}\n`);
     expect(codes(result)).toContain("manifest.limit");
   });
+
+  test("quoted form-key-colliding segments stay the string form", () => {
+    const source = `${PLUGIN}
+[services.provided]
+"foo.version" = "1.0.0"
+"foo.args_schema" = "1.0.0"
+"foo.result_schema" = "1.0.0"
+`;
+    const linted = lintManifestSource(source);
+    expect(linted.diagnostics).toEqual([]);
+    const model = loadManifestModel(source);
+    expect(model.providedServices.get("foo.version")).toBe("1.0.0");
+    expect(model.providedServices.get("foo.args_schema")).toBe("1.0.0");
+    expect(model.providedServices.get("foo.result_schema")).toBe("1.0.0");
+  });
+
+  test("bare dotted form-key segments read as the table form (documented)", () => {
+    const model = loadManifestModel(`${PLUGIN}
+[services.provided]
+foo.version = "1.0.0"
+`);
+    expect(model.providedServices.get("foo")).toBe("1.0.0");
+    expect(model.providedServices.has("foo.version")).toBe(false);
+  });
+
+  test("bare dotted args_schema without version is rejected", () => {
+    const result = lint(`
+[services.provided]
+foo.args_schema = { type = "string" }
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+  });
+
+  test("bare dotted result_schema without version is rejected", () => {
+    const result = lint(`
+[services.provided]
+foo.result_schema = { type = "string" }
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+  });
+
+  test("mixed string and table entries share one namespace and round-trip", () => {
+    const source = `${PLUGIN}
+[services.provided.ns]
+"a" = "1.0.0"
+"b" = { version = "2.0.0" }
+`;
+    const linted = lintManifestSource(source);
+    expect(linted.diagnostics).toEqual([]);
+    const model = loadManifestModel(source);
+    expect(model.providedServices.get("ns.a")).toBe("1.0.0");
+    expect(model.providedServices.get("ns.b")).toBe("2.0.0");
+  });
+
+  test("empty table entry is rejected with a typed diagnostic", () => {
+    const result = lint(`
+[services.provided]
+empty = {}
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+  });
+
+  test("mixed string and table entries share the sixteen-service cap", () => {
+    const stringRows = Array.from(
+      { length: 8 },
+      (_value, index) => `"str.svc${index}" = "1.0.0"`,
+    );
+    const tableRows = Array.from(
+      { length: 8 },
+      (_value, index) => `"tbl.svc${index}" = { version = "1.0.0" }`,
+    );
+    const full = [...stringRows, ...tableRows].join("\n");
+    const accepted = lint(`\n[services.provided]\n${full}\n`);
+    expect(accepted.diagnostics).toEqual([]);
+    const rejected = lint(
+      `\n[services.provided]\n${full}\n"extra.svc" = "1.0.0"\n`,
+    );
+    expect(codes(rejected)).toContain("manifest.limit");
+  });
 });
 
 describe("manifest model provided services", () => {
