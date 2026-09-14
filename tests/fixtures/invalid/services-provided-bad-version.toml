@@ -1,0 +1,11 @@
+# Invalid bitty-plugin.toml: table-form provided service without a complete
+# SemVer version (the reference host requires X.Y.Z).
+
+[plugin]
+id = "xuepoo.provider"
+name = "Provider Example"
+version = "0.1.0"
+description = "Invalid table-form provided service version."
+
+[services.provided]
+"markdown.render" = { version = "1.0" }

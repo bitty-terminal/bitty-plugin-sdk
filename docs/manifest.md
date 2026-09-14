@@ -62,6 +62,31 @@ Interface name to concrete version pairs, at most 16. Interface names are
 lowercase dot-separated `[a-z0-9_-]` segments (1..64 characters each, 128
 total). Versions must be complete SemVer 2 (`1.0.0`, not `1.0`).
 
+Each entry uses the accepted string form or the ADR 0009 table form; both may
+be mixed in one table. The table form carries the bounded static schemas that
+let schema-validating consumers resolve the provider:
+
+```toml
+[services.provided]
+"markdown.render" = "1.0.0"
+"markdown.render.rich" = { version = "2.0.0", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } }
+```
+
+Table-form rules (fail-closed):
+
+- Keys are limited to `version`, `args_schema`, and `result_schema`; any other
+  key is `manifest.unknown-key`.
+- `version` is required, must be a string, and is validated as complete SemVer 2
+  exactly like the string form; a missing or non-string version is
+  `manifest.type`, and an invalid version is `services.version.invalid`.
+- `args_schema` and `result_schema` are optional. Each must be a table in the
+  bounded JSON Schema subset shared with `bitty.commands.register` and the
+  `[lazy].commands` table form: depth at most 16, at most 16 KiB per schema,
+  `additionalProperties` explicit on object schemas, and no remote `$ref` or
+  unsupported keyword (`pattern`, `format`, combinators). A violation is
+  `services.schema`.
+- A table entry counts toward the same 16-service limit as a string entry.
+
 ### `[capabilities]` (optional)
 
 Requested authorities; absent means none. Every key is a closed-set capability
@@ -258,7 +283,7 @@ cannot drift from the validator.
 - The `env` family accepts exactly the `env:BITTY_*` suffix pattern from
   ADR 0006 and no other wildcard; a broader `env:BITTY_<PREFIX>_*` form would
   be a reviewed additive change, not an implicit widening.
-- ADR 0009 also adds a table form for `[services.provided]` entries
-  (`{ version, args_schema?, result_schema? }`); the merged linter still
-  accepts the string version form only. Tracked as a separate manifest
-  extension task.
+- ADR 0009 table-form `[services.provided]` entries are accepted and validated
+  by the linter (`services.schema`), and the manifest model exposes their static
+  schemas. Consumer-side schema validation and the static/dynamic
+  schema-equivalence check remain host-bridge work (R-SDK-3).

@@ -21,6 +21,7 @@ import {
   ALLOWED_PLUGIN_KEYS,
   ALLOWED_ROOT_KEYS,
   ALLOWED_SERVICES_KEYS,
+  ALLOWED_SERVICES_PROVIDED_KEYS,
   MANIFEST_MAX_BYTES,
   MANIFEST_MAX_DEPTH,
   MAX_CLAIM_LEN,
@@ -498,6 +499,99 @@ function validateDependencies(
   }
 }
 
+/** Keys that mark a `[services.provided]` value as the ADR 0009 table form. */
+const PROVIDED_SERVICE_FORM_KEYS: ReadonlySet<string> = new Set([
+  "version",
+  "args_schema",
+  "result_schema",
+]);
+
+/**
+ * Reconstruct dotted interface names from the nested shape TOML produces for
+ * bare dotted and quoted keys. A table carrying any table-form key is the
+ * entry itself; every other table is an intermediate namespace and is walked.
+ * A string leaf is always the accepted string form.
+ */
+function collectProvidedServices(
+  table: TomlTable,
+  prefix: string,
+  entries: Array<{ readonly path: string; readonly value: unknown }>,
+): void {
+  for (const [key, value] of Object.entries(table)) {
+    const path = `${prefix}.${key}`;
+    const isFormTable =
+      isTable(value) &&
+      Object.keys(value).some((member) =>
+        PROVIDED_SERVICE_FORM_KEYS.has(member),
+      );
+    if (isTable(value) && !isFormTable) {
+      collectProvidedServices(value, path, entries);
+    } else {
+      entries.push({ path, value });
+    }
+  }
+}
+
+/**
+ * Validate one `[services.provided]` entry: the accepted string form or the
+ * ADR 0009 table form `{ version, args_schema?, result_schema? }` with bounded
+ * JSON Schema metadata. Unknown table keys and schema fragments outside the
+ * supported subset stay rejected.
+ */
+function validateProvidedServiceEntry(
+  path: string,
+  value: unknown,
+  diagnostics: Diagnostic[],
+): void {
+  if (typeof value === "string") {
+    const version = versionProblem(value);
+    if (version !== undefined) {
+      diagnostics.push(error("services.version.invalid", path, version));
+    }
+    return;
+  }
+  if (!isTable(value)) {
+    diagnostics.push(
+      error(
+        "manifest.type",
+        path,
+        "expected a version string or a table with version/args_schema/result_schema",
+      ),
+    );
+    return;
+  }
+  checkUnknownKeys(value, ALLOWED_SERVICES_PROVIDED_KEYS, path, diagnostics);
+  const version = value.version;
+  if (version === undefined) {
+    diagnostics.push(
+      error(
+        "manifest.type",
+        `${path}.version`,
+        "expected a version string (required by the table form)",
+      ),
+    );
+  } else if (typeof version !== "string") {
+    diagnostics.push(
+      error("manifest.type", `${path}.version`, "expected a version string"),
+    );
+  } else {
+    const problem = versionProblem(version);
+    if (problem !== undefined) {
+      diagnostics.push(
+        error("services.version.invalid", `${path}.version`, problem),
+      );
+    }
+  }
+  for (const field of ["args_schema", "result_schema"] as const) {
+    const schema = value[field];
+    if (schema === undefined) continue;
+    const problem = schemaProblem(schema, field);
+    if (problem !== undefined) {
+      diagnostics.push(error("services.schema", `${path}.${field}`, problem));
+    }
+  }
+}
+
 function validateServices(value: unknown, diagnostics: Diagnostic[]): void {
   const table = checkTable(value, "services", diagnostics);
   if (table === undefined) {
@@ -508,7 +602,8 @@ function validateServices(value: unknown, diagnostics: Diagnostic[]): void {
   if (provided === undefined) {
     return;
   }
-  const entries = flatten(provided, "services.provided");
+  const entries: Array<{ readonly path: string; readonly value: unknown }> = [];
+  collectProvidedServices(provided, "services.provided", entries);
   if (entries.length > MAX_PROVIDED_SERVICES) {
     diagnostics.push(
       error(
@@ -531,18 +626,7 @@ function validateServices(value: unknown, diagnostics: Diagnostic[]): void {
       );
       continue;
     }
-    if (typeof entry.value !== "string") {
-      diagnostics.push(
-        error("manifest.type", entry.path, "expected a version string"),
-      );
-    } else {
-      const version = versionProblem(entry.value);
-      if (version !== undefined) {
-        diagnostics.push(
-          error("services.version.invalid", entry.path, version),
-        );
-      }
-    }
+    validateProvidedServiceEntry(entry.path, entry.value, diagnostics);
   }
 }
 

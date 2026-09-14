@@ -274,10 +274,10 @@ UI/terminal gates, and service/task/timer behavior.
   `surface/bitty-plugin-api-v1.json` in `tests/conformance.test.ts`. LuaLS
   semantics beyond those identifiers (type shapes) remain owned by R-SDK-1 and
   are not restated by the mock.
-- **Manifest table forms.** ADR 0009 `[lazy].commands` table entries are
-  accepted by the linter and modeled with their static schemas (CTX-0019); the
-  `[services.provided]` table form and static/dynamic schema-equivalence checks
-  remain host-bridge work.
+- **Manifest table forms.** ADR 0009 `[lazy].commands` and
+  `[services.provided]` table entries are accepted by the linter and modeled
+  with their static schemas; consumer-side schema validation and the
+  static/dynamic schema-equivalence checks remain host-bridge work.
 - **Strict schema subset.** The mock validates a strict JSON Schema subset and
   rejects schemas using `pattern`, `format`, `$ref`, or composition keywords
   at registration. This is deliberate fail-closed behavior (never more
