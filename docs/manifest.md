@@ -142,25 +142,25 @@ Table-form rules (fail-closed):
 
 ## Hard limits
 
-| Bound                            | Value                  |
-| -------------------------------- | ---------------------- |
-| Manifest size                    | 256 KiB                |
-| TOML nesting depth               | 8 levels               |
-| Lazy commands                    | 128                    |
-| Lazy command schema depth / size | 16 levels / 16 KiB     |
-| Lazy event types                 | 256                    |
-| Filesystem patterns per access   | 32                     |
-| Total filesystem pattern text    | 8 KiB                  |
-| Provided services                | 16                     |
-| Plugin dependencies              | 8                      |
-| Capability identifier            | 512 bytes              |
-| Capability parameter             | 1024 bytes             |
-| Plugin id / name / description   | 128 / 128 / 1024 bytes |
-| Version / version range          | 64 / 128 bytes         |
-| Qualified name / resource        | 256 / 128 bytes        |
-| Service interface / segment      | 128 / 64 bytes         |
-| Event type / claim               | 128 / 64 bytes         |
-| Filesystem path pattern          | 512 bytes              |
+| Bound                                 | Value                  |
+| ------------------------------------- | ---------------------- |
+| Manifest size                         | 256 KiB                |
+| TOML nesting depth                    | 8 levels               |
+| Lazy commands                         | 128                    |
+| Command / service schema depth / size | 16 levels / 16 KiB     |
+| Lazy event types                      | 256                    |
+| Filesystem patterns per access        | 32                     |
+| Total filesystem pattern text         | 8 KiB                  |
+| Provided services                     | 16                     |
+| Plugin dependencies                   | 8                      |
+| Capability identifier                 | 512 bytes              |
+| Capability parameter                  | 1024 bytes             |
+| Plugin id / name / description        | 128 / 128 / 1024 bytes |
+| Version / version range               | 64 / 128 bytes         |
+| Qualified name / resource             | 256 / 128 bytes        |
+| Service interface / segment           | 128 / 64 bytes         |
+| Event type / claim                    | 128 / 64 bytes         |
+| Filesystem path pattern               | 512 bytes              |
 
 ## Capability identifiers
 
