@@ -87,6 +87,11 @@ Table-form rules (fail-closed):
   `services.schema`.
 - A table entry counts toward the same 16-service limit as a string entry.
 
+Quote interface names whose segments include `version`, `args_schema`, or
+`result_schema` — for example `"foo.version" = "1.0.0"`: TOML parses a bare
+dotted key like `foo.version = "1.0.0"` as a nested table, which the walker
+would read as the table form instead of the string form for `foo.version`.
+
 ### `[capabilities]` (optional)
 
 Requested authorities; absent means none. Every key is a closed-set capability
