@@ -49,10 +49,22 @@ export interface SurfaceReturn {
   readonly type: string;
 }
 
+/**
+ * A capability that is required only under a named accepted condition, such as
+ * the `ui.overlay` gate for the `overlay` slot of `bitty.ui.mount`. The
+ * `capabilities` array stays reserved for unconditional gates so the rendered
+ * annotation never overstates an always-on requirement.
+ */
+export interface SurfaceConditionalCapability {
+  readonly capability: string;
+  readonly when: string;
+}
+
 export interface SurfaceFunction {
   readonly path: string;
   readonly level: "L1" | "L2";
   readonly capabilities: readonly string[];
+  readonly conditionalCapabilities?: readonly SurfaceConditionalCapability[];
   readonly errors: readonly string[];
   readonly doc: string;
   readonly params: readonly SurfaceParam[];
@@ -276,6 +288,38 @@ export function validateSurface(surface: Surface): string[] {
     if (fn.doc.trim() === "" || fn.doc.includes("\n")) {
       problems.push(`${fn.path}: doc must be single-line and non-empty`);
     }
+    const seenConditional = new Set<string>();
+    for (const gate of (fn.conditionalCapabilities ??
+      []) as readonly unknown[]) {
+      if (!isRecord(gate)) {
+        problems.push(
+          `${fn.path}: conditional capability entry must be an object`,
+        );
+        continue;
+      }
+      const capability = gate.capability;
+      const when = gate.when;
+      if (
+        typeof capability !== "string" ||
+        !/^[a-z][a-z0-9_.:-]*$/.test(capability)
+      ) {
+        problems.push(
+          `${fn.path}: invalid conditional capability ${JSON.stringify(capability)}`,
+        );
+        continue;
+      }
+      if (seenConditional.has(capability)) {
+        problems.push(
+          `${fn.path}: duplicate conditional capability ${capability}`,
+        );
+      }
+      seenConditional.add(capability);
+      if (typeof when !== "string" || when.trim() === "") {
+        problems.push(
+          `${fn.path}: conditional capability ${capability} needs a non-empty when condition`,
+        );
+      }
+    }
     const paramNames = new Set<string>();
     for (const param of fn.params) {
       if (!/^[a-z][a-z0-9_]*$/.test(param.name)) {
@@ -451,6 +495,11 @@ function renderFunction(fn: SurfaceFunction, namespaceType: string): string[] {
   const lines = wrapDoc(fn.doc).map((line) => `--- ${line}`);
   if (fn.capabilities.length > 0) {
     lines.push(`--- Capabilities: ${fn.capabilities.join(", ")}.`);
+  }
+  for (const gate of fn.conditionalCapabilities ?? []) {
+    lines.push(
+      `--- Conditional capabilities: ${gate.capability} (when ${gate.when}).`,
+    );
   }
   if (fn.errors.length > 0) {
     lines.push(`--- Errors: ${fn.errors.join(", ")}.`);

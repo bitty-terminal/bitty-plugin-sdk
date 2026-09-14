@@ -128,12 +128,32 @@ describe("surface table", () => {
       }
     }
   });
+
+  test("records the overlay conditional capability on ui.mount only", () => {
+    const mount = surface.functions.find((fn) => fn.path === "ui.mount");
+    const update = surface.functions.find((fn) => fn.path === "ui.update");
+    expect(mount?.conditionalCapabilities).toEqual([
+      { capability: "ui.overlay", when: 'slot == "overlay"' },
+    ]);
+    for (const fn of surface.functions) {
+      if (fn.path !== "ui.mount") {
+        expect(fn.conditionalCapabilities ?? []).toEqual([]);
+      }
+    }
+    expect(update?.conditionalCapabilities ?? []).toEqual([]);
+  });
 });
 
 describe("generated definitions", () => {
   test("are current with the surface table", () => {
     const rendered = renderDefinitions(surface);
     expect(diffDefinitions(rendered, defs).report).toBe("");
+  });
+
+  test("annotate the conditional overlay gate for ui.mount", () => {
+    expect(defs).toContain(
+      '--- Conditional capabilities: ui.overlay (when slot == "overlay").',
+    );
   });
 
   test("declare exactly the table functions with matching parameters", () => {

@@ -118,6 +118,15 @@ within v1; the tasks and timers functions were resolved as v1 additions by
 ADR 0009. They are carried here alongside L1 rather than as separate levels,
 and no Level 3 or Level 4 element is present.
 
+The `ui.overlay` gate is conditional: the surface table records it as a
+structured `conditionalCapabilities` entry on `ui.mount`
+(`ui.overlay` when the slot is `overlay`) and the generated definition renders
+it as a separate `Conditional capabilities:` annotation, so the unconditional
+`ui.rich` gate is never overstated. `ui.update` operates on an existing handle
+and carries no slot gate. `tests/conformance.test.ts` checks both the
+unconditional and conditional gates against the mock-host model instead of
+dropping the `:overlay` entry.
+
 | Event class  | Names                                                                                                                                                                              |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Lifecycle    | `plugin.activated`, `plugin.suspended`, `plugin.disposed`, `handler.violation`                                                                                                     |

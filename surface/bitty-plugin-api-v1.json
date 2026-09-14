@@ -883,6 +883,9 @@
       "path": "ui.mount",
       "level": "L2",
       "capabilities": ["ui.rich"],
+      "conditionalCapabilities": [
+        { "capability": "ui.overlay", "when": "slot == \"overlay\"" }
+      ],
       "errors": ["E_CAPABILITY_DENIED", "E_UI_COMPONENT_INVALID"],
       "doc": "Mounts declarative component content into an accepted semantic slot; rich content requires ui.rich and the overlay slot additionally requires ui.overlay. Host layout owns placement and decoration, and there are no global coordinates, shaders, pipelines, glyph injection, native windows, or renderer handles.",
       "params": [

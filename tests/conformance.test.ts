@@ -143,7 +143,11 @@ describe("accepted surface agreement", () => {
     ) as {
       module: string;
       api_version: string;
-      functions: Array<{ path: string; capabilities: string[] }>;
+      functions: Array<{
+        path: string;
+        capabilities: string[];
+        conditionalCapabilities?: Array<{ capability: string; when: string }>;
+      }>;
       events: Array<{ name: string; class: string }>;
       excludedArgumentLiterals: Array<{
         path: string;
@@ -166,18 +170,33 @@ describe("accepted surface agreement", () => {
       expect(entry.class.toLowerCase()).toBe(spec?.class ?? "");
     });
 
-    const modeledCaps = new Map(
+    const unconditionalCaps = new Map(
       CAPABILITY_GATED_SURFACE.filter(
-        (entry) => !entry.surface.endsWith(":overlay"),
+        (entry) => !entry.surface.includes(":"),
       ).map((entry) => [
         entry.surface.slice("bitty.".length),
         entry.capability,
       ]),
     );
+    const conditionalCaps = new Map(
+      CAPABILITY_GATED_SURFACE.filter((entry) =>
+        entry.surface.includes(":"),
+      ).map((entry) => [
+        entry.surface.slice("bitty.".length).split(":")[0] ?? "",
+        entry.capability,
+      ]),
+    );
     for (const fn of surface.functions) {
       const expected = fn.capabilities.join("|");
-      const actual = modeledCaps.get(fn.path) ?? "";
+      const actual = unconditionalCaps.get(fn.path) ?? "";
       expect(actual).toBe(expected);
+      const modeledConditional = conditionalCaps.has(fn.path)
+        ? [conditionalCaps.get(fn.path) as string]
+        : [];
+      const surfaceConditional = (fn.conditionalCapabilities ?? [])
+        .map((gate) => gate.capability)
+        .sort();
+      expect(surfaceConditional).toEqual(modeledConditional);
     }
 
     const excludedRaw = surface.excludedArgumentLiterals.find(
