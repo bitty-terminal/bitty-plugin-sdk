@@ -1,0 +1,10 @@
+# Invalid bitty-plugin.toml: unknown key inside a table-form provided service.
+
+[plugin]
+id = "xuepoo.provider"
+name = "Provider Example"
+version = "0.1.0"
+description = "Invalid table-form provided service with an unknown key."
+
+[services.provided]
+"markdown.render" = { version = "1.0.0", schema = { type = "string" } }

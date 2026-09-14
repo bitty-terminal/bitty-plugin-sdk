@@ -322,6 +322,76 @@ describe("services", () => {
     const result = lint(`\n[services.provided]\n${rows}\n`);
     expect(codes(result)).toContain("manifest.limit");
   });
+
+  test("table-form provided service is accepted with bounded schemas", () => {
+    const result = lint(`
+[services.provided]
+"markdown.render" = { version = "2.0.0", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } }
+`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("table-form provided service rejects unknown keys", () => {
+    const result = lint(`
+[services.provided]
+"markdown.render" = { version = "1.0.0", schema = { type = "string" } }
+`);
+    expect(codes(result)).toContain("manifest.unknown-key");
+  });
+
+  test("table-form provided service requires a complete version", () => {
+    const missing = lint(`
+[services.provided]
+"markdown.render" = { args_schema = { type = "string" } }
+`);
+    expect(codes(missing)).toContain("manifest.type");
+    const bad = lint(`
+[services.provided]
+"markdown.render" = { version = "1.0" }
+`);
+    expect(codes(bad)).toContain("services.version.invalid");
+  });
+
+  test("table-form provided service rejects an invalid bounded schema", () => {
+    const result = lint(`
+[services.provided]
+"markdown.render" = { version = "1.0.0", args_schema = { type = "object", properties = { text = { type = "string" } } } }
+`);
+    expect(codes(result)).toContain("services.schema");
+  });
+
+  test("table entries count toward the sixteen-service limit", () => {
+    const rows = Array.from(
+      { length: 17 },
+      (_value, index) => `"iface.svc${index}" = { version = "1.0.0" }`,
+    ).join("\n");
+    const result = lint(`\n[services.provided]\n${rows}\n`);
+    expect(codes(result)).toContain("manifest.limit");
+  });
+});
+
+describe("manifest model provided services", () => {
+  test("exposes versions and table-form schemas", () => {
+    const model = loadManifestModel(
+      `${PLUGIN}
+[services.provided]
+"markdown.render" = "1.0.0"
+"markdown.render.rich" = { version = "2.0.0", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false } }
+`,
+    );
+    expect(model.providedServices.get("markdown.render")).toBe("1.0.0");
+    expect(model.providedServices.get("markdown.render.rich")).toBe("2.0.0");
+    expect(model.providedServiceSchemas.get("markdown.render.rich")).toEqual({
+      argsSchema: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+        additionalProperties: false,
+      },
+    });
+    expect(model.providedServiceSchemas.get("markdown.render")).toBeUndefined();
+  });
 });
 
 describe("capabilities", () => {

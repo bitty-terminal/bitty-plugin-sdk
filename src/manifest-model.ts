@@ -22,6 +22,12 @@ export interface LazyCommandSchema {
   readonly resultSchema?: JsonSchema;
 }
 
+/** Bounded static schema metadata declared by one table-form provided service. */
+export interface ServiceProvidedSchema {
+  readonly argsSchema?: JsonSchema;
+  readonly resultSchema?: JsonSchema;
+}
+
 /** Closed declaration set read from an accepted manifest. */
 export interface ManifestModel {
   readonly pluginId: string;
@@ -34,6 +40,7 @@ export interface ManifestModel {
   readonly events: readonly string[];
   readonly claims: readonly string[];
   readonly providedServices: ReadonlyMap<string, string>;
+  readonly providedServiceSchemas: ReadonlyMap<string, ServiceProvidedSchema>;
 }
 
 /** One manifest that failed the accepted validator. */
@@ -146,15 +153,77 @@ function readLazyCommands(value: unknown): {
   return { commands, schemas };
 }
 
-function readProvidedServices(services: unknown): ReadonlyMap<string, string> {
-  const provided = new Map<string, string>();
-  if (!isTable(services)) return provided;
-  const table = services.provided;
-  if (!isTable(table)) return provided;
-  for (const [iface, version] of Object.entries(table)) {
-    if (typeof version === "string") provided.set(iface, version);
+const PROVIDED_SERVICE_FORM_KEYS: ReadonlySet<string> = new Set([
+  "version",
+  "args_schema",
+  "result_schema",
+]);
+
+/**
+ * Reconstruct dotted interface names from the nested shape TOML produces for
+ * bare dotted and quoted keys. A table carrying any table-form key is the
+ * entry itself; every other table is an intermediate namespace and is walked.
+ */
+function collectProvidedServices(
+  table: Table,
+  prefix: string,
+  entries: Array<{ readonly path: string; readonly value: unknown }>,
+): void {
+  for (const [key, value] of Object.entries(table)) {
+    const path = prefix === "" ? key : `${prefix}.${key}`;
+    const isFormTable =
+      isTable(value) &&
+      Object.keys(value).some((member) =>
+        PROVIDED_SERVICE_FORM_KEYS.has(member),
+      );
+    if (isTable(value) && !isFormTable) {
+      collectProvidedServices(value, path, entries);
+    } else {
+      entries.push({ path, value });
+    }
   }
-  return provided;
+}
+
+/**
+ * Read `[services.provided]` from both accepted forms: the string form and the
+ * ADR 0009 table form `{ version, args_schema?, result_schema? }`. Versions and
+ * static schemas are exposed per interface so schema-validating consumers can
+ * resolve table-form providers without a VM.
+ */
+function readProvidedServices(services: unknown): {
+  versions: Map<string, string>;
+  schemas: Map<string, ServiceProvidedSchema>;
+} {
+  const versions = new Map<string, string>();
+  const schemas = new Map<string, ServiceProvidedSchema>();
+  if (!isTable(services)) return { versions, schemas };
+  const table = services.provided;
+  if (!isTable(table)) return { versions, schemas };
+  const entries: Array<{ readonly path: string; readonly value: unknown }> = [];
+  collectProvidedServices(table, "", entries);
+  for (const entry of entries) {
+    if (typeof entry.value === "string") {
+      versions.set(entry.path, entry.value);
+      continue;
+    }
+    if (!isTable(entry.value)) continue;
+    const version = entry.value.version;
+    if (typeof version === "string") versions.set(entry.path, version);
+    const declared: { argsSchema?: JsonSchema; resultSchema?: JsonSchema } = {};
+    if (isTable(entry.value.args_schema)) {
+      declared.argsSchema = entry.value.args_schema;
+    }
+    if (isTable(entry.value.result_schema)) {
+      declared.resultSchema = entry.value.result_schema;
+    }
+    if (
+      declared.argsSchema !== undefined ||
+      declared.resultSchema !== undefined
+    ) {
+      schemas.set(entry.path, declared);
+    }
+  }
+  return { versions, schemas };
 }
 
 /**
@@ -184,6 +253,7 @@ export function loadManifestModel(source: string): ManifestModel {
   const pluginApiRange =
     typeof compat["plugin-api"] === "string" ? compat["plugin-api"] : undefined;
   const lazyCommands = readLazyCommands(lazy.commands);
+  const providedServices = readProvidedServices(parsed.services);
 
   return {
     pluginId,
@@ -195,6 +265,7 @@ export function loadManifestModel(source: string): ManifestModel {
     commandSchemas: lazyCommands.schemas,
     events: readStringArray(lazy.events),
     claims: readStringArray(lazy.claims),
-    providedServices: readProvidedServices(parsed.services),
+    providedServices: providedServices.versions,
+    providedServiceSchemas: providedServices.schemas,
   };
 }

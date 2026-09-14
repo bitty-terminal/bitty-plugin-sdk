@@ -18,7 +18,7 @@ plugin-api = "^1.0"
 "xuepoo.gitcore" = ">=2.0"
 
 [services.provided]
-"markdown.render" = "1.0.0"
+"markdown.render" = { version = "1.0.0", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } }
 
 [capabilities]
 terminal.semantic-read = true

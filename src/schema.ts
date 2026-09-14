@@ -125,6 +125,13 @@ export const ALLOWED_COMPAT_KEYS: ReadonlySet<string> = new Set([
 /** `[services]` keys accepted by the manifest schema. */
 export const ALLOWED_SERVICES_KEYS: ReadonlySet<string> = new Set(["provided"]);
 
+/** Keys accepted in one table-form `[services.provided]` entry (ADR 0009). */
+export const ALLOWED_SERVICES_PROVIDED_KEYS: ReadonlySet<string> = new Set([
+  "version",
+  "args_schema",
+  "result_schema",
+]);
+
 /** Keys accepted in one `[[capabilities.filesystem]]` entry. */
 export const ALLOWED_FILESYSTEM_KEYS: ReadonlySet<string> = new Set([
   "access",

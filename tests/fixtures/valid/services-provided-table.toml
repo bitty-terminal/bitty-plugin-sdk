@@ -1,0 +1,16 @@
+# Valid bitty-plugin.toml using the ADR 0009 table form for [services.provided].
+# Used by tests/cli.test.ts to prove the CLI accepts mixed string-form and
+# table-form provided-service declarations with bounded JSON Schema metadata.
+
+[plugin]
+id = "xuepoo.provider"
+name = "Provider Example"
+version = "0.1.0"
+description = "Example plugin with string-form and table-form provided services."
+
+[compat]
+plugin-api = "^1.0"
+
+[services.provided]
+"markdown.render" = "1.0.0"
+"markdown.render.rich" = { version = "2.0.0", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } }

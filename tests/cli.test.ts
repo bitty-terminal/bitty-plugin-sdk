@@ -15,6 +15,15 @@ const INVALID_EXAMPLE = fileURLToPath(
 const TABLE_COMMANDS_FIXTURE = fileURLToPath(
   new URL("./fixtures/valid/lazy-commands-table.toml", import.meta.url),
 );
+const TABLE_SERVICES_FIXTURE = fileURLToPath(
+  new URL("./fixtures/valid/services-provided-table.toml", import.meta.url),
+);
+const INVALID_SERVICES_FIXTURE = fileURLToPath(
+  new URL(
+    "./fixtures/invalid/services-provided-bad-version.toml",
+    import.meta.url,
+  ),
+);
 const CLI_ENTRY = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 
 const tempDirs: string[] = [];
@@ -75,6 +84,21 @@ describe("runCli", () => {
     expect(code).toBe(0);
     expect(stream.out.join("\n")).toContain("valid");
     expect(stream.err).toEqual([]);
+  });
+
+  test("table-form provided services exit 0", () => {
+    const stream = capture();
+    const code = runCli([TABLE_SERVICES_FIXTURE], stream.io);
+    expect(code).toBe(0);
+    expect(stream.out.join("\n")).toContain("valid");
+    expect(stream.err).toEqual([]);
+  });
+
+  test("invalid table-form provided service exits 1", () => {
+    const stream = capture();
+    const code = runCli([INVALID_SERVICES_FIXTURE], stream.io);
+    expect(code).toBe(1);
+    expect(stream.out.join("\n")).toContain("services.version.invalid");
   });
 
   test("--json prints a machine-readable report", () => {
