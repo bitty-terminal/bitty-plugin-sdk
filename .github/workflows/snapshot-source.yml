@@ -7,21 +7,26 @@ name: Snapshot source
 #
 # The gate tolerates the two legitimate cases that are not "stale": no snapshot
 # branch exists yet, and the snapshot was republished from a newer main than the
-# one this run saw (a closeout race). It fails only when main has advanced past
-# the publication, or when the recorded revision is not related to main (a
-# publication taken from a feature branch, which can never match main).
+# one this run saw (a closeout race). A present-but-malformed trailer (missing
+# or unparsable CarryCtx-Source, absent revision, unrelated branch) always
+# fails. A behind publication is informational on push to main (notice, exit 0)
+# so merges do not emit one red run + notification each; it fails only on the
+# scheduled staleness gate, on manual workflow_dispatch, and on push to the
+# snapshot ref itself (when that event fires).
 #
 # Triggers:
-#   - push to main: fails while a newer main HEAD is unpublished, so a red run
-#     is the closeout signal to publish.
-#   - push to carryctx-snapshots: intended to re-check and turn green once the
+#   - push to main: informational while a newer main HEAD is unpublished, so
+#     the run stays green with a "publish during closeout" notice instead of
+#     failing. The closeout still publishes.
+#   - push to carryctx-snapshots: enforcing re-check that turns green once the
 #     closeout publishes the snapshot for the pending main HEAD. The snapshot
 #     ref tree carries no workflow files, so GitHub never starts this workflow
 #     for that push; the schedule below is what actually re-checks. Kept for the
 #     eventual case where the ref carries workflow files.
-#   - schedule: daily staleness check so a missed closeout is caught even when
-#     main stays idle, and a delayed publish turns the check green.
-#   - workflow_dispatch: manual re-run during merge closeout.
+#   - schedule: daily staleness enforcer. Fails while behind so a missed
+#     closeout is caught even when main stays idle, and a delayed publish turns
+#     the check green.
+#   - workflow_dispatch: manual enforcing re-run during merge closeout.
 # Pull requests are unaffected: none of the triggers is a pull_request event, so
 # PR builds and their required checks are untouched. Before the first
 # publication the branch does not exist yet; the check then passes with a notice
@@ -104,8 +109,20 @@ jobs:
             exit 0
           fi
           if git merge-base --is-ancestor "$rev_sha" "$main_sha"; then
-            echo "::error::snapshot refs/heads/carryctx-snapshots source ($rev_sha) is behind main HEAD ($main_sha); run 'just workflow-publish' during merge closeout"
-            exit 1
+            # Post-merge behind window: every merge advances main before the
+            # closeout publishes, so push-to-main runs stay informational to
+            # avoid one red run + notification per merge. The daily schedule,
+            # manual dispatch, and push to the snapshot ref itself enforce.
+            if [ "${GITHUB_EVENT_NAME:-}" = "schedule" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
+              echo "::error::snapshot refs/heads/carryctx-snapshots source ($rev_sha) is behind main HEAD ($main_sha); run 'just workflow-publish' during merge closeout"
+              exit 1
+            fi
+            if [ "${GITHUB_EVENT_NAME:-}" = "push" ] && [ "${GITHUB_REF:-}" = "refs/heads/carryctx-snapshots" ]; then
+              echo "::error::snapshot refs/heads/carryctx-snapshots source ($rev_sha) is behind main HEAD ($main_sha); run 'just workflow-publish' during merge closeout"
+              exit 1
+            fi
+            echo "::notice title=CarryCtx snapshot::snapshot refs/heads/carryctx-snapshots source ($rev_sha) is behind main HEAD ($main_sha); run 'just workflow-publish' during merge closeout"
+            exit 0
           fi
           echo "::error::snapshot source $rev_sha is not an ancestor of main HEAD $main_sha; republish from the primary checkout on main"
           exit 1
