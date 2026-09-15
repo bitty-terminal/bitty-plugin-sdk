@@ -707,6 +707,57 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     expect(host.bitty.store.get("dag")).toEqual(node as never);
   });
 
+  test("aliased component depth is independent of traversal order and placement", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+
+    // A shared subtree that is legal at a shallow placement but would breach
+    // the depth bound at a deep one: aliasing it must not let the shallow
+    // validation excuse the deep placement.
+    const maxDepth = MOCK_LIMITS.UI_MAX_DEPTH;
+    const sharedHeight = 4;
+    const deepDepth = maxDepth - 2;
+    const wrap = (
+      inner: Record<string, unknown>,
+      levels: number,
+    ): Record<string, unknown> => {
+      let node = inner;
+      for (let level = 0; level < levels; level += 1) {
+        node = { kind: "Row", children: [node] };
+      }
+      return node;
+    };
+    const shared = wrap({ kind: "Text", text: "leaf" }, sharedHeight - 1);
+    // Shared subtree at depth 1 (deepest node at 4) and at depth 14 (deepest
+    // node at 17, past the bound) in the same logical tree.
+    const shallow = wrap(shared, 1);
+    const deepOnly = wrap(shared, deepDepth);
+    const shallowFirst = { kind: "Row", children: [shared, deepOnly] };
+    const deepFirst = { kind: "Row", children: [deepOnly, shared] };
+
+    // The shared subtree alone at a shallow placement is accepted.
+    expect(typeof host.bitty.ui.mount("top", shallow)).toBe("number");
+
+    // The same subtree reached only through the deep placement is rejected.
+    expect(denial(() => host.bitty.ui.mount("top", deepOnly)).code).toBe(
+      HOST_CODES.UI_COMPONENT_INVALID,
+    );
+
+    // Placing it both shallow and deep in one tree must give the deep-only
+    // verdict regardless of which reference is visited first.
+    for (const tree of [shallowFirst, deepFirst]) {
+      expect(denial(() => host.bitty.ui.mount("top", tree)).code).toBe(
+        HOST_CODES.UI_COMPONENT_INVALID,
+      );
+    }
+
+    const block = host.bitty.ui.mount("top", { kind: "Row", children: [] });
+    expect(denial(() => host.bitty.ui.update(block, shallowFirst)).code).toBe(
+      HOST_CODES.UI_COMPONENT_INVALID,
+    );
+  });
+
   test("cyclic notify payloads fail typed instead of throwing from serialization", () => {
     const host = makeHost();
     host.grant("platform.notify");

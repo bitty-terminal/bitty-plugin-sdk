@@ -416,18 +416,22 @@ function settingsKeyProblem(key: unknown): string | undefined {
 }
 
 /**
- * Validate a UI component tree.
+ * Validate a UI component tree and enforce the depth bound.
  *
- * `seen` marks nodes whose kind structure has already been validated, so a
- * shared-reference (DAG) component is validated once per node instead of once
- * per path and cannot blow up exponentially. The depth bound is checked
- * before the `seen` check, so a node reused below the depth limit still
- * fails. Cycles are rejected up front through `containsCycle`.
+ * `heights` memoizes the height of every validated subtree: the number of
+ * nodes on its longest downward path, itself included. A shared-reference
+ * (DAG) component is therefore validated once per node instead of once per
+ * path, and a repeated visit is accepted only when this placement keeps the
+ * subtree's deepest node within the bound (`depth + height - 1 <=
+ * UI_MAX_DEPTH`). Evaluating the bound at each placement, rather than trusting
+ * the depth at which the node was first seen, makes the verdict independent of
+ * traversal order and of where an aliased subtree sits. Cycles are rejected up
+ * front through `containsCycle`, so a memoized height is always finite.
  */
 function componentProblem(
   component: unknown,
   depth = 0,
-  seen = new WeakSet<object>(),
+  heights = new WeakMap<object, number>(),
 ): string | undefined {
   if (depth > MOCK_LIMITS.UI_MAX_DEPTH) {
     return `component depth exceeds ${MOCK_LIMITS.UI_MAX_DEPTH}`;
@@ -436,8 +440,13 @@ function componentProblem(
   if (depth === 0 && containsCycle(component)) {
     return "component contains a cyclic reference";
   }
-  if (seen.has(component)) return undefined;
-  seen.add(component);
+  const knownHeight = heights.get(component);
+  if (knownHeight !== undefined) {
+    if (depth + knownHeight - 1 > MOCK_LIMITS.UI_MAX_DEPTH) {
+      return `component depth exceeds ${MOCK_LIMITS.UI_MAX_DEPTH}`;
+    }
+    return undefined;
+  }
   const kind = component.kind;
   if (typeof kind !== "string") return "component.kind must be a string";
   if (UI_V1_EXCLUDED_NODE_KINDS.includes(kind)) {
@@ -450,16 +459,23 @@ function componentProblem(
     if (typeof component.text !== "string") {
       return "Text components require a string text field";
     }
+    heights.set(component, 1);
     return undefined;
   }
   const children = component.children;
   if (!Array.isArray(children)) {
     return `${kind} components require a children array`;
   }
+  let height = 1;
   for (const child of children) {
-    const problem = componentProblem(child, depth + 1, seen);
+    const problem = componentProblem(child, depth + 1, heights);
     if (problem !== undefined) return problem;
+    const childHeight = heights.get(child as object);
+    if (childHeight !== undefined && childHeight + 1 > height) {
+      height = childHeight + 1;
+    }
   }
+  heights.set(component, height);
   return undefined;
 }
 
