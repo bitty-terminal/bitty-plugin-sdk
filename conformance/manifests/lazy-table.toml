@@ -16,6 +16,10 @@ plugin-api = "^1.0"
 [lazy]
 commands = [
   "conformance.lazy:ping",
-  { id = "conformance.lazy:echo", args_schema = { type = "object", properties = { value = { type = "string" } }, required = ["value"], additionalProperties = false }, result_schema = { type = "string" } },
-  { id = "conformance.lazy:clamp", args_schema = { type = "object", properties = { value = { type = "integer", minimum = 0, maximum = 9 } }, required = ["value"], additionalProperties = false } },
+  { id = "conformance.lazy:echo", args_schema = { type = "object", properties = { value = { type = "string" } }, required = [
+    "value",
+  ], additionalProperties = false }, result_schema = { type = "string" } },
+  { id = "conformance.lazy:clamp", args_schema = { type = "object", properties = { value = { type = "integer", minimum = 0, maximum = 9 } }, required = [
+    "value",
+  ], additionalProperties = false } },
 ]

@@ -18,7 +18,9 @@ plugin-api = "^1.0"
 "xuepoo.gitcore" = ">=2.0"
 
 [services.provided]
-"markdown.render" = { version = "1.0.0", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } }
+"markdown.render" = { version = "1.0.0", args_schema = { type = "object", properties = { text = { type = "string" } }, required = [
+  "text",
+], additionalProperties = false }, result_schema = { type = "string" } }
 
 [capabilities]
 terminal.semantic-read = true
@@ -31,7 +33,9 @@ paths = ["~/Documents/**/*.md"]
 [lazy]
 commands = [
   "xuepoo.markdown:toggle",
-  { id = "xuepoo.markdown:render", args_schema = { type = "object", properties = { text = { type = "string" } }, required = ["text"], additionalProperties = false }, result_schema = { type = "string" } },
+  { id = "xuepoo.markdown:render", args_schema = { type = "object", properties = { text = { type = "string" } }, required = [
+    "text",
+  ], additionalProperties = false }, result_schema = { type = "string" } },
 ]
 events = ["terminal.cwd-changed"]
 claims = ["workspaceline"]
