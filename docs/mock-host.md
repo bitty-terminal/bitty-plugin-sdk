@@ -81,20 +81,20 @@ waits on wall-clock time.
 
 ## Surface model
 
-| Namespace  | Modeled behavior                                                                                        |
-| ---------- | ------------------------------------------------------------------------------------------------------- |
-| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch    |
-| `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload     |
-| `keymaps`  | Activation-only suggestion; config chord grammar subset; `when = "global"` only; same-generation target |
-| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                    |
-| `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations       |
-| `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                              |
-| `env`      | Absent unless declared; denied until granted; granted allowlist only; 4 KiB value bound                 |
-| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; v1 node kinds only; generation-owned block handles   |
-| `terminal` | `terminal.semantic-read` gate; `scope = "semantic"` only; 256 KiB snapshot bound; read-only copy        |
-| `services` | Declared providers only; required `opts.version`; `E_SERVICE_RESOLUTION`; liveness-checked calls        |
-| `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles          |
-| `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles          |
+| Namespace  | Modeled behavior                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch                   |
+| `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                    |
+| `keymaps`  | Activation-only suggestion; config chord grammar subset; `when = "global"` only; same-generation target                |
+| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                   |
+| `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                      |
+| `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                             |
+| `env`      | Absent unless declared; denied until granted; granted allowlist only; 4 KiB value bound                                |
+| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; v1 node kinds only; generation-owned block handles                  |
+| `terminal` | `terminal.semantic-read` gate; `scope = "semantic"` only; 256 KiB snapshot bound; read-only copy                       |
+| `services` | Declared providers only; required `opts.version`; shared range grammar; `E_SERVICE_RESOLUTION`; liveness-checked calls |
+| `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                         |
+| `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                         |
 
 Capability gates follow the accepted mapping: `bitty.notify.show` requires
 `platform.notify`, `bitty.ui.mount`/`bitty.ui.update` require `ui.rich`
@@ -104,6 +104,15 @@ services, tasks, and timers are ungated. Execution requires **both** manifest
 declaration and an explicit grant: a grant for an undeclared capability is
 ignored, and a declared-but-ungranted call fails closed with
 `E_CAPABILITY_DENIED` (`runtime` class) before any side effect.
+
+Service version requirements use the shared structural grammar in
+`src/version-range.ts` (P1-2): comma-separated conjunctions of an optional
+comparator (`=`/`==`/`>=`/`<=`/`>`/`<`/`^`/`~`, default `=`) and a version with
+optional shorthand segments (`^1.0` means `^1.0.0`). The manifest linter uses
+the same parser for `compat.*`, `dependencies.*`, and `tools.git.version`, so a
+range that passes `bitty-plugin-lint` is never rejected at resolution as
+malformed, and a range the linter rejects always fails closed with
+`E_SERVICE_VERSION_INVALID` here (`tests/version-range.test.ts`).
 
 Settings keys are relative to `plugins.<owner>.<name>` per the accepted
 [Plugin API v1 Lua Surface RFC](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/specifications/plugin-api-v1-lua-surface-rfc.md);
@@ -154,7 +163,10 @@ size bound instead of hanging.
 
 The closed 17-name v1 set is modeled with its classes and required payload
 fields; unknown names fail with `E_EVENT_UNKNOWN` and known-but-undeclared
-names with `E_EVENT_UNDECLARED`. Envelopes are
+names with `E_EVENT_UNDECLARED`. The manifest linter validates `[lazy].events`
+against the same closed set (`lazy.events.unknown`), read from `EVENT_KINDS` in
+`src/host-surface.ts`, so an unknown kind cannot reach this runtime check.
+Envelopes are
 `{ kind, sequence, payload }` with a host-assigned monotonic sequence and a
 deep-frozen payload copy. Observation and lifecycle handler return values are
 ignored; interception handlers veto with `false` and approve with anything
@@ -315,6 +327,13 @@ UI/terminal gates, and service/task/timer behavior.
   Rich Presentation RFC and the host renderer.
 - **Event pipeline budgets.** Coalescing, queue bounds, batching, and drop
   policy are host pipeline concerns not restated in a single-plugin mock.
-- **Lua execution.** The mock host is a TypeScript test double. A Lua-facing
-  adapter that lets plugin authors run `init.lua` against it is a separate
-  tooling task, as is generation of fixtures from R-SDK-1 types.
+- **Lua execution.** The mock host is a TypeScript test double. The bundled
+  minimal example (`lua/examples/minimal-init.lua`) is exercised end to end by
+  `tests/example.test.ts`: a Lua recorder
+  (`tests/lua/minimal-example-recorder.lua`) captures the example's call
+  sequence, and the test replays it through the mock host, which validates every
+  definition and component shape. A `lua` interpreter on `PATH` (override with
+  `LUA`) is required for that step; without one the test skips explicitly
+  instead of passing silently, and the deterministic companion-manifest check
+  still runs. A general Lua-facing adapter and generation of fixtures from
+  R-SDK-1 types remain separate tooling work.

@@ -50,6 +50,15 @@ export const EVENT_KINDS: readonly EventKindSpec[] = [
   { kind: "intercept.open-url", class: "interception", coalescable: false },
 ];
 
+/**
+ * Closed event-kind name set, derived from {@link EVENT_KINDS} so callers that
+ * only need membership (the manifest `[lazy].events` check) share one source
+ * with the mock host and can never copy a stale list.
+ */
+export const EVENT_KIND_SET: ReadonlySet<string> = new Set(
+  EVENT_KINDS.map((entry) => entry.kind),
+);
+
 /** Lifecycle kinds delivered to the owning plugin only. */
 export const LIFECYCLE_KINDS: ReadonlySet<string> = new Set(
   EVENT_KINDS.filter((entry) => entry.class === "lifecycle").map(

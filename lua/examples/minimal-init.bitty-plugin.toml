@@ -1,0 +1,27 @@
+# Companion manifest for lua/examples/minimal-init.lua (Plugin API v1).
+#
+# tests/example.test.ts lints this file and runs the example against the mock
+# host, so the example and its declarations cannot drift. It also serves as the
+# runnable mock-host fixture for the documented minimal example shape.
+
+[plugin]
+id = "xuepoo.example"
+name = "Minimal Init Example"
+version = "0.1.0"
+description = "Companion manifest for the runnable SDK minimal-init example."
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[services.provided]
+"example.greeter" = "1.0.0"
+
+[capabilities]
+platform.notify = true
+ui.rich = true
+terminal.semantic-read = true
+
+[lazy]
+commands = ["xuepoo.example:hello"]
+events = ["terminal.title-changed"]

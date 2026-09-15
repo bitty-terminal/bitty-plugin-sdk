@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import { lintManifestSource, type LintResult } from "../src/manifest.js";
+import { EVENT_KINDS } from "../src/host-surface.js";
 import { loadManifestModel } from "../src/manifest-model.js";
 
 const PLUGIN = `
@@ -785,6 +786,29 @@ events = ["terminal.cwd changed"]
     expect(codes(result)).toContain("manifest.limit");
   });
 
+  test("event kind outside the closed v1 set is rejected", () => {
+    const result = lint(`
+[lazy]
+events = ["terminal.title-changed", "terminal.titl-changed"]
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("lazy.events.unknown");
+    const diagnostic = result.diagnostics.find(
+      (entry) => entry.code === "lazy.events.unknown",
+    );
+    expect(diagnostic?.path).toBe("lazy.events[1]");
+    expect(diagnostic?.message).toContain("terminal.titl-changed");
+  });
+
+  test("every closed v1 event kind is accepted", () => {
+    const events = EVENT_KINDS.map((entry) => JSON.stringify(entry.kind)).join(
+      ", ",
+    );
+    const result = lint(`\n[lazy]\nevents = [${events}]\n`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
   test("oversized claim is rejected", () => {
     const result = lint(`
 [lazy]
@@ -1292,12 +1316,14 @@ events = [${JSON.stringify("é".repeat(128))}]
     expect(codes(result)).toContain("lazy.events.invalid");
   });
 
-  test("lazy event type at exactly 128 UTF-8 bytes is accepted", () => {
+  test("lazy event type within 128 UTF-8 bytes passes the bound but is still closed-set checked", () => {
     const result = lint(`
 [lazy]
 events = [${JSON.stringify("é".repeat(64))}]
 `);
-    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("lazy.events.unknown");
+    expect(codes(result)).not.toContain("lazy.events.invalid");
   });
 
   test("lazy claim over 64 UTF-8 bytes is rejected", () => {
