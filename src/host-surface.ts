@@ -141,6 +141,18 @@ export const UI_SLOTS: readonly string[] = [
   "overlay",
 ];
 
+/**
+ * Slots that are exclusive claims and therefore require a matching
+ * `[lazy].claims` declaration before mounting.
+ *
+ * `surface/bitty-plugin-api-v1.json` (`BittyUiSlot`) states that `tabline` is
+ * an exclusive claim while status components compose and overlay is
+ * non-focusable presentation content. The accepted corpus does not yet name a
+ * separate claim grammar, so a claim is matched to its slot by the identical
+ * accepted slot name.
+ */
+export const EXCLUSIVE_CLAIM_SLOTS: readonly string[] = ["tabline"];
+
 /** v1 declarative node kinds. */
 export const UI_V1_NODE_KINDS: readonly string[] = [
   "Text",
@@ -179,6 +191,7 @@ export const MOCK_LIMITS = {
   COMMAND_ID_MAX_BYTES: 64,
   UI_MAX_DEPTH: 16,
   TIMER_MAX_DELAY_MS: 24 * 60 * 60 * 1000,
+  CHORD_MAX_BYTES: 64,
 } as const;
 
 /** Command id grammar from the accepted surface. */

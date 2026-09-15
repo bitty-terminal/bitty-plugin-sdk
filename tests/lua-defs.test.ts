@@ -229,7 +229,13 @@ describe("generated definitions", () => {
   });
 
   test("accept only the semantic snapshot scope", () => {
-    expect(defs).toContain('---@field scope "semantic"');
+    const opts = surface.types.find(
+      (type) => type.name === "BittySnapshotOpts",
+    );
+    const scope = opts?.fields?.find((field) => field.name === "scope");
+    // scope defaults to "semantic", so the accepted surface marks it optional.
+    expect(scope?.optional).toBe(true);
+    expect(defs).toContain('---@field scope? "semantic"');
     expect(defs).not.toContain('"raw"');
   });
 

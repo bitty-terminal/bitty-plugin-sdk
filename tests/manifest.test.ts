@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
+import {
+  CLOSED_CAPABILITY_HEADS,
+  HIGH_RISK_HEADS,
+} from "../src/capabilities.js";
 import { lintManifestSource, type LintResult } from "../src/manifest.js";
 import { EVENT_KINDS } from "../src/host-surface.js";
 import { loadManifestModel } from "../src/manifest-model.js";
@@ -570,6 +574,54 @@ terminal.raw-read = true
     expect(entry?.severity).toBe("warning");
   });
 
+  test("every high-risk head is a member of the closed v1 set", () => {
+    for (const head of HIGH_RISK_HEADS) {
+      expect(CLOSED_CAPABILITY_HEADS).toContain(head);
+    }
+  });
+
+  test("escalation capabilities are warned as high-risk", () => {
+    const heads = [
+      "terminal.manage",
+      "clipboard.read",
+      "fs.write:notes/**",
+      "process.spawn:git",
+      "network.connect:https://example.invalid",
+      "protocol.register",
+      "runtime.plugin-manage",
+      "debug.control",
+      "browser.embed",
+      "agent.context.terminal",
+      "agent.context.workspace",
+      "agent.memory:notes",
+      "mcp.invoke:git.status",
+    ];
+    for (const head of heads) {
+      const result = lint(`
+[capabilities]
+${JSON.stringify(head)} = true
+`);
+      expect(result.valid).toBe(true);
+      expect(codes(result)).toContain("capabilities.high-risk");
+      const entry = result.diagnostics.find(
+        (diagnostic) => diagnostic.code === "capabilities.high-risk",
+      );
+      expect(entry?.severity).toBe("warning");
+    }
+  });
+
+  test("presentation-only capabilities are not warned as high-risk", () => {
+    const result = lint(`
+[capabilities]
+platform.notify = true
+ui.rich = true
+runtime.inspect = true
+"fs.read:~/Documents/**" = true
+`);
+    expect(result.valid).toBe(true);
+    expect(codes(result)).not.toContain("capabilities.high-risk");
+  });
+
   test("invalid filesystem access kind is rejected", () => {
     const result = lint(`
 [[capabilities.filesystem]]
@@ -731,7 +783,12 @@ ${JSON.stringify(capability)} = true
 "fs.read:~/Documents/**/*.md" = true
 "fs.write:notes/file..txt" = true
 `);
-    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+    expect(
+      result.diagnostics.filter((entry) => entry.severity === "error"),
+    ).toEqual([]);
+    // fs.write is a high-risk escalation shape and must be warned (P2-1).
+    expect(codes(result)).toContain("capabilities.high-risk");
   });
 });
 
@@ -1003,8 +1060,12 @@ events = [
   "focus.changed",
 ]
 `);
-    expect(result.diagnostics).toEqual([]);
     expect(result.valid).toBe(true);
+    expect(
+      result.diagnostics.filter((entry) => entry.severity === "error"),
+    ).toEqual([]);
+    // process.spawn is a high-risk escalation shape and must be warned (P2-1).
+    expect(codes(result)).toContain("capabilities.high-risk");
   });
 
   test("unknown tool is rejected", () => {

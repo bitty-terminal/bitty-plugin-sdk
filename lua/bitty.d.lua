@@ -303,7 +303,7 @@ function BittyUiNamespace.update(handle, component) end
 
 --- Terminal snapshot options; only the semantic scope is accepted in v1.
 ---@class BittySnapshotOpts
----@field scope "semantic" The only accepted v1 scope.
+---@field scope? "semantic" The only accepted v1 scope.
 ---@field terminal_id? integer Target terminal; defaults to the focused view's attached terminal and requires terminal.semantic-read.
 
 --- Color value: "default", a palette index 0..255, or an "#RRGGBB" string.

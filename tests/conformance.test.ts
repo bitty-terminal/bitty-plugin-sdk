@@ -8,10 +8,21 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { runConformanceDirectory } from "../src/conformance.js";
+import {
+  runConformanceCaseFile,
+  runConformanceDirectory,
+} from "../src/conformance.js";
 import {
   CAPABILITY_GATED_SURFACE,
   EVENT_KINDS,
@@ -20,6 +31,7 @@ import {
   SNAPSHOT_SCOPE_ONLY,
   V1_SURFACE_FUNCTIONS,
 } from "../src/host-surface.js";
+import { MANIFEST_MAX_BYTES } from "../src/schema.js";
 
 const CONFORMANCE_DIR = join(import.meta.dir, "..", "conformance");
 const CASES_DIR = join(CONFORMANCE_DIR, "cases");
@@ -93,6 +105,36 @@ describe("conformance fixtures", () => {
       "timers",
     ]) {
       expect(tags.has(required)).toBe(true);
+    }
+  });
+
+  test("oversized fixture manifests are rejected before being read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bitty-sdk-conformance-"));
+    try {
+      const casesDir = join(dir, "cases");
+      const manifestsDir = join(dir, "manifests");
+      mkdirSync(casesDir, { recursive: true });
+      mkdirSync(manifestsDir, { recursive: true });
+      writeFileSync(
+        join(manifestsDir, "huge.toml"),
+        "x".repeat(MANIFEST_MAX_BYTES + 1),
+      );
+      writeFileSync(
+        join(casesDir, "case.json"),
+        JSON.stringify({
+          name: "oversized manifest",
+          description: "A manifest above the accepted byte bound.",
+          manifest: "manifests/huge.toml",
+          steps: [],
+        }),
+      );
+      const result = await runConformanceCaseFile(join(casesDir, "case.json"), {
+        rootDir: dir,
+      });
+      expect(result.passed).toBe(false);
+      expect(result.error ?? "").toContain("fixture manifest exceeds");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

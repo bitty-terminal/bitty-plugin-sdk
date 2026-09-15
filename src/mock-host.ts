@@ -24,10 +24,12 @@ import {
   EVENT_MAX_BYTES,
   EVENT_PAYLOAD_FIELDS,
   eventKindSpec,
+  EXCLUSIVE_CLAIM_SLOTS,
   INTERCEPTION_KINDS,
   LIFECYCLE_KINDS,
   MOCK_LIMITS,
   PLUGIN_API_VERSION,
+  SNAPSHOT_SCOPE_ONLY,
   STORE_KEY_PATTERN,
   UI_SLOTS,
   UI_V1_EXCLUDED_NODE_KINDS,
@@ -461,36 +463,131 @@ function componentProblem(
   return undefined;
 }
 
-const MODIFIERS: ReadonlySet<string> = new Set([
-  "ctrl",
-  "alt",
-  "shift",
-  "super",
+/**
+ * Accepted modifier aliases, canonicalized to the four bitty modifier names.
+ *
+ * The shipped configuration grammar (`bitty-config` `Chord::parse`) accepts
+ * these spellings case-insensitively and in any order; duplicate modifiers and
+ * multiple keys are rejected there and here.
+ */
+const MODIFIER_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["ctrl", "ctrl"],
+  ["control", "ctrl"],
+  ["alt", "alt"],
+  ["opt", "alt"],
+  ["option", "alt"],
+  ["shift", "shift"],
+  ["super", "super"],
+  ["meta", "super"],
+  ["cmd", "super"],
+  ["command", "super"],
+  ["win", "super"],
+  ["windows", "super"],
 ]);
 
+/**
+ * Word spellings for keys the `+`-split chord syntax cannot spell literally,
+ * mirroring the shipped configuration grammar. They are single-character keys
+ * and therefore require a modifier.
+ */
+const CHAR_ALIASES: ReadonlySet<string> = new Set([
+  "plus",
+  "minus",
+  "equal",
+  "equals",
+  "eq",
+  "underscore",
+]);
+
+/** Named keys (with canonical aliases) that may be used without a modifier. */
+const NAMED_KEYS: ReadonlySet<string> = new Set([
+  "tab",
+  "enter",
+  "return",
+  "escape",
+  "esc",
+  "space",
+  "spacebar",
+  "backspace",
+  "bs",
+  "delete",
+  "del",
+  "insert",
+  "ins",
+  "home",
+  "hm",
+  "end",
+  "pageup",
+  "pgup",
+  "pu",
+  "pagedown",
+  "pgdn",
+  "pd",
+  "up",
+  "arrowup",
+  "arrow_up",
+  "arrow-up",
+  "down",
+  "arrowdown",
+  "arrow_down",
+  "arrow-down",
+  "left",
+  "arrowleft",
+  "arrow_left",
+  "arrow-left",
+  "right",
+  "arrowright",
+  "arrow_right",
+  "arrow-right",
+]);
+
+const FUNCTION_KEY = /^f([1-9]|[1-2]\d|3[0-5])$/;
+const SINGLE_CHAR_KEY = /^[!-~]$/;
+
+/**
+ * Validate one suggested key chord against the shipped configuration grammar.
+ *
+ * Parsing is trimmed and case-insensitive (both modifiers and the key), so
+ * `Ctrl+P` and `ctrl+p` are equivalent; this matches `bitty-config`
+ * `Chord::parse` and the configuration-model chord grammar referenced by
+ * ADR 0009 LUA-OQ-5. Accepted modifier and named-key aliases are modeled, and
+ * a single-character key (literal or word spelling) requires at least one
+ * modifier so a suggestion can never steal shell typing.
+ */
 function chordProblem(chord: unknown): string | undefined {
-  if (typeof chord !== "string" || chord.length === 0) {
+  if (typeof chord !== "string" || chord.trim().length === 0) {
     return "chord must be a non-empty string";
   }
-  if (chord !== chord.trim() || chord !== chord.toLowerCase()) {
-    return "chord must be trimmed and lowercase";
+  const trimmed = chord.trim();
+  if (utf8Bytes(trimmed) > MOCK_LIMITS.CHORD_MAX_BYTES) {
+    return `chord must be at most ${MOCK_LIMITS.CHORD_MAX_BYTES} bytes`;
   }
-  const parts = chord.split("+");
-  const key = parts[parts.length - 1] ?? "";
-  if (key.length === 0) return "chord must end with a key";
-  for (const modifier of parts.slice(0, -1)) {
-    if (!MODIFIERS.has(modifier)) {
-      return `unknown modifier ${modifier}`;
+  const modifiers = new Set<string>();
+  let key: string | undefined;
+  for (const part of trimmed.split("+")) {
+    const token = part.trim().toLowerCase();
+    if (token.length === 0) {
+      return `chord '${chord}' has an empty segment`;
     }
+    const modifier = MODIFIER_ALIASES.get(token);
+    if (modifier !== undefined) {
+      if (modifiers.has(modifier)) {
+        return `chord repeats modifier '${modifier}'`;
+      }
+      modifiers.add(modifier);
+      continue;
+    }
+    if (key !== undefined) return "chord must name exactly one key";
+    key = token;
   }
-  const named =
-    /^(tab|enter|space|backspace|escape|esc|ins|del|hm|end|pu|pd|f([1-9]|[1-2]\d|3[0-5]))$/.test(
-      key,
-    );
-  if (!named && !/^[a-z0-9]$/.test(key)) {
+  if (key === undefined) return "chord must name one key";
+  const charAlias = CHAR_ALIASES.has(key);
+  const singleChar = SINGLE_CHAR_KEY.test(key) && key !== "+";
+  const named = NAMED_KEYS.has(key) || FUNCTION_KEY.test(key);
+  if (!charAlias && !singleChar && !named) {
     return `unsupported key ${key}`;
   }
-  if (!named && parts.length < 2) {
+  if ((charAlias || singleChar) && modifiers.size === 0) {
     return "single-character keys require a modifier";
   }
   return undefined;
@@ -735,6 +832,13 @@ export class MockHost {
     this.timers.clear();
     for (const record of this.services.values()) record.alive = false;
     this.services.clear();
+    // Deliberate harness simplification, stricter than the accepted grant
+    // record: the real host persists manifest-hash-addressed grants across
+    // suspend and reload and re-prompts only on a manifest-hash change with
+    // added capabilities or after revocation. Clearing here (never on suspend)
+    // makes a reload start from deny-by-default so tests re-authorize
+    // explicitly; it never makes the mock more permissive than the contract.
+    this.grants.clear();
   }
 
   /** Publish one event into the closed v1 pipeline. */
@@ -773,6 +877,17 @@ export class MockHost {
           HOST_CODES.EVENT_PAYLOAD_INVALID,
           `event payload field '${field.name}' must be ${field.type}`,
           `payload.${field.name}`,
+        );
+      }
+    }
+    if ((EVENT_PAYLOAD_FIELDS[kind] ?? []).length === 0) {
+      const extra = Object.keys(payload);
+      if (extra.length > 0) {
+        fail(
+          "validation",
+          HOST_CODES.EVENT_PAYLOAD_INVALID,
+          `event '${kind}' declares no payload fields; '${extra[0]}' is not part of the v1 shape`,
+          `payload.${extra[0]}`,
         );
       }
     }
@@ -1270,6 +1385,17 @@ export class MockHost {
         "slot",
       );
     }
+    if (
+      EXCLUSIVE_CLAIM_SLOTS.includes(slot) &&
+      !this.manifest.claims.includes(slot)
+    ) {
+      fail(
+        "validation",
+        HOST_CODES.UI_CLAIM_REQUIRED,
+        `slot '${slot}' is an exclusive claim; declare claims = ["${slot}"] in [lazy]`,
+        "slot",
+      );
+    }
     const problem = componentProblem(component);
     if (problem !== undefined) {
       fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "component");
@@ -1330,11 +1456,16 @@ export class MockHost {
   ): Record<string, unknown> {
     this.assertAlive();
     this.assertCapability("bitty.terminal.snapshot", "terminal.semantic-read");
-    if (opts.scope !== "semantic") {
+    // ADR 0009 LUA-OQ-4 / the Lua Surface RFC fix `scope = "semantic"` as the
+    // only v1 scope; because it is the sole accepted value an omitted scope is
+    // unambiguously semantic, so the mock defaults it rather than rejecting a
+    // legitimate call. Any other explicit value still fails closed.
+    const scope = opts.scope ?? SNAPSHOT_SCOPE_ONLY;
+    if (scope !== SNAPSHOT_SCOPE_ONLY) {
       fail(
         "validation",
         HOST_CODES.SNAPSHOT_SCOPE_UNSUPPORTED,
-        "Plugin API v1 supports only scope = 'semantic'",
+        `Plugin API v1 supports only scope = '${SNAPSHOT_SCOPE_ONLY}'`,
         "opts.scope",
       );
     }

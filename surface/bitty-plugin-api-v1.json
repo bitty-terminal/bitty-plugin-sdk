@@ -452,6 +452,7 @@
         {
           "name": "scope",
           "type": "\"semantic\"",
+          "optional": true,
           "doc": "The only accepted v1 scope."
         },
         {
