@@ -53,3 +53,10 @@
 {"created_at":"2026-09-15T02:39:26.111345266+00:00","id":"01M2HEXYWZCGJSQYQWGVTNGC28","kind":"include","pattern":"src/manifest.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2HEM68ZYQ9J4732FZB3YMT4"}
 {"created_at":"2026-09-15T02:39:26.138353974+00:00","id":"01M2HEXYXTS238RMA09CFPRYT6","kind":"include","pattern":"tests/manifest.test.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2HEM68ZYQ9J4732FZB3YMT4"}
 {"created_at":"2026-09-15T02:39:26.158699268+00:00","id":"01M2HEXYYE8HH9GH25KTJ1Z49K","kind":"include","pattern":"docs/manifest.md","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2HEM68ZYQ9J4732FZB3YMT4"}
+{"created_at":"2026-09-15T22:02:43.567699839+00:00","id":"01M2KHG0FFBG56QDBWVAD45FG8","kind":"include","pattern":"src/manifest.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2KHFV1AZN5QEW59JPK20DX9"}
+{"created_at":"2026-09-15T22:02:43.622529489+00:00","id":"01M2KHG0H6RMVB7ETNPFQ274MQ","kind":"include","pattern":"src/mock-host.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2KHFV1AZN5QEW59JPK20DX9"}
+{"created_at":"2026-09-15T22:02:43.725693434+00:00","id":"01M2KHG0MDZGS496SRSQXQH8PB","kind":"include","pattern":"src/host-surface.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2KHFV1AZN5QEW59JPK20DX9"}
+{"created_at":"2026-09-15T22:02:43.820803295+00:00","id":"01M2KHG0QCD5RQCDBB77HPNVK3","kind":"include","pattern":"tests","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2KHFV1AZN5QEW59JPK20DX9"}
+{"created_at":"2026-09-15T22:02:43.882937499+00:00","id":"01M2KHG0SBWVW6JQYYN173J9QJ","kind":"include","pattern":"docs","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2KHFV1AZN5QEW59JPK20DX9"}
+{"created_at":"2026-09-15T22:02:43.953111277+00:00","id":"01M2KHG0VHAR0F3HG0ZCMZ22BN","kind":"include","pattern":"lua","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2KHFV1AZN5QEW59JPK20DX9"}
+{"created_at":"2026-09-15T22:11:47.674669901+00:00","id":"01M2KJ0KTT3B1VV3XWCFKNAMVK","kind":"include","pattern":"src/capabilities.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2KHFV1AZN5QEW59JPK20DX9"}
