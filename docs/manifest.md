@@ -3,8 +3,10 @@
 Status: implemented by SDK task `CTX-0015` (R-SDK-2) for cross-repository gate
 `CTX-0221`; the ADR 0009 table form of `[lazy].commands` is implemented by
 `CTX-0019`, and the accepted `[tools.git]` slice is implemented by `CTX-0030`.
-This document, `src/schema.ts`, and `src/capabilities.ts` are the
-machine-checked SDK surface; there is no separate JSON Schema artifact.
+The shared version-range grammar (P1-2) and the closed `[lazy].events` check
+(P1-3) are implemented by `CTX-0033`. This document, `src/schema.ts`, and
+`src/capabilities.ts` are the machine-checked SDK surface; there is no separate
+JSON Schema artifact.
 
 ## Contract sources
 
@@ -55,6 +57,28 @@ the SDK is stricter than the host, the difference is listed under
 | ------------ | ----------------------------------------------- |
 | `bitty`      | Version range syntax, max 128 bytes             |
 | `plugin-api` | Version range syntax, max 128 bytes (`^1.0` v1) |
+
+### Version ranges
+
+`compat.bitty`, `compat.plugin-api`, every `[dependencies]` value, and
+`[tools.git].version` share one structural grammar with the mock-host service
+resolver (`src/version-range.ts`, P1-2). A range is a comma-separated
+conjunction of clauses; each clause is an optional comparator and a version:
+
+- Comparators: `=` / `==` (equality; a missing operator also means equality),
+  `>=`, `<=`, `>`, `<`, `^`, `~`.
+- Versions are `MAJOR` with optional `.MINOR` and `.PATCH`; missing segments
+  default to zero, so `^1.0` means `^1.0.0` and `>=2.30` means `>=2.30.0`.
+- Clauses may be padded with spaces or tabs around the operator and the comma,
+  but not inside an operator or a version.
+- Disjunctions (`||`), conjunction punctuation other than commas, bare
+  operators, and prerelease/build segments (`-rc.1`, `+build`) are rejected.
+
+The linter accepts a range exactly when the resolver can evaluate it, so a
+range that passes `bitty-plugin-lint` never fails later with an
+`E_SERVICE_VERSION_INVALID` resolver error (`tests/version-range.test.ts`).
+Concrete versions (`plugin.version` and `[services.provided]` values) are
+separate complete SemVer 2 checks, not ranges.
 
 ### `[dependencies]` (optional)
 
@@ -136,11 +160,11 @@ bounds are measured in UTF-8 bytes.
 
 ### `[lazy]` (optional)
 
-| Key        | Rules                                                            |
-| ---------- | ---------------------------------------------------------------- |
-| `commands` | 1..128 command entries: qualified name or table (see below)      |
-| `events`   | 1..256 event types, 1..128 bytes, no whitespace or control chars |
-| `claims`   | 1..64 bytes each                                                 |
+| Key        | Rules                                                                      |
+| ---------- | -------------------------------------------------------------------------- |
+| `commands` | 1..128 command entries: qualified name or table (see below)                |
+| `events`   | 1..256 closed v1 event kinds, 1..128 bytes, no whitespace or control chars |
+| `claims`   | 1..64 bytes each                                                           |
 
 A `commands` entry uses the accepted string form or the ADR 0009 table form;
 both may be mixed in one array. The table form carries the bounded static
@@ -202,7 +226,8 @@ Table-form rules (fail-closed):
   `manifest.missing-key` and a non-string value is `manifest.type`, while an
   invalid range is `tools.version.invalid`. Tool presence and constraint
   satisfaction are re-checked by `bitty plugin doctor`; the linter checks
-  syntax only.
+  structure only, with the shared range grammar (see
+  [Version ranges](#version-ranges)).
 
 ## Hard limits
 
@@ -287,41 +312,42 @@ diagnostic is `{ "severity", "code", "path", "message" }`.
 
 ### Diagnostic codes
 
-| Code                               | Meaning                                      |
-| ---------------------------------- | -------------------------------------------- |
-| `manifest.size`                    | Manifest exceeds 256 KiB                     |
-| `manifest.encoding`                | File is not valid UTF-8                      |
-| `manifest.parse`                   | TOML syntax or duplicate-key error           |
-| `manifest.type`                    | Wrong TOML type for a field                  |
-| `manifest.unknown-key`             | Key outside the accepted schema              |
-| `manifest.missing-key`             | Required table or key missing                |
-| `manifest.limit`                   | Count, length, or depth bound exceeded       |
-| `plugin.id.invalid`                | Plugin id grammar violation                  |
-| `plugin.name.invalid`              | Empty name or NUL/ESC in a display string    |
-| `plugin.version.invalid`           | Version is not SemVer 2                      |
-| `plugin.license.invalid`           | License present but empty                    |
-| `plugin.description.invalid`       | NUL/ESC in description                       |
-| `compat.range.invalid`             | Version range contains invalid characters    |
-| `dependencies.id.invalid`          | Dependency id grammar violation              |
-| `dependencies.version.invalid`     | Dependency range contains invalid chars      |
-| `dependencies.self`                | Plugin depends on itself                     |
-| `services.interface.invalid`       | Interface name grammar violation             |
-| `services.version.invalid`         | Service version is not complete SemVer 2     |
-| `capabilities.invalid`             | Capability id shape/character violation      |
-| `capabilities.wildcard`            | Wildcard in a capability id                  |
-| `capabilities.unknown`             | Capability head outside the closed set       |
-| `capabilities.param-required`      | Required `:PARAMETER` missing                |
-| `capabilities.param-forbidden`     | `:PARAMETER` on a non-parameterized head     |
-| `capabilities.value`               | Capability not declared as `= true`          |
-| `capabilities.filesystem.invalid`  | Filesystem request problem                   |
-| `capabilities.high-risk` (warning) | High-risk capability declared                |
-| `lazy.commands.invalid`            | Qualified command name invalid               |
-| `lazy.commands.owner`              | Command outside the plugin's own namespace   |
-| `lazy.commands.schema`             | Table-form command schema outside the subset |
-| `lazy.events.invalid`              | Event type invalid                           |
-| `lazy.claims.invalid`              | Claim name invalid                           |
-| `tools.tool.unknown`               | Tool outside the accepted Layer 2 slice      |
-| `tools.version.invalid`            | Tool version range contains invalid chars    |
+| Code                               | Meaning                                             |
+| ---------------------------------- | --------------------------------------------------- |
+| `manifest.size`                    | Manifest exceeds 256 KiB                            |
+| `manifest.encoding`                | File is not valid UTF-8                             |
+| `manifest.parse`                   | TOML syntax or duplicate-key error                  |
+| `manifest.type`                    | Wrong TOML type for a field                         |
+| `manifest.unknown-key`             | Key outside the accepted schema                     |
+| `manifest.missing-key`             | Required table or key missing                       |
+| `manifest.limit`                   | Count, length, or depth bound exceeded              |
+| `plugin.id.invalid`                | Plugin id grammar violation                         |
+| `plugin.name.invalid`              | Empty name or NUL/ESC in a display string           |
+| `plugin.version.invalid`           | Version is not SemVer 2                             |
+| `plugin.license.invalid`           | License present but empty                           |
+| `plugin.description.invalid`       | NUL/ESC in description                              |
+| `compat.range.invalid`             | Version range is not structurally valid             |
+| `dependencies.id.invalid`          | Dependency id grammar violation                     |
+| `dependencies.version.invalid`     | Dependency range is not structurally valid          |
+| `dependencies.self`                | Plugin depends on itself                            |
+| `services.interface.invalid`       | Interface name grammar violation                    |
+| `services.version.invalid`         | Service version is not complete SemVer 2            |
+| `capabilities.invalid`             | Capability id shape/character violation             |
+| `capabilities.wildcard`            | Wildcard in a capability id                         |
+| `capabilities.unknown`             | Capability head outside the closed set              |
+| `capabilities.param-required`      | Required `:PARAMETER` missing                       |
+| `capabilities.param-forbidden`     | `:PARAMETER` on a non-parameterized head            |
+| `capabilities.value`               | Capability not declared as `= true`                 |
+| `capabilities.filesystem.invalid`  | Filesystem request problem                          |
+| `capabilities.high-risk` (warning) | High-risk capability declared                       |
+| `lazy.commands.invalid`            | Qualified command name invalid                      |
+| `lazy.commands.owner`              | Command outside the plugin's own namespace          |
+| `lazy.commands.schema`             | Table-form command schema outside the subset        |
+| `lazy.events.invalid`              | Event type malformed (empty, oversized, whitespace) |
+| `lazy.events.unknown`              | Event kind outside the closed v1 set                |
+| `lazy.claims.invalid`              | Claim name invalid                                  |
+| `tools.tool.unknown`               | Tool outside the accepted Layer 2 slice             |
+| `tools.version.invalid`            | Tool version range is not structurally valid        |
 
 ## Examples
 
@@ -349,8 +375,12 @@ cannot drift from the validator.
 - The linter rejects lazy commands that do not use the manifest's own plugin id
   as their namespace. The reference host enforces ownership at registration
   time instead; the SDK check is stricter and fail-closed.
-- Compatibility ranges are syntax-checked only. Range semantics and resolver
-  behavior remain owned by the host package layer.
+- Version ranges are checked with the shared structural grammar in
+  `src/version-range.ts`, the same parser the mock-host resolver uses, so the
+  linter and the mock agree on accept/reject ([Version ranges](#version-ranges)).
+  Whether a concrete version satisfies a range, and how the real host package
+  layer resolves providers, remain host-owned beyond the comparator behavior
+  the mock mirrors.
 - The `env` family accepts exactly the `env:BITTY_*` suffix pattern from
   ADR 0006 and no other wildcard; a broader `env:BITTY_<PREFIX>_*` form would
   be a reviewed additive change, not an implicit widening.

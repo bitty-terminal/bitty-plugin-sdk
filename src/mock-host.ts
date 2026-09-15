@@ -40,6 +40,7 @@ import {
   type JsonValue,
 } from "./json-schema.js";
 import { loadManifestModel, type ManifestModel } from "./manifest-model.js";
+import { versionSatisfies } from "./version-range.js";
 
 /** Construction options for one mock host bound to one plugin manifest. */
 export interface MockHostOptions {
@@ -458,71 +459,6 @@ function componentProblem(
     if (problem !== undefined) return problem;
   }
   return undefined;
-}
-
-function versionParts(version: string): number[] | undefined {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
-  if (match === null) return undefined;
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function compareVersions(left: string, right: string): number | undefined {
-  const a = versionParts(left);
-  const b = versionParts(right);
-  if (a === undefined || b === undefined) return undefined;
-  for (let index = 0; index < 3; index += 1) {
-    const diff = (a[index] ?? 0) - (b[index] ?? 0);
-    if (diff !== 0) return diff < 0 ? -1 : 1;
-  }
-  return 0;
-}
-
-function versionSatisfies(version: string, range: string): boolean | undefined {
-  if (versionParts(version) === undefined) return undefined;
-  const clauses = range.split(",").map((entry) => entry.trim());
-  if (clauses.length === 0) return undefined;
-  for (const clause of clauses) {
-    const match = /^(>=|<=|>|<|==|=|\^|~)?\s*(\d+\.\d+\.\d+)$/.exec(clause);
-    if (match === null) return undefined;
-    const operator = match[1] ?? "=";
-    const target = match[2] ?? "";
-    const comparison = compareVersions(version, target);
-    if (comparison === undefined) return undefined;
-    let ok: boolean;
-    switch (operator) {
-      case ">=":
-        ok = comparison >= 0;
-        break;
-      case ">":
-        ok = comparison > 0;
-        break;
-      case "<=":
-        ok = comparison <= 0;
-        break;
-      case "<":
-        ok = comparison < 0;
-        break;
-      case "^": {
-        const parts = versionParts(target);
-        if (parts === undefined) return undefined;
-        ok = comparison >= 0 && versionParts(version)?.[0] === parts[0];
-        break;
-      }
-      case "~": {
-        const parts = versionParts(target);
-        const actual = versionParts(version);
-        if (parts === undefined || actual === undefined) return undefined;
-        ok =
-          comparison >= 0 && actual[0] === parts[0] && actual[1] === parts[1];
-        break;
-      }
-      default:
-        ok = comparison === 0;
-        break;
-    }
-    if (!ok) return false;
-  }
-  return true;
 }
 
 const MODIFIERS: ReadonlySet<string> = new Set([

@@ -12,8 +12,10 @@ import { parse, TomlError } from "smol-toml";
 
 import { validateCapabilityId } from "./capabilities.js";
 import { error, type Diagnostic } from "./diagnostics.js";
+import { EVENT_KIND_SET } from "./host-surface.js";
 import { schemaProblem } from "./json-schema.js";
 import { pathPatternProblem } from "./path-pattern.js";
+import { versionRangeProblem } from "./version-range.js";
 import {
   ALLOWED_COMPAT_KEYS,
   ALLOWED_FILESYSTEM_KEYS,
@@ -45,7 +47,6 @@ import {
   MAX_SERVICE_IFACE_LEN,
   MAX_SERVICE_IFACE_SEGMENT_LEN,
   MAX_VERSION_LEN,
-  MAX_VERSION_REQ_LEN,
   REQUIRED_PLUGIN_KEYS,
   collectProvidedServices,
   type ProvidedServiceEntry,
@@ -62,7 +63,6 @@ type TomlTable = Record<string, unknown>;
 const CONTROL_OR_WHITESPACE = /[\p{Cc}\p{White_Space}]/u;
 const PLUGIN_ID_SEGMENT = /^[a-z][a-z0-9_-]*$/;
 const SERVICE_IFACE_SEGMENT = /^[a-z][a-z0-9_-]*$/;
-const VERSION_REQ = /^[A-Za-z0-9 \t\n\f\r.\-+,<>=^~*|&]+$/;
 const SEMVER_2 =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
@@ -203,16 +203,7 @@ export function versionProblem(raw: string): string | undefined {
 
 /** Validate a version requirement and return a reason when invalid. */
 export function versionReqProblem(raw: string): string | undefined {
-  if (raw.length === 0) {
-    return "must not be empty";
-  }
-  if (raw.length > MAX_VERSION_REQ_LEN) {
-    return `too long (${raw.length} > ${MAX_VERSION_REQ_LEN})`;
-  }
-  if (!VERSION_REQ.test(raw)) {
-    return "contains a character that is not part of a version range";
-  }
-  return undefined;
+  return versionRangeProblem(raw);
 }
 
 /** Validate a qualified name (`plugin-id:resource`) and return a reason. */
@@ -897,6 +888,16 @@ function validateLazy(
               "lazy.events.invalid",
               eventPath,
               `event type must be 1..${MAX_EVENT_TYPE_LEN} bytes without whitespace or control characters`,
+            ),
+          );
+          return;
+        }
+        if (!EVENT_KIND_SET.has(event)) {
+          diagnostics.push(
+            error(
+              "lazy.events.unknown",
+              eventPath,
+              `unknown event kind ${quote(event)} is not part of the closed v1 event set`,
             ),
           );
         }
