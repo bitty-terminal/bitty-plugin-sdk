@@ -13,6 +13,7 @@ import { parse, TomlError } from "smol-toml";
 import { validateCapabilityId } from "./capabilities.js";
 import { error, type Diagnostic } from "./diagnostics.js";
 import { schemaProblem } from "./json-schema.js";
+import { pathPatternProblem } from "./path-pattern.js";
 import {
   ALLOWED_COMPAT_KEYS,
   ALLOWED_FILESYSTEM_KEYS,
@@ -33,7 +34,6 @@ import {
   MAX_EVENT_TYPES,
   MAX_EVENT_TYPE_LEN,
   MAX_FS_PATTERNS_PER_ACCESS,
-  MAX_FS_PATH_LEN,
   MAX_LICENSE_LEN,
   MAX_NAME_LEN,
   MAX_PATTERN_TEXT_BYTES,
@@ -599,19 +599,6 @@ function validateServices(value: unknown, diagnostics: Diagnostic[]): void {
     }
     validateProvidedServiceEntry(entry.path, entry.value, diagnostics);
   }
-}
-
-function pathPatternProblem(raw: string): string | undefined {
-  if (raw.length === 0) {
-    return "must not be empty";
-  }
-  if (byteLength(raw) > MAX_FS_PATH_LEN) {
-    return `too long (${byteLength(raw)} > ${MAX_FS_PATH_LEN})`;
-  }
-  if (CONTROL_OR_WHITESPACE.test(raw)) {
-    return "must not contain control characters or whitespace";
-  }
-  return undefined;
 }
 
 function validateFilesystem(value: unknown, diagnostics: Diagnostic[]): void {

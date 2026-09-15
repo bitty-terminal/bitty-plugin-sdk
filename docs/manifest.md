@@ -121,6 +121,19 @@ paths = ["~/Documents/**/*.md"]
 | `access`       | yes      | `read` or `write`                                  |
 | `paths`        | yes      | 1+ glob patterns, 1..512 bytes each, no whitespace |
 
+Each pattern is normalized on `/` and `\` and must be relative: absolute
+forms (`/etc/**`, `C:/Windows/**`, a UNC `\\server\share`) are rejected, and
+a parent-directory segment (`..`) anywhere in the pattern is rejected. The
+check is segment-exact, so a legitimate component such as `a..b` still
+passes. Patterns that name a well-known secret or credential store under the
+home directory (`.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.docker`,
+`.password-store`, `.netrc`) are also rejected. The reference host resolves
+patterns against real paths and rejects devices, sockets, `/proc`, `/sys`,
+and `/dev` (threat model T-03; P0-AC-005); the accepted corpus does not yet
+publish the approved-location list, so the lint applies the conservative
+static subset of that policy and fails closed. The per-pattern and aggregate
+bounds are measured in UTF-8 bytes.
+
 ### `[lazy]` (optional)
 
 | Key        | Rules                                                            |
@@ -237,6 +250,11 @@ validation instead of being ignored. Parameterized heads must carry a
 | `env`       | `env:KEY`, `env:BITTY_*`                                                                                      |
 | `mcp`       | `mcp.invoke:TOOL`                                                                                             |
 | `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                        |
+
+A flat `fs.read:PATTERN` / `fs.write:PATTERN` capability applies the same
+pattern rules as the structured `[[capabilities.filesystem]]` form (relative
+only, no `..` segment, no sensitive location, at most 512 bytes); both share
+one validator, so neither form can declare a traversal or absolute pattern.
 
 `bitty-plugin-lint` emits a `capabilities.high-risk` warning (never an error)
 for `terminal.input.all`, `terminal.raw-read`, `ui.protocol-register`,

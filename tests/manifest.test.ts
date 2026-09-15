@@ -609,7 +609,7 @@ paths = []
   test("more than 32 patterns per access kind is rejected", () => {
     const paths = Array.from(
       { length: 33 },
-      (_value, index) => `"/dir/file${index}"`,
+      (_value, index) => `"dir/file${index}"`,
     ).join(", ");
     const result = lint(`
 [[capabilities.filesystem]]
@@ -622,7 +622,7 @@ paths = [${paths}]
   test("per-access aggregation across entries is enforced", () => {
     const paths = Array.from(
       { length: 17 },
-      (_value, index) => `"/dir/file${index}"`,
+      (_value, index) => `"dir/file${index}"`,
     ).join(", ");
     const result = lint(`
 [[capabilities.filesystem]]
@@ -637,7 +637,7 @@ paths = [${paths}]
   });
 
   test("total pattern text over 8 KiB is rejected", () => {
-    const pattern = `/${"a".repeat(499)}`;
+    const pattern = "a".repeat(500);
     const paths = Array.from({ length: 17 }, () => `"${pattern}"`).join(", ");
     const result = lint(`
 [[capabilities.filesystem]]
@@ -645,6 +645,92 @@ access = "read"
 paths = [${paths}]
 `);
     expect(codes(result)).toContain("manifest.limit");
+  });
+
+  test("parent-directory references are rejected as path segments", () => {
+    for (const pattern of [
+      "../secrets/**",
+      "a/../b",
+      "~/.local/../../etc/passwd",
+      String.raw`..\windows`,
+    ]) {
+      const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = [${JSON.stringify(pattern)}]
+`);
+      expect(result.valid).toBe(false);
+      expect(codes(result)).toContain("capabilities.filesystem.invalid");
+    }
+  });
+
+  test("legitimate names containing a double dot are accepted", () => {
+    const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = ["~/a..b/**", "notes/file..txt"]
+`);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("absolute path patterns are rejected", () => {
+    for (const pattern of [
+      "/etc/passwd",
+      "C:/Windows/**",
+      String.raw`\\server\share`,
+      String.raw`C:\Users\**`,
+    ]) {
+      const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = [${JSON.stringify(pattern)}]
+`);
+      expect(result.valid).toBe(false);
+      expect(codes(result)).toContain("capabilities.filesystem.invalid");
+    }
+  });
+
+  test("sensitive filesystem locations are rejected", () => {
+    for (const pattern of [
+      "~/.ssh/**",
+      "~/.ssh/id_ed25519",
+      "**/.gnupg/**",
+      "home/.aws/credentials",
+    ]) {
+      const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = [${JSON.stringify(pattern)}]
+`);
+      expect(result.valid).toBe(false);
+      expect(codes(result)).toContain("capabilities.filesystem.invalid");
+    }
+  });
+
+  test("flat fs capability applies the same path rules as the table form", () => {
+    for (const capability of [
+      "fs.read:../secrets/**",
+      "fs.write:a/../b",
+      "fs.read:/etc/passwd",
+      "fs.read:C:/Windows/**",
+      "fs.write:~/.ssh/**",
+    ]) {
+      const result = lint(`
+[capabilities]
+${JSON.stringify(capability)} = true
+`);
+      expect(result.valid).toBe(false);
+      expect(codes(result)).toContain("capabilities.filesystem.invalid");
+    }
+  });
+
+  test("flat fs capability accepts relative and dotted names", () => {
+    const result = lint(`
+[capabilities]
+"fs.read:~/Documents/**/*.md" = true
+"fs.write:notes/file..txt" = true
+`);
+    expect(result.diagnostics).toEqual([]);
   });
 });
 
