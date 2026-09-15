@@ -1,0 +1,16 @@
+# bitty-plugin-sdk: workspace identity descriptor (kind/lang/role mirror workspace.toml).
+[repo]
+name = "bitty-plugin-sdk"
+kind = "sdk"
+lang = "ts/lua"
+role = "plugin SDK: manifest, capabilities, mock host, conformance"
+owner = "TBD"
+docs = "bitty-docs"
+
+[contracts.provides]
+manifest-lint = "src/cli.ts" # bitty-plugin-lint validates bitty-plugin.toml manifests
+plugin-api-decls = "lua/bitty.d.lua" # generated from surface/bitty-plugin-api-v1.json
+mock-host = "src/mock-host.ts" # conformance fixtures for plugin authors
+
+[contracts.consumes]
+plugin-api-v1 = "bitty-docs: docs/extensibility/plugin-system.md" # canonical manifest/capability contract
