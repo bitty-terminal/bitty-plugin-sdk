@@ -17,12 +17,17 @@ import { existsSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { EXCLUSIVE_CLAIM_SLOTS } from "../src/host-surface.js";
 import { loadManifestModel } from "../src/manifest-model.js";
 import { lintManifestSource } from "../src/manifest.js";
 import { MockHost } from "../src/mock-host.js";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const EXAMPLE_PATH = join(REPO_ROOT, "lua/examples/minimal-init.lua");
+const FULL_EXAMPLE_PATH = join(
+  REPO_ROOT,
+  "docs/examples/full-bitty-plugin.toml",
+);
 const COMPANION_MANIFEST_PATH = join(
   REPO_ROOT,
   "lua/examples/minimal-init.bitty-plugin.toml",
@@ -230,4 +235,30 @@ describe("runnable minimal example", () => {
       );
     },
   );
+});
+
+describe("shipped manifest examples", () => {
+  test("full example claims satisfy every exclusive UI slot", () => {
+    const source = readFileSync(FULL_EXAMPLE_PATH, "utf8");
+    const model = loadManifestModel(source);
+    // Guard against a vacuous loop if the exclusive-claim set ever empties.
+    expect(EXCLUSIVE_CLAIM_SLOTS.length).toBeGreaterThan(0);
+    for (const slot of EXCLUSIVE_CLAIM_SLOTS) {
+      expect(model.claims).toContain(slot);
+    }
+
+    // Mounting proves the host accepts the shipped claim token; before the
+    // `tabline` fix the example declared `workspaceline` and failed with
+    // E_UI_CLAIM_REQUIRED here.
+    const host = new MockHost({ manifestSource: source });
+    host.grant("ui.rich");
+    host.beginActivation();
+    for (const slot of EXCLUSIVE_CLAIM_SLOTS) {
+      expect(
+        host.bitty.ui.mount(slot, { kind: "Text", text: "claim" }),
+      ).toBeGreaterThan(0);
+    }
+    host.endActivation();
+    expect(host.currentState).toBe("active");
+  });
 });
