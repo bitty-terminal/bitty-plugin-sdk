@@ -1,6 +1,6 @@
 {
   "name": "registration window, lifecycle delivery, and generation invalidation",
-  "description": "Registration calls are valid only while init.lua activation runs; plugin.activated/plugin.disposed are delivered around the window; generation-owned handles and calls are invalid after disposal; the store survives reload.",
+  "description": "Registration calls are valid only while init.lua activation runs; plugin.activated/plugin.disposed are delivered around the window; generation-owned handles and calls are invalid after disposal; this fixture re-grants after reload because the mock harness is stricter than the accepted persistent grant record, which carries grants across reload until a manifest-hash change with added capabilities or an explicit revocation; the store survives reload.",
   "manifest": "manifests/full.toml",
   "tags": ["lifecycle", "registration"],
   "steps": [
@@ -78,6 +78,7 @@
       }
     },
     { "op": "begin-activation" },
+    { "op": "grant", "capability": "ui.rich" },
     {
       "op": "call",
       "surface": "store.get",

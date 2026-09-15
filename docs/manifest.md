@@ -282,9 +282,33 @@ only, no `..` segment, no sensitive location, at most 512 bytes); both share
 one validator, so neither form can declare a traversal or absolute pattern.
 
 `bitty-plugin-lint` emits a `capabilities.high-risk` warning (never an error)
-for `terminal.input.all`, `terminal.raw-read`, `ui.protocol-register`,
-`debug.control`, `runtime.plugin-manage`, and `browser.embed` so reviewers and
-consent tooling can flag them.
+for capabilities that reach beyond presentation:
+
+| Escalation shape       | Heads                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Host management        | `terminal.manage`, `runtime.plugin-manage`, `debug.control`                                                  |
+| Sensitive input reads  | `terminal.raw-read`, `terminal.input.all`, `clipboard.read`                                                  |
+| Execution / write      | `fs.write:PATTERN`, `process.spawn:CONSTRAINT`, `ui.protocol-register`, `protocol.register`, `browser.embed` |
+| Outbound network       | `network.connect:DESTINATION`                                                                                |
+| Agent / external calls | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`, `mcp.invoke:TOOL`             |
+
+The warning is consent metadata only: it changes neither the manifest verdict
+nor any grant requirement. Capabilities that stay presentation-only or expose
+no secret, execution, or host-management authority (`platform.notify`,
+`platform.open-url`, `runtime.inspect`, `ui.rich`, `fs.read`, `clipboard.write`)
+stay out so the warning keeps its signal.
+
+Least-privilege guidance (RFC capability rule 3):
+
+- No `[capabilities]` table means no authority; add one capability at a time
+  only when the plugin actually needs it.
+- Prefer the narrowest declaration: an exact `env:KEY` over `env:BITTY_*`, a
+  specific filesystem path pattern over a broad home-directory glob, and a
+  concrete `process.spawn` / `network.connect` / `mcp.invoke` parameter over a
+  general one.
+- High-risk heads are presented distinctly at consent time; prefer a
+  presentation-only capability (`ui.rich`, `platform.notify`) or a read-only
+  surface (`fs.read`, `runtime.inspect`) when it suffices.
 
 The `env` family carries the ADR 0006 form: an exact key (`env:EDITOR`, keys
 matching `^[A-Z_][A-Z0-9_]*$`, at most 64 bytes) or the single accepted suffix

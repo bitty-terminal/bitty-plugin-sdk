@@ -84,14 +84,36 @@ export const PARAM_REQUIRED_HEADS: ReadonlySet<string> = new Set([
   "agent.memory",
 ]);
 
-/** Heads the consent flow must present distinctly (RFC capability rule 3). */
+/**
+ * Heads the consent flow must present distinctly and reviewers must flag
+ * (RFC capability rule 3; ADR 0009).
+ *
+ * The set covers escalation shapes that reach beyond presentation: host
+ * management (terminal/runtime/plugin control, debugger control), arbitrary
+ * code or protocol execution, outbound process/network authority, destructive
+ * file writes, sensitive input reads, and agent or external-tool calls. Heads
+ * that stay presentation-only or that expose no secret, execution, or
+ * host-management authority (for example `platform.notify`, `runtime.inspect`,
+ * `ui.rich`, `platform.open-url`, `clipboard.write`) deliberately stay out so
+ * the warning keeps its signal; a broad list would train authors to ignore it.
+ */
 export const HIGH_RISK_HEADS: ReadonlySet<string> = new Set([
   "terminal.input.all",
   "terminal.raw-read",
+  "terminal.manage",
   "ui.protocol-register",
-  "debug.control",
+  "clipboard.read",
+  "fs.write",
+  "process.spawn",
+  "network.connect",
+  "protocol.register",
   "runtime.plugin-manage",
+  "debug.control",
   "browser.embed",
+  "agent.context.terminal",
+  "agent.context.workspace",
+  "agent.memory",
+  "mcp.invoke",
 ]);
 
 /** Maximum `env:<KEY>` parameter length in bytes (ADR 0006 key bound). */
@@ -293,7 +315,7 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
       warning(
         "capabilities.high-risk",
         path,
-        `capability '${head}' is high-risk; consent must present it distinctly`,
+        `capability '${head}' is high-risk; consent must present it distinctly and grant it only when no narrower capability (one entry, exact key or path) suffices`,
       ),
     );
   }

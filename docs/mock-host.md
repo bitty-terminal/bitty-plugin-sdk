@@ -81,20 +81,20 @@ waits on wall-clock time.
 
 ## Surface model
 
-| Namespace  | Modeled behavior                                                                                                       |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch                   |
-| `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                    |
-| `keymaps`  | Activation-only suggestion; config chord grammar subset; `when = "global"` only; same-generation target                |
-| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                   |
-| `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                      |
-| `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                             |
-| `env`      | Absent unless declared; denied until granted; granted allowlist only; 4 KiB value bound                                |
-| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; v1 node kinds only; generation-owned block handles                  |
-| `terminal` | `terminal.semantic-read` gate; `scope = "semantic"` only; 256 KiB snapshot bound; read-only copy                       |
-| `services` | Declared providers only; required `opts.version`; shared range grammar; `E_SERVICE_RESOLUTION`; liveness-checked calls |
-| `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                         |
-| `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                         |
+| Namespace  | Modeled behavior                                                                                                                                           |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch                                                       |
+| `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                        |
+| `keymaps`  | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target |
+| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                       |
+| `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                          |
+| `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                 |
+| `env`      | Absent unless declared; denied until granted; granted allowlist only; 4 KiB value bound                                                                    |
+| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; generation-owned block handles   |
+| `terminal` | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                    |
+| `services` | Declared providers only; required `opts.version`; shared range grammar; `E_SERVICE_RESOLUTION`; liveness-checked calls                                     |
+| `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                             |
+| `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                             |
 
 Capability gates follow the accepted mapping: `bitty.notify.show` requires
 `platform.notify`, `bitty.ui.mount`/`bitty.ui.update` require `ui.rich`
@@ -151,6 +151,20 @@ size bound instead of hanging.
   `keymaps.suggest`, `services.provide`, `tasks.spawn`, `timers.create`) are
   valid only while `activating`; later attempts fail with
   `E_REGISTRATION_CLOSED` (`validation`).
+- Tasks and timers are generation-owned and created only during the activation
+  window (ADR 0009 LUA-OQ-12). After `endActivation()`, `tasks.spawn` and
+  `timers.create` fail with `E_REGISTRATION_CLOSED`; a new generation's
+  `drainTasks()` / `advanceTimers()` never runs a disposed generation's
+  callbacks, and its handles fail closed.
+- Grants: `suspend()` retains grants (same generation, matching the accepted
+  runtime lifecycle). `dispose()` clears the grant set as a deliberate
+  fail-closed harness simplification; the accepted grant record is persistent
+  and manifest-hash-addressed, so a real reload normally carries grants forward
+  and re-prompts only on a manifest-hash change with added capabilities or
+  after revocation (see
+  [Contract choices and divergences](#contract-choices-and-divergences)).
+  Until the harness re-grants, a declared-but-ungranted call fails closed with
+  `E_CAPABILITY_DENIED`.
 - `dispose()` delivers `plugin.disposed` before invalidation. Handles from a
   disposed generation are invalid: `ui.update` and the cancel calls return
   `false` rather than touching new-generation resources.
@@ -166,7 +180,11 @@ fields; unknown names fail with `E_EVENT_UNKNOWN` and known-but-undeclared
 names with `E_EVENT_UNDECLARED`. The manifest linter validates `[lazy].events`
 against the same closed set (`lazy.events.unknown`), read from `EVENT_KINDS` in
 `src/host-surface.ts`, so an unknown kind cannot reach this runtime check.
-Envelopes are
+Kinds with declared fields tolerate unknown optional fields for forward
+compatibility (ADR 0009 LUA-OQ-10); kinds that declare no payload fields
+(`plugin.activated`, `plugin.suspended`, `plugin.disposed`,
+`handler.violation`, `terminal.bell`, `config.reloaded`) reject any key with
+`E_EVENT_PAYLOAD_INVALID`. Envelopes are
 `{ kind, sequence, payload }` with a host-assigned monotonic sequence and a
 deep-frozen payload copy. Observation and lifecycle handler return values are
 ignored; interception handlers veto with `false` and approve with anything
@@ -215,7 +233,8 @@ for an accepted code): registration and lifecycle state (`E_REGISTRATION_CLOSED`
 keymaps and definitions (`E_KEYMAP_WHEN_UNSUPPORTED`, `E_KEYMAP_CHORD_INVALID`,
 `E_KEYMAP_COMMAND_UNKNOWN`, `E_DEF_INVALID`), store and settings keys
 (`E_STORE_KEY_INVALID`, `E_SETTINGS_KEY_INVALID`), snapshot scope
-(`E_SNAPSHOT_SCOPE_UNSUPPORTED`), services (`E_SERVICE_UNDECLARED`; a missing
+(`E_SNAPSHOT_SCOPE_UNSUPPORTED`), UI exclusivity (`E_UI_CLAIM_REQUIRED`),
+services (`E_SERVICE_UNDECLARED`; a missing
 `opts` or `opts.version` fails the accepted required-argument validation with
 `E_SERVICE_VERSION_INVALID`), and `E_HANDLER_VIOLATION` for recorded handler
 faults.
@@ -301,6 +320,53 @@ and generation invalidation, store persistence across reloads, round-trips for
 every kind of the closed event set, interception veto, command schema
 validation, table-form `[lazy].commands` reservations, store bounds,
 UI/terminal gates, and service/task/timer behavior.
+
+## Contract choices and divergences
+
+Where the accepted corpus is silent, the mock chooses the fail-closed reading
+and records it here; where a mock harness simplification diverges from an
+accepted contract, the divergence and its fail-closed direction are stated
+explicitly.
+
+- **Terminal snapshot scope.** ADR 0009 LUA-OQ-4 and the Lua Surface RFC write
+  `opts = { scope = "semantic", terminal_id? = integer }`; `"semantic"` is the
+  only accepted v1 scope, so an omitted `scope` is unambiguously semantic and
+  the mock defaults it instead of failing a valid call. `scope = "raw"` and any
+  other explicit value still fail with `E_SNAPSHOT_SCOPE_UNSUPPORTED`. The
+  R-SDK-1 surface table marks `scope` optional and `lua/bitty.d.lua` renders
+  `---@field scope? "semantic"`, matching this default.
+- **UI exclusivity claims.** The surface table says `tabline` is an exclusive
+  claim while status components compose. The mock therefore requires a
+  `lazy.claims` entry named exactly `tabline` before mounting to `tabline`
+  (`E_UI_CLAIM_REQUIRED`); other slots, including `statusline` and `overlay`,
+  need no claim. The accepted corpus does not yet define a claim grammar beyond
+  the slot name.
+- **Cross-generation grants (deliberate harness simplification; diverges from
+  the accepted persistent grant record).** The accepted grant lifecycle
+  (`bitty-plugins-docs`
+  [`plugin-platform-rfc.md`](https://github.com/bitty-terminal/bitty-plugins-docs/blob/main/specifications/plugin-platform-rfc.md)
+  "Grant lifecycle": Persistence / Update / Re-grant) records grants as a
+  user-owned, manifest-hash-addressed record that survives suspension and
+  reload; the real host re-prompts only when the manifest hash changes with
+  added capabilities, or after revocation. `plugin-host-runtime-rfc.md` A.5
+  confirms "`Suspended` retains grants". The mock does not model that record:
+  to keep a self-contained test double it fails closed on the stricter side,
+  clearing the grant set on `dispose()` so a reload starts from
+  deny-by-default and the harness re-grants explicitly, while `suspend()` keeps
+  grants because it stays in the same generation. This is deliberately more
+  restrictive than the contract, never more permissive.
+- **Empty event payloads.** Kinds that declare no payload fields accept no
+  keys; kinds with declared fields keep the accepted forward-compatible
+  unknown-optional-field rule (ADR 0009 LUA-OQ-10). The asymmetry is deliberate
+  because the accepted corpus never assigns semantics to extra keys on a
+  payload-less event.
+- **Key chords.** Parsing mirrors the shipped `bitty-config` `Chord::parse`
+  (trimmed, case-insensitive, modifier aliases `ctrl`/`control`,
+  `alt`/`opt`/`option`, `super`/`meta`/`cmd`/`command`/`win`/`windows`,
+  named-key aliases plus `f1..f35`, single-character keys requiring a modifier,
+  and the 64-byte bound).
+- **High-risk capabilities.** The lint-side escalation set is documented in
+  [`docs/manifest.md`](manifest.md); the mock does not re-derive it.
 
 ## Known gaps
 

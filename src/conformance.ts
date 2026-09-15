@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { HostError } from "./host-diagnostics.js";
 import { lintManifestSource } from "./manifest.js";
 import { MockHost, type ResolvedService } from "./mock-host.js";
+import { MANIFEST_MAX_BYTES } from "./schema.js";
 
 /** One declarative conformance step (closed vocabulary). */
 export interface ConformanceStep {
@@ -400,6 +401,18 @@ export async function runConformanceCaseFile(
     name = conformanceCase.name;
 
     const manifestFile = join(options.rootDir, conformanceCase.manifest);
+    // Reject an oversized fixture before reading it so a hostile manifest
+    // cannot be used as a memory amplifier: the accepted linter only rejects
+    // after the whole source is already in memory.
+    const manifestStats = statSync(manifestFile);
+    if (!manifestStats.isFile()) {
+      throw new CaseFailure("fixture manifest path is not a file");
+    }
+    if (manifestStats.size > MANIFEST_MAX_BYTES) {
+      throw new CaseFailure(
+        `fixture manifest exceeds ${MANIFEST_MAX_BYTES} bytes`,
+      );
+    }
     const manifestSource = readFileSync(manifestFile, "utf8");
     const lint = lintManifestSource(manifestSource);
     if (!lint.valid) {

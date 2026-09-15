@@ -337,6 +337,8 @@ describe("registration window and lifecycle", () => {
     );
     host.dispose();
     activate(host);
+    // Consent is per generation: re-authorize before using the surface.
+    host.grant("ui.rich");
     expect(host.bitty.ui.update(block, { kind: "Text", text: "three" })).toBe(
       false,
     );
@@ -890,6 +892,166 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     expect(denial(() => host.bitty.settings.get("..escape")).code).toBe(
       HOST_CODES.SETTINGS_KEY_INVALID,
     );
+  });
+});
+
+describe("contract alignment", () => {
+  test("terminal snapshot defaults an omitted scope to semantic", () => {
+    const host = makeHost();
+    host.grant("terminal.semantic-read");
+    activate(host);
+    const snapshot = {
+      version: 1,
+      terminal_id: 7,
+      runtime_id: 9,
+      generation: 1,
+      snapshot_generation: 2,
+      width: 80,
+      height: 1,
+      rows: [{ text: "hello", spans: [] }],
+      cursor: { row: 0, col: 5, visible: true },
+      modes: { alternate_screen: false },
+      title: "fixture",
+    };
+    host.setTerminalSnapshot(snapshot);
+    expect(host.bitty.terminal.snapshot()).toEqual(snapshot);
+    expect(host.bitty.terminal.snapshot({})).toEqual(snapshot);
+    expect(
+      denial(() => host.bitty.terminal.snapshot({ scope: "raw" })).code,
+    ).toBe(HOST_CODES.SNAPSHOT_SCOPE_UNSUPPORTED);
+  });
+
+  test("payload-less events reject unknown fields", () => {
+    const host = makeHost();
+    activate(host);
+    host.endActivation();
+    for (const kind of [
+      "terminal.bell",
+      "config.reloaded",
+      "plugin.activated",
+      "handler.violation",
+    ]) {
+      expect(host.publish(kind, {})).toEqual({ delivered: 0, vetoed: false });
+      expect(denial(() => host.publish(kind, { extra: 1 })).code).toBe(
+        HOST_CODES.EVENT_PAYLOAD_INVALID,
+      );
+    }
+    // Declared-field payloads still tolerate optional extra identity fields.
+    expect(
+      host.publish("selection.changed", { view_id: 1, terminal_id: 2 }),
+    ).toEqual({ delivered: 0, vetoed: false });
+  });
+
+  test("tasks and timers are creation-window-only and generation-owned", () => {
+    const host = makeHost();
+    activate(host);
+    let ran = 0;
+    const task = host.bitty.tasks.spawn(() => {
+      ran += 1;
+    });
+    const timer = host.bitty.timers.create(10, () => {
+      ran += 1;
+    });
+    host.endActivation();
+    expect(denial(() => host.bitty.tasks.spawn(() => null)).code).toBe(
+      HOST_CODES.REGISTRATION_CLOSED,
+    );
+    expect(denial(() => host.bitty.timers.create(10, () => null)).code).toBe(
+      HOST_CODES.REGISTRATION_CLOSED,
+    );
+    host.drainTasks();
+    expect(ran).toBe(1);
+    host.dispose();
+    activate(host);
+    host.endActivation();
+    host.drainTasks();
+    host.advanceTimers(1000);
+    expect(ran).toBe(1);
+    expect(host.bitty.tasks.cancel(task)).toBe(false);
+    expect(host.bitty.timers.cancel(timer)).toBe(false);
+  });
+
+  test("grants do not linger across generations", () => {
+    const host = makeHost();
+    host.grant("platform.notify");
+    activate(host);
+    host.endActivation();
+    expect(host.bitty.notify.show({ title: "hi" })).toBe(true);
+    host.dispose();
+    expect(host.isGranted("platform.notify")).toBe(false);
+    activate(host);
+    host.endActivation();
+    expect(denial(() => host.bitty.notify.show({ title: "hi" })).code).toBe(
+      HOST_CODES.CAPABILITY_DENIED,
+    );
+  });
+
+  test("exclusive-claim UI slots require a matching claim declaration", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    expect(
+      denial(() => host.bitty.ui.mount("tabline", { kind: "Text", text: "x" }))
+        .code,
+    ).toBe(HOST_CODES.UI_CLAIM_REQUIRED);
+    // statusline composes and needs no exclusive claim
+    expect(
+      host.bitty.ui.mount("statusline", { kind: "Text", text: "x" }),
+    ).toBeGreaterThan(0);
+
+    const withClaim = makeHost(
+      MANIFEST.replace(
+        '"intercept.open-url",\n]\n',
+        '"intercept.open-url",\n]\nclaims = ["tabline"]\n',
+      ),
+    );
+    withClaim.grant("ui.rich");
+    withClaim.beginActivation();
+    expect(
+      withClaim.bitty.ui.mount("tabline", { kind: "Text", text: "x" }),
+    ).toBeGreaterThan(0);
+  });
+
+  test("key chords are trimmed, case-insensitive, and alias-aware", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => "hello",
+    });
+    for (const chord of [
+      "Ctrl+P",
+      "CTRL+p",
+      "Shift+Alt+H",
+      "opt+Left",
+      "pgup",
+      "Ctrl+Shift+V",
+      " Control + p ",
+    ]) {
+      expect(
+        host.bitty.keymaps.suggest({
+          chord,
+          command: "conformance.basic:hello",
+        }),
+      ).toBeGreaterThan(0);
+    }
+    expect(
+      denial(() =>
+        host.bitty.keymaps.suggest({
+          chord: "p",
+          command: "conformance.basic:hello",
+        }),
+      ).code,
+    ).toBe(HOST_CODES.KEYMAP_CHORD_INVALID);
+    expect(
+      denial(() =>
+        host.bitty.keymaps.suggest({
+          chord: "ctrl+ctrl+p",
+          command: "conformance.basic:hello",
+        }),
+      ).code,
+    ).toBe(HOST_CODES.KEYMAP_CHORD_INVALID);
   });
 });
 
