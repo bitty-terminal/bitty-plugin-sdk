@@ -8,6 +8,7 @@
  */
 
 import { error, warning, type Diagnostic } from "./diagnostics.js";
+import { pathPatternProblem } from "./path-pattern.js";
 import { MAX_CAPABILITY_LEN, MAX_CAPABILITY_PARAM_LEN } from "./schema.js";
 
 /** Capability families in the closed v1 set. */
@@ -273,6 +274,19 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
       ),
     );
     return diagnostics;
+  }
+  if ((head === "fs.read" || head === "fs.write") && param !== undefined) {
+    const problem = pathPatternProblem(param);
+    if (problem !== undefined) {
+      diagnostics.push(
+        error(
+          "capabilities.filesystem.invalid",
+          path,
+          `filesystem path pattern is invalid: ${problem}`,
+        ),
+      );
+      return diagnostics;
+    }
   }
   if (HIGH_RISK_HEADS.has(head)) {
     diagnostics.push(

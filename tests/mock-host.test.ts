@@ -591,6 +591,131 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     expect(quota?.code).toBe(HOST_CODES.STORE_QUOTA);
   });
 
+  test("cyclic references fail typed across store, settings, ui, and snapshot", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    host.grant("terminal.semantic-read");
+    activate(host);
+
+    const cyclicStore: Record<string, unknown> = {};
+    cyclicStore.self = cyclicStore;
+    expect(
+      denial(() => host.bitty.store.set("cycle", cyclicStore as never)).code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+
+    const cyclicSettings: Record<string, unknown> = { list: [] };
+    (cyclicSettings.list as unknown[]).push(cyclicSettings);
+    expect(
+      denial(() => host.bitty.settings.set("cycle", cyclicSettings as never))
+        .code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+
+    const cyclicMount: Record<string, unknown> = { kind: "Row", children: [] };
+    (cyclicMount.children as unknown[]).push(cyclicMount);
+    expect(denial(() => host.bitty.ui.mount("top", cyclicMount)).code).toBe(
+      HOST_CODES.UI_COMPONENT_INVALID,
+    );
+
+    const cyclicText: Record<string, unknown> = { kind: "Text", text: "x" };
+    cyclicText.self = cyclicText;
+    expect(denial(() => host.bitty.ui.mount("top", cyclicText)).code).toBe(
+      HOST_CODES.UI_COMPONENT_INVALID,
+    );
+
+    const block = host.bitty.ui.mount("top", { kind: "Row", children: [] });
+    const cyclicUpdate: Record<string, unknown> = {
+      kind: "Row",
+      children: [],
+    };
+    (cyclicUpdate.children as unknown[]).push(cyclicUpdate);
+    expect(denial(() => host.bitty.ui.update(block, cyclicUpdate)).code).toBe(
+      HOST_CODES.UI_COMPONENT_INVALID,
+    );
+
+    const cyclicSnapshot: Record<string, unknown> = { rows: [] };
+    (cyclicSnapshot.rows as unknown[]).push(cyclicSnapshot);
+    expect(denial(() => host.setTerminalSnapshot(cyclicSnapshot)).code).toBe(
+      HOST_CODES.DEF_INVALID,
+    );
+  });
+
+  test("deep acyclic shared-reference graphs are bounded, not exponential", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    host.grant("terminal.semantic-read");
+    activate(host);
+
+    // A diamond DAG: 25 real objects but 2^25 expanded tree nodes. This is
+    // the shape that previously triggered exponential path re-exploration.
+    const buildDag = (): Record<string, unknown> => {
+      let node: Record<string, unknown> = { value: 0 };
+      for (let level = 0; level < 24; level += 1) {
+        node = { left: node, right: node };
+      }
+      return node;
+    };
+    const buildComponentDag = (levels: number): Record<string, unknown> => {
+      let node: Record<string, unknown> = { kind: "Text", text: "leaf" };
+      for (let level = 0; level < levels; level += 1) {
+        node = { kind: "Row", children: [node, node] };
+      }
+      return node;
+    };
+
+    // Store and settings reject the over-deep graph through the bounded walk.
+    expect(
+      denial(() => host.bitty.store.set("dag", buildDag() as never)).code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+    expect(
+      denial(() => host.bitty.settings.set("dag", buildDag() as never)).code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+
+    // UI rejects the over-deep graph with the existing typed component failure.
+    expect(
+      denial(() => host.bitty.ui.mount("top", buildComponentDag(24))).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+    const block = host.bitty.ui.mount("top", { kind: "Row", children: [] });
+    expect(
+      denial(() => host.bitty.ui.update(block, buildComponentDag(24))).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+    // A shallower DAG passes the depth guard and is stopped by the bounded
+    // byte measurement instead of serializing the exponential expansion.
+    expect(
+      denial(() => host.bitty.ui.mount("top", buildComponentDag(14))).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+
+    // The acyclic copy is accepted, but the exponentially expanded JSON size
+    // is rejected by the existing snapshot bound instead of hanging.
+    host.setTerminalSnapshot(buildDag());
+    expect(
+      denial(() => host.bitty.terminal.snapshot({ scope: "semantic" })).code,
+    ).toBe(HOST_CODES.SNAPSHOT_TOO_LARGE);
+  });
+
+  test("small acyclic shared-reference values are accepted", () => {
+    const host = makeHost();
+    activate(host);
+    // Depth 6 diamond: 127 expanded nodes, inside the store depth, node, and
+    // byte bounds; sharing must not be mistaken for a cycle.
+    let node: Record<string, unknown> = { value: 0 };
+    for (let level = 0; level < 6; level += 1) {
+      node = { left: node, right: node };
+    }
+    expect(host.bitty.store.set("dag", node as never)).toBe(true);
+    expect(host.bitty.store.get("dag")).toEqual(node as never);
+  });
+
+  test("cyclic notify payloads fail typed instead of throwing from serialization", () => {
+    const host = makeHost();
+    host.grant("platform.notify");
+    activate(host);
+    const payload: Record<string, unknown> = { title: "x" };
+    payload.self = payload;
+    expect(denial(() => host.bitty.notify.show(payload as never)).code).toBe(
+      HOST_CODES.EVENT_PAYLOAD_TOO_LARGE,
+    );
+  });
+
   test("ui accepts v1 nodes and rejects excluded node kinds and slots", () => {
     const host = makeHost();
     host.grant("ui.rich");
@@ -749,6 +874,19 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     activate(host);
     expect(host.bitty.settings.set("view.density", "compact")).toBe(true);
     expect(host.bitty.settings.get("view.density")).toBe("compact");
+    expect(host.bitty.settings.set("theme.colors.accent", "#fff")).toBe(true);
+    expect(host.bitty.settings.get("theme.colors.accent")).toBe("#fff");
+    // A nested `plugins` component is an ordinary key inside the namespace.
+    expect(host.bitty.settings.set("view.plugins.enabled", true)).toBe(true);
+    expect(host.bitty.settings.get("view.plugins.enabled")).toBe(true);
+    for (const escaped of ["plugins.xuepoo.other.secret", "plugins"]) {
+      expect(denial(() => host.bitty.settings.get(escaped)).code).toBe(
+        HOST_CODES.SETTINGS_KEY_INVALID,
+      );
+      expect(denial(() => host.bitty.settings.set(escaped, 1)).code).toBe(
+        HOST_CODES.SETTINGS_KEY_INVALID,
+      );
+    }
     expect(denial(() => host.bitty.settings.get("..escape")).code).toBe(
       HOST_CODES.SETTINGS_KEY_INVALID,
     );

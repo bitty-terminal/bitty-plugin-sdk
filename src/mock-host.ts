@@ -147,41 +147,69 @@ interface ServiceRecord {
   alive: boolean;
 }
 
-function deepCopy<T>(value: T): T {
+function deepCopy<T>(value: T, seen = new WeakMap<object, unknown>()): T {
   if (Array.isArray(value)) {
-    return value.map((entry) => deepCopy(entry)) as unknown as T;
+    const existing = seen.get(value);
+    if (existing !== undefined) return existing as T;
+    const output: unknown[] = [];
+    seen.set(value, output);
+    for (const entry of value) output.push(deepCopy(entry, seen));
+    return output as unknown as T;
   }
   if (typeof value === "object" && value !== null) {
+    const existing = seen.get(value);
+    if (existing !== undefined) return existing as T;
     const output: Record<string, unknown> = {};
+    seen.set(value, output);
     for (const [key, entry] of Object.entries(
       value as Record<string, unknown>,
     )) {
-      output[key] = deepCopy(entry);
+      output[key] = deepCopy(entry, seen);
     }
     return output as T;
   }
   return value;
 }
 
-function deepFreeze<T>(value: T): T {
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (value === null || typeof value !== "object") return value;
+  if (seen.has(value as object)) return value;
+  seen.add(value as object);
   if (Array.isArray(value)) {
-    for (const entry of value) deepFreeze(entry);
+    for (const entry of value) deepFreeze(entry, seen);
     return Object.freeze(value);
   }
-  if (typeof value === "object" && value !== null) {
-    for (const entry of Object.values(value as Record<string, unknown>)) {
-      deepFreeze(entry);
-    }
-    return Object.freeze(value);
+  for (const entry of Object.values(value as Record<string, unknown>)) {
+    deepFreeze(entry, seen);
   }
-  return value;
+  return Object.freeze(value);
 }
 
 function utf8Bytes(value: string): number {
   return Buffer.byteLength(value, "utf8");
 }
 
-function jsonBytes(value: unknown): number {
+/**
+ * UTF-8 byte length of the JSON encoding of `value`, bounded by `limit`.
+ *
+ * A shared-reference (DAG) input expands to an exponential serialization when
+ * a path is duplicated, so building the string first can hang. Every JSON
+ * node costs at least one byte, so when the expanded node count (or depth)
+ * already exceeds `limit`, `limit + 1` is returned without serializing. A
+ * cyclic input is reported the same way, so callers raise their typed
+ * size/validation failure instead of an untyped `JSON.stringify` throw.
+ * `scanStructure` counts occurrences under a hard visit cap, so the work is
+ * proportional to `limit` regardless of the graph shape. When the encoding
+ * fits, `JSON.stringify` runs on a value of at most `limit` nodes and the
+ * exact byte count is returned.
+ */
+function jsonBytes(value: unknown, limit: number): number {
+  if (Number.isFinite(limit)) {
+    const scan = scanStructure(value, limit, limit);
+    if (scan.cycle || scan.nodes > limit || scan.depth > limit) {
+      return limit + 1;
+    }
+  }
   return utf8Bytes(JSON.stringify(value) ?? "");
 }
 
@@ -195,36 +223,105 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   );
 }
 
-function containerDepth(value: unknown): number {
-  if (Array.isArray(value)) {
-    let depth = 0;
-    for (const entry of value) depth = Math.max(depth, containerDepth(entry));
-    return depth + 1;
-  }
-  if (isPlainObject(value)) {
-    let depth = 0;
-    for (const entry of Object.values(value)) {
-      depth = Math.max(depth, containerDepth(entry));
-    }
-    return depth + 1;
-  }
-  return 0;
+/** Cycle-aware, bounded structural scan of one JSON-compatible candidate. */
+interface StructureScan {
+  readonly cycle: boolean;
+  readonly depth: number;
+  readonly nodes: number;
 }
 
-function countNodes(value: unknown): number {
-  if (Array.isArray(value)) {
-    return 1 + value.reduce<number>((sum, entry) => sum + countNodes(entry), 0);
+/**
+ * Walk `value` with an explicit stack and an ancestor set.
+ *
+ * The scans this replaces recursed without a visited set, so a
+ * self-referential table overflowed the call stack before the depth or node
+ * bound could reject it. This walk keeps an explicit stack, stops descending
+ * at `maxDepth`, and reports a cycle as soon as an ancestor repeats, so
+ * cyclic input always yields a bounded result instead of an overflow.
+ * `depth` and `nodes` are capped at one past their limits; callers compare
+ * with `>`.
+ */
+function scanStructure(
+  value: unknown,
+  maxDepth: number,
+  maxNodes: number,
+): StructureScan {
+  let nodes = 0;
+  let depth = 0;
+  let cycle = false;
+  const ancestors = new WeakSet<object>();
+  const stack: Array<{ value: unknown; level: number; exit: boolean }> = [
+    { value, level: 0, exit: false },
+  ];
+  while (stack.length > 0) {
+    const frame = stack.pop() as {
+      value: unknown;
+      level: number;
+      exit: boolean;
+    };
+    if (frame.exit) {
+      ancestors.delete(frame.value as object);
+      continue;
+    }
+    nodes += 1;
+    if (nodes > maxNodes) break;
+    const current = frame.value;
+    if (current === null || typeof current !== "object") continue;
+    if (!Array.isArray(current) && !isPlainObject(current)) continue;
+    if (ancestors.has(current)) {
+      cycle = true;
+      break;
+    }
+    const containerLevel = frame.level + 1;
+    if (containerLevel > depth) depth = containerLevel;
+    if (containerLevel > maxDepth) break;
+    ancestors.add(current);
+    stack.push({ value: current, level: frame.level, exit: true });
+    const children = Array.isArray(current)
+      ? current
+      : Object.values(current as Record<string, unknown>);
+    for (const child of children) {
+      stack.push({ value: child, level: containerLevel, exit: false });
+    }
   }
-  if (isPlainObject(value)) {
-    return (
-      1 +
-      Object.values(value).reduce<number>(
-        (sum, entry) => sum + countNodes(entry),
-        0,
-      )
-    );
+  return { cycle, depth, nodes };
+}
+
+/**
+ * True when `value` reaches itself through plain objects or arrays.
+ *
+ * The walk is iterative, so a cyclic input is detected without recursive
+ * calls and without a depth bound that could be raised past the stack limit.
+ * The `done` set marks nodes whose whole subtree has been explored, so an
+ * acyclic shared-reference (DAG) input is explored once per node instead of
+ * once per path; without it a diamond graph is exponential in its depth.
+ */
+function containsCycle(value: unknown): boolean {
+  const ancestors = new WeakSet<object>();
+  const done = new WeakSet<object>();
+  const stack: Array<{ value: unknown; exit: boolean }> = [
+    { value, exit: false },
+  ];
+  while (stack.length > 0) {
+    const frame = stack.pop() as { value: unknown; exit: boolean };
+    if (frame.exit) {
+      ancestors.delete(frame.value as object);
+      done.add(frame.value as object);
+      continue;
+    }
+    const current = frame.value;
+    if (current === null || typeof current !== "object") continue;
+    if (!Array.isArray(current) && !isPlainObject(current)) continue;
+    if (ancestors.has(current)) return true;
+    if (done.has(current)) continue;
+    ancestors.add(current);
+    stack.push({ value: current, exit: true });
+    const children = Array.isArray(current)
+      ? current
+      : Object.values(current as Record<string, unknown>);
+    for (const child of children) stack.push({ value: child, exit: false });
   }
-  return 1;
+  return false;
 }
 
 function storeValueProblem(value: unknown): string | undefined {
@@ -243,14 +340,25 @@ function storeValueProblem(value: unknown): string | undefined {
     if (!isPlainObject(value) && !Array.isArray(value)) {
       return "value contains a non-plain object";
     }
-    if (containerDepth(value) > MOCK_LIMITS.STORE_MAX_DEPTH) {
+    const scan = scanStructure(
+      value,
+      MOCK_LIMITS.STORE_MAX_DEPTH,
+      MOCK_LIMITS.STORE_MAX_NODES,
+    );
+    if (scan.cycle) {
+      return "value contains a cyclic reference";
+    }
+    if (scan.depth > MOCK_LIMITS.STORE_MAX_DEPTH) {
       return `value depth exceeds ${MOCK_LIMITS.STORE_MAX_DEPTH}`;
     }
-    if (countNodes(value) > MOCK_LIMITS.STORE_MAX_NODES) {
+    if (scan.nodes > MOCK_LIMITS.STORE_MAX_NODES) {
       return `value node count exceeds ${MOCK_LIMITS.STORE_MAX_NODES}`;
     }
   }
-  if (jsonBytes(value) > MOCK_LIMITS.STORE_MAX_VALUE_BYTES) {
+  if (
+    jsonBytes(value, MOCK_LIMITS.STORE_MAX_VALUE_BYTES) >
+    MOCK_LIMITS.STORE_MAX_VALUE_BYTES
+  ) {
     return `value exceeds ${MOCK_LIMITS.STORE_MAX_VALUE_BYTES} bytes`;
   }
   return undefined;
@@ -271,6 +379,20 @@ function storeKeyProblem(key: unknown): string | undefined {
   return undefined;
 }
 
+/** Reserved top-level settings root; relative keys must not name it. */
+const SETTINGS_ROOT_SEGMENT = "plugins";
+
+/**
+ * Validate one `bitty.settings` key.
+ *
+ * The accepted contract fixes settings keys as dot paths relative to
+ * `plugins.<owner>.<name>` and states that plugins cannot read or write
+ * outside their own namespace. Relative paths cannot traverse out of the
+ * namespace once `..` is rejected, but a leading `plugins` segment names the
+ * shared settings root itself and is therefore rejected fail-closed. Only the
+ * first segment is reserved: a nested `plugins` component stays a legitimate
+ * key inside the plugin's own namespace.
+ */
 function settingsKeyProblem(key: unknown): string | undefined {
   if (typeof key !== "string" || key.length === 0) {
     return "key must be a non-empty string";
@@ -284,14 +406,35 @@ function settingsKeyProblem(key: unknown): string | undefined {
   ) {
     return "key must be a plain dot path without controls or empty segments";
   }
+  if (key.split(".")[0] === SETTINGS_ROOT_SEGMENT) {
+    return `key must stay inside the plugin namespace (a leading '${SETTINGS_ROOT_SEGMENT}' segment addresses the shared settings root)`;
+  }
   return undefined;
 }
 
-function componentProblem(component: unknown, depth = 0): string | undefined {
+/**
+ * Validate a UI component tree.
+ *
+ * `seen` marks nodes whose kind structure has already been validated, so a
+ * shared-reference (DAG) component is validated once per node instead of once
+ * per path and cannot blow up exponentially. The depth bound is checked
+ * before the `seen` check, so a node reused below the depth limit still
+ * fails. Cycles are rejected up front through `containsCycle`.
+ */
+function componentProblem(
+  component: unknown,
+  depth = 0,
+  seen = new WeakSet<object>(),
+): string | undefined {
   if (depth > MOCK_LIMITS.UI_MAX_DEPTH) {
     return `component depth exceeds ${MOCK_LIMITS.UI_MAX_DEPTH}`;
   }
   if (!isPlainObject(component)) return "component must be a table";
+  if (depth === 0 && containsCycle(component)) {
+    return "component contains a cyclic reference";
+  }
+  if (seen.has(component)) return undefined;
+  seen.add(component);
   const kind = component.kind;
   if (typeof kind !== "string") return "component.kind must be a string";
   if (UI_V1_EXCLUDED_NODE_KINDS.includes(kind)) {
@@ -311,7 +454,7 @@ function componentProblem(component: unknown, depth = 0): string | undefined {
     return `${kind} components require a children array`;
   }
   for (const child of children) {
-    const problem = componentProblem(child, depth + 1);
+    const problem = componentProblem(child, depth + 1, seen);
     if (problem !== undefined) return problem;
   }
   return undefined;
@@ -709,7 +852,7 @@ export class MockHost {
         }
       }
     }
-    if (jsonBytes(payload) > EVENT_MAX_BYTES) {
+    if (jsonBytes(payload, EVENT_MAX_BYTES) > EVENT_MAX_BYTES) {
       fail(
         "validation",
         HOST_CODES.EVENT_PAYLOAD_TOO_LARGE,
@@ -789,8 +932,22 @@ export class MockHost {
     }
   }
 
-  /** Set the snapshot served to `bitty.terminal.snapshot`. */
+  /**
+   * Set the snapshot served to `bitty.terminal.snapshot`.
+   *
+   * A self-referential snapshot is rejected with a typed validation failure
+   * before the copy is frozen; the snapshot is later JSON-serialized for the
+   * byte bound, and a cycle would otherwise overflow the copy or throw from
+   * serialization.
+   */
   setTerminalSnapshot(snapshot: Record<string, unknown>): void {
+    if (containsCycle(snapshot)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "terminal snapshot must be JSON-compatible plain data (cyclic reference found)",
+      );
+    }
     this.terminalSnapshot = deepFreeze(deepCopy(snapshot));
   }
 
@@ -1051,6 +1208,10 @@ export class MockHost {
     if (problem !== undefined) {
       fail("validation", HOST_CODES.SETTINGS_KEY_INVALID, problem);
     }
+    const valueProblem = storeValueProblem(value);
+    if (valueProblem !== undefined) {
+      fail("validation", HOST_CODES.STORE_VALUE_INVALID, valueProblem);
+    }
     this.settings.set(key, deepCopy(value));
     return true;
   }
@@ -1074,7 +1235,10 @@ export class MockHost {
     if (value === null || value === undefined) {
       const existing = this.store.get(key);
       if (existing !== undefined) {
-        this.storeBytes -= jsonBytes(existing);
+        this.storeBytes -= jsonBytes(
+          existing,
+          MOCK_LIMITS.STORE_MAX_VALUE_BYTES,
+        );
         this.store.delete(key);
       }
       return true;
@@ -1083,9 +1247,12 @@ export class MockHost {
     if (valueProblemText !== undefined) {
       fail("validation", HOST_CODES.STORE_VALUE_INVALID, valueProblemText);
     }
-    const bytes = jsonBytes(value);
+    const bytes = jsonBytes(value, MOCK_LIMITS.STORE_MAX_VALUE_BYTES);
     const existing = this.store.get(key);
-    const existingBytes = existing === undefined ? 0 : jsonBytes(existing);
+    const existingBytes =
+      existing === undefined
+        ? 0
+        : jsonBytes(existing, MOCK_LIMITS.STORE_MAX_VALUE_BYTES);
     if (
       this.storeBytes - existingBytes + bytes >
       MOCK_LIMITS.STORE_QUOTA_BYTES
@@ -1138,7 +1305,7 @@ export class MockHost {
         "payload.urgency",
       );
     }
-    if (jsonBytes(payload) > EVENT_MAX_BYTES) {
+    if (jsonBytes(payload, EVENT_MAX_BYTES) > EVENT_MAX_BYTES) {
       fail(
         "validation",
         HOST_CODES.EVENT_PAYLOAD_TOO_LARGE,
@@ -1171,7 +1338,10 @@ export class MockHost {
     if (problem !== undefined) {
       fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "component");
     }
-    if (jsonBytes(component) > MOCK_LIMITS.SNAPSHOT_MAX_BYTES) {
+    if (
+      jsonBytes(component, MOCK_LIMITS.SNAPSHOT_MAX_BYTES) >
+      MOCK_LIMITS.SNAPSHOT_MAX_BYTES
+    ) {
       fail(
         "validation",
         HOST_CODES.UI_COMPONENT_INVALID,
@@ -1203,7 +1373,10 @@ export class MockHost {
     if (problem !== undefined) {
       fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "component");
     }
-    if (jsonBytes(component) > MOCK_LIMITS.SNAPSHOT_MAX_BYTES) {
+    if (
+      jsonBytes(component, MOCK_LIMITS.SNAPSHOT_MAX_BYTES) >
+      MOCK_LIMITS.SNAPSHOT_MAX_BYTES
+    ) {
       fail(
         "validation",
         HOST_CODES.UI_COMPONENT_INVALID,
@@ -1241,7 +1414,10 @@ export class MockHost {
         "opts.terminal_id",
       );
     }
-    if (jsonBytes(this.terminalSnapshot) > MOCK_LIMITS.SNAPSHOT_MAX_BYTES) {
+    if (
+      jsonBytes(this.terminalSnapshot, MOCK_LIMITS.SNAPSHOT_MAX_BYTES) >
+      MOCK_LIMITS.SNAPSHOT_MAX_BYTES
+    ) {
       fail(
         "validation",
         HOST_CODES.SNAPSHOT_TOO_LARGE,

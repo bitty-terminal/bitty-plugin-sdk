@@ -86,7 +86,7 @@ waits on wall-clock time.
 | `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch    |
 | `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload     |
 | `keymaps`  | Activation-only suggestion; config chord grammar subset; `when = "global"` only; same-generation target |
-| `settings` | Plugin-owned dot paths only                                                                             |
+| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                    |
 | `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations       |
 | `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                              |
 | `env`      | Absent unless declared; denied until granted; granted allowlist only; 4 KiB value bound                 |
@@ -104,6 +104,29 @@ services, tasks, and timers are ungated. Execution requires **both** manifest
 declaration and an explicit grant: a grant for an undeclared capability is
 ignored, and a declared-but-ungranted call fails closed with
 `E_CAPABILITY_DENIED` (`runtime` class) before any side effect.
+
+Settings keys are relative to `plugins.<owner>.<name>` per the accepted
+[Plugin API v1 Lua Surface RFC](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/specifications/plugin-api-v1-lua-surface-rfc.md);
+the definitive host-side resolution model for those relative keys is still
+pending. Rather than guess that model, the mock applies a conservative guard:
+a key whose first segment is `plugins` is rejected
+(`E_SETTINGS_KEY_INVALID`), because that first segment is the only relative
+spelling that could be read as addressing the shared settings root instead of
+the plugin's own namespace. A nested `plugins` component remains a legal key.
+Settings values use the same JSON-compatible contract as store values and are
+rejected with `E_STORE_VALUE_INVALID` for cycles, depth, node, or byte bound
+violations.
+
+Every recursive traversal of a value (store and settings values, UI
+components, and the injected terminal snapshot) is cycle-aware and bounded. A
+self-referential table fails with a typed diagnostic
+(`E_STORE_VALUE_INVALID`, `E_UI_COMPONENT_INVALID`, or `E_DEF_INVALID` for the
+snapshot) instead of overflowing the stack, and the store depth and node
+bounds are checked by the same bounded walk, so a cycle cannot be reached
+before a bound rejects it. An acyclic shared-reference (DAG) value is explored
+once per node, and its JSON size is measured under a hard visit cap, so the
+exponential serialization of a deep diamond graph is rejected by the existing
+size bound instead of hanging.
 
 ## Lifecycle and generations
 
