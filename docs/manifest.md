@@ -2,7 +2,8 @@
 
 Status: implemented by SDK task `CTX-0015` (R-SDK-2) for cross-repository gate
 `CTX-0221`; the ADR 0009 table form of `[lazy].commands` is implemented by
-`CTX-0019`. This document, `src/schema.ts`, and `src/capabilities.ts` are the
+`CTX-0019`, and the accepted `[tools.git]` slice is implemented by `CTX-0030`.
+This document, `src/schema.ts`, and `src/capabilities.ts` are the
 machine-checked SDK surface; there is no separate JSON Schema artifact.
 
 ## Contract sources
@@ -14,6 +15,10 @@ machine-checked SDK surface; there is no separate JSON Schema artifact.
 - ADR 0009 LUA-OQ-3:
   [`docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md`](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md)
   (bounded JSON Schema metadata and the `[lazy].commands` table extension).
+- Layer 2 `[tools.git]` contract v1 (CTX-0425):
+  [`specifications/plugin-reuse-and-providers.md`](https://github.com/bitty-terminal/bitty-plugins-docs/blob/main/specifications/plugin-reuse-and-providers.md)
+  (accepted `[tools.git]` declaration, allowlist, bounds, and verification
+  plan; the rest of that reuse RFC stays draft and is not accepted here).
 - Read-only reference host models at `bitty@1ea2f66`:
   `crates/bitty-plugin-host/src/manifest.rs`,
   `crates/bitty-plugin-host/src/capability.rs`, and
@@ -149,6 +154,43 @@ Table-form rules (fail-closed):
   combinators). A violation is `lazy.commands.schema`.
 - A table entry counts toward the same 128-command limit as a string entry.
 
+### `[tools]` (optional)
+
+Layer 2 system-CLI reuse declarations. Only the accepted `[tools.git]` slice
+(CTX-0425, canonical record linked under
+[Contract sources](#contract-sources)) may be declared; any other `[tools.*]`
+table fails closed until its own slice is accepted. The rest of that reuse
+RFC stays draft and is not accepted here.
+
+```toml
+[tools.git]
+required = true
+version = ">=2.30"
+```
+
+| Key        | Required | Rules                                                                       |
+| ---------- | -------- | --------------------------------------------------------------------------- |
+| `required` | yes      | Boolean; `true` fails activation closed when `git` is missing or mismatched |
+| `version`  | yes      | Version range syntax, max 128 bytes                                         |
+
+Table-form rules (fail-closed):
+
+- Tool names are limited to `git`; any other tool (for example `[tools.rg]`)
+  is `tools.tool.unknown`.
+- `[tools.git]` keys are limited to `required` and `version`; any other key
+  (such as `args`, `verbs`, or bounds) is `manifest.unknown-key`. The seven
+  allowlisted verbs and the output/argument bounds are host-enforced
+  constants from the accepted contract, not manifest fields, so the linter
+  accepts no declaration of them.
+- `required` must be a boolean; a missing value is `manifest.missing-key`
+  and a non-boolean value is `manifest.type`. Raising `required` from `false`
+  to `true` is a capability increase whose grant must be re-confirmed.
+- `version` must be a version range string; a missing value is
+  `manifest.missing-key` and a non-string value is `manifest.type`, while an
+  invalid range is `tools.version.invalid`. Tool presence and constraint
+  satisfaction are re-checked by `bitty plugin doctor`; the linter checks
+  syntax only.
+
 ## Hard limits
 
 | Bound                                 | Value                  |
@@ -260,6 +302,8 @@ diagnostic is `{ "severity", "code", "path", "message" }`.
 | `lazy.commands.schema`             | Table-form command schema outside the subset |
 | `lazy.events.invalid`              | Event type invalid                           |
 | `lazy.claims.invalid`              | Claim name invalid                           |
+| `tools.tool.unknown`               | Tool outside the accepted Layer 2 slice      |
+| `tools.version.invalid`            | Tool version range contains invalid chars    |
 
 ## Examples
 

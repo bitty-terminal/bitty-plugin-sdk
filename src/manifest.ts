@@ -22,6 +22,8 @@ import {
   ALLOWED_ROOT_KEYS,
   ALLOWED_SERVICES_KEYS,
   ALLOWED_SERVICES_PROVIDED_KEYS,
+  ALLOWED_TOOLS_GIT_KEYS,
+  ALLOWED_TOOLS_KEYS,
   MANIFEST_MAX_BYTES,
   MANIFEST_MAX_DEPTH,
   MAX_CLAIM_LEN,
@@ -939,6 +941,95 @@ function validateLazy(
 }
 
 /**
+ * Validate the Layer-2 system-CLI reuse declaration (`[tools.*]`).
+ *
+ * Only the accepted `[tools.git]` slice (CTX-0425) passes:
+ * `{ required: boolean, version: version-range }`. Any other tool table fails
+ * closed with `tools.tool.unknown` until its own slice is accepted. Verbs and
+ * bounds are host-enforced constants, not manifest fields, so extra keys in
+ * `[tools.git]` (such as `args`, `verbs`, or bounds) are rejected as
+ * `manifest.unknown-key` rather than validated.
+ */
+function validateTools(value: unknown, diagnostics: Diagnostic[]): void {
+  if (value === undefined) {
+    return;
+  }
+  const table = checkTable(value, "tools", diagnostics);
+  if (table === undefined) {
+    return;
+  }
+  for (const key of Object.keys(table)) {
+    if (!ALLOWED_TOOLS_KEYS.has(key)) {
+      diagnostics.push(
+        error(
+          "tools.tool.unknown",
+          `tools.${key}`,
+          `unknown tool '${key}' is not part of the accepted Layer-2 contract (only [tools.git] is accepted)`,
+        ),
+      );
+    }
+  }
+
+  const git = table.git;
+  if (git === undefined) {
+    diagnostics.push(
+      error(
+        "manifest.missing-key",
+        "tools.git",
+        "required [tools.git] table is missing (only the accepted [tools.git] slice may be declared)",
+      ),
+    );
+    return;
+  }
+  const gitTable = checkTable(git, "tools.git", diagnostics);
+  if (gitTable === undefined) {
+    return;
+  }
+  checkUnknownKeys(gitTable, ALLOWED_TOOLS_GIT_KEYS, "tools.git", diagnostics);
+
+  const required = gitTable.required;
+  if (required === undefined) {
+    diagnostics.push(
+      error(
+        "manifest.missing-key",
+        "tools.git.required",
+        "required key is missing",
+      ),
+    );
+  } else if (typeof required !== "boolean") {
+    diagnostics.push(
+      error(
+        "manifest.type",
+        "tools.git.required",
+        "expected a boolean (true fails activation closed when the tool is missing or mismatched)",
+      ),
+    );
+  }
+
+  const version = gitTable.version;
+  if (version === undefined) {
+    diagnostics.push(
+      error(
+        "manifest.missing-key",
+        "tools.git.version",
+        "required key is missing",
+      ),
+    );
+  } else if (typeof version !== "string") {
+    diagnostics.push(
+      error("manifest.type", "tools.git.version", "expected a string"),
+    );
+  } else {
+    const problem = versionReqProblem(version);
+    if (problem !== undefined) {
+      diagnostics.push(
+        error("tools.version.invalid", "tools.git.version", problem),
+      );
+    }
+  }
+}
+
+/**
  * Validate one manifest source string.
  *
  * Returns every diagnostic found; the manifest is valid only when no
@@ -999,6 +1090,7 @@ export function lintManifestSource(source: string): LintResult {
   validateServices(parsed.services, diagnostics);
   validateCapabilities(parsed.capabilities, diagnostics);
   validateLazy(parsed.lazy, pluginId, diagnostics);
+  validateTools(parsed.tools, diagnostics);
 
   return {
     valid: diagnostics.every((entry) => entry.severity !== "error"),

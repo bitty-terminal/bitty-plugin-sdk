@@ -97,6 +97,7 @@ export const ALLOWED_ROOT_KEYS: ReadonlySet<string> = new Set([
   "services",
   "capabilities",
   "lazy",
+  "tools",
 ]);
 
 /** `[plugin]` keys accepted by the manifest schema. */
@@ -150,6 +151,20 @@ export const ALLOWED_LAZY_COMMAND_KEYS: ReadonlySet<string> = new Set([
   "id",
   "args_schema",
   "result_schema",
+]);
+
+/**
+ * Tool names accepted under the `[tools]` table.
+ *
+ * Only the accepted Layer-2 `[tools.git]` slice (CTX-0425) may be declared;
+ * any other tool fails closed until its own slice is accepted.
+ */
+export const ALLOWED_TOOLS_KEYS: ReadonlySet<string> = new Set(["git"]);
+
+/** Keys accepted in the accepted `[tools.git]` declaration (CTX-0425). */
+export const ALLOWED_TOOLS_GIT_KEYS: ReadonlySet<string> = new Set([
+  "required",
+  "version",
 ]);
 
 /** One flattened `[services.provided]` entry: dotted path plus raw value. */
