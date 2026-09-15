@@ -832,6 +832,221 @@ commands = [{ id = "xuepoo.example:toggle", args_schema = { type = "string", des
   });
 });
 
+describe("tools", () => {
+  test("accepted [tools.git] declaration passes", () => {
+    const result = lint(`
+[tools.git]
+required = true
+version = ">=2.30"
+`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("optional [tools.git] declaration passes", () => {
+    const result = lint(`
+[tools.git]
+required = false
+version = ">=2.30"
+`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("extracted git-panel manifest shape passes", () => {
+    const result = lintManifestSource(`
+[plugin]
+id = "bitty-terminal.git-panel"
+name = "Git Panel"
+version = "0.1.0"
+description = "Tiled Panel git branch/status/diff/log via process.spawn:git."
+
+[compat]
+bitty = ">=0.1,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+panel.provider = true
+panel.create = true
+terminal.semantic-read = true
+"process.spawn:git" = true
+
+[[capabilities.filesystem]]
+access = "read"
+paths = ["~/projects/**"]
+
+[tools.git]
+required = true
+version = ">=2.30"
+
+[lazy]
+commands = [
+  "bitty-terminal.git-panel:open",
+  "bitty-terminal.git-panel:status",
+  "bitty-terminal.git-panel:diff",
+  "bitty-terminal.git-panel:log",
+  "bitty-terminal.git-panel:branch",
+]
+events = [
+  "terminal.cwd-changed",
+  "terminal.title-changed",
+  "focus.changed",
+]
+`);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.valid).toBe(true);
+  });
+
+  test("unknown tool is rejected", () => {
+    const result = lint(`
+[tools.rg]
+required = true
+version = ">=13"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("tools.tool.unknown");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "tools.tool.unknown")
+        ?.path,
+    ).toBe("tools.rg");
+  });
+
+  test("non-table [tools] is rejected", () => {
+    const result = lintManifestSource(`tools = "git"\n${PLUGIN}`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.type")?.path,
+    ).toBe("tools");
+  });
+
+  test("empty [tools] without the accepted slice is rejected", () => {
+    const result = lint(`[tools]\n`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.missing-key");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.missing-key")
+        ?.path,
+    ).toBe("tools.git");
+  });
+
+  test("non-table [tools.git] is rejected", () => {
+    const result = lint(`
+[tools]
+git = ">=2.30"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+  });
+
+  test("unknown [tools.git] key is rejected", () => {
+    const result = lint(`
+[tools.git]
+required = true
+version = ">=2.30"
+args = ["--no-config"]
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.unknown-key");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.unknown-key")
+        ?.path,
+    ).toBe("tools.git.args");
+  });
+
+  test("verb and bound declarations are rejected as unknown keys", () => {
+    const result = lint(`
+[tools.git]
+required = true
+version = ">=2.30"
+verbs = ["status", "diff"]
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.unknown-key");
+  });
+
+  test("missing required is rejected", () => {
+    const result = lint(`
+[tools.git]
+version = ">=2.30"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.missing-key");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.missing-key")
+        ?.path,
+    ).toBe("tools.git.required");
+  });
+
+  test("non-boolean required is rejected", () => {
+    const result = lint(`
+[tools.git]
+required = "yes"
+version = ">=2.30"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.type")?.path,
+    ).toBe("tools.git.required");
+  });
+
+  test("missing version is rejected", () => {
+    const result = lint(`
+[tools.git]
+required = true
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.missing-key");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.missing-key")
+        ?.path,
+    ).toBe("tools.git.version");
+  });
+
+  test("non-string version is rejected", () => {
+    const result = lint(`
+[tools.git]
+required = true
+version = 42
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "manifest.type")?.path,
+    ).toBe("tools.git.version");
+  });
+
+  test("invalid version range is rejected", () => {
+    const result = lint(`
+[tools.git]
+required = true
+version = ">=2.30!"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("tools.version.invalid");
+    expect(
+      result.diagnostics.find((entry) => entry.code === "tools.version.invalid")
+        ?.path,
+    ).toBe("tools.git.version");
+  });
+
+  test("tool diagnostics accumulate instead of failing fast", () => {
+    const result = lint(`
+[tools.rg]
+required = true
+version = ">=13"
+
+[tools.git]
+required = true
+version = ">=2.30!"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("tools.tool.unknown");
+    expect(codes(result)).toContain("tools.version.invalid");
+  });
+});
+
 describe("manifest model lazy commands", () => {
   test("table-form commands contribute ids and static schemas", () => {
     const model = loadManifestModel(`
