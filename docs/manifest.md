@@ -166,6 +166,12 @@ bounds are measured in UTF-8 bytes.
 | `events`   | 1..256 closed v1 event kinds, 1..128 bytes, no whitespace or control chars |
 | `claims`   | 1..64 bytes each                                                           |
 
+The linter bounds each `claims` entry but does not resolve it to a slot; the
+host enforces the match when a plugin mounts. `tabline` is currently the only
+exclusive claim slot, so a `[lazy].claims` entry must be exactly `tabline` to
+mount it; any other token leaves the mount rejected with
+`E_UI_CLAIM_REQUIRED` (see [`docs/mock-host.md`](mock-host.md)).
+
 A `commands` entry uses the accepted string form or the ADR 0009 table form;
 both may be mixed in one array. The table form carries the bounded static
 schemas that drive lazy help and completion without a VM:

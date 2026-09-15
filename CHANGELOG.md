@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Fix the full plugin example's `[lazy].claims` token from the legacy
+  `workspaceline` to `tabline`, the only accepted exclusive UI slot, and pin it
+  with a mock-host test that mounting the shipped example does not fail
+  `E_UI_CLAIM_REQUIRED` (CTX-0037 / #61).
 - Accept the ADR 0009 table form `{ id, args_schema?, result_schema? }` for
   `[lazy].commands` entries in the manifest linter and model, with bounded JSON
   Schema validation matching `bitty.commands.register` and a conformance case
