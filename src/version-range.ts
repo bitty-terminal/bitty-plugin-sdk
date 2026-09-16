@@ -25,6 +25,14 @@
  * concrete `plugin.version` field is a separate SemVer 2 check in
  * `src/manifest.ts`. The byte bound is part of the grammar so the resolver
  * rejects an over-long range exactly like the linter does.
+ *
+ * Evaluation mirrors the reference host resolver's `expand_caret` /
+ * `expand_tilde` (`bitty/crates/bitty-package` `requirement.rs`): `^1.2.3`
+ * means `>=1.2.3 <2.0.0`, `^0.2.3` means `>=0.2.3 <0.3.0`, `^0.0.3` means
+ * `=0.0.3`, and `~1.2.3` means `>=1.2.3 <1.3.0`. Structural acceptance stays
+ * this module's linter contract and intentionally differs from the resolver's
+ * stricter grammar only in the documented, ecosystem-compatible directions
+ * (`docs/manifest.md` "Known gaps and open questions").
  */
 
 import { MAX_VERSION_REQ_LEN } from "./schema.js";
@@ -161,7 +169,17 @@ function clauseSatisfied(
     case "<":
       return comparison < 0;
     case "^":
-      return comparison >= 0 && actual.major === clause.version.major;
+      // Host resolver `expand_caret`: `^0.0.z` pins exactly, `^0.x.y` caps at
+      // the next minor, and major >= 1 caps at the next major. The previous
+      // same-major-only comparison made `^0.1` match `0.9.9` (PX-0141).
+      if (comparison < 0) return false;
+      if (clause.version.major > 0) {
+        return actual.major === clause.version.major;
+      }
+      if (clause.version.minor > 0) {
+        return actual.major === 0 && actual.minor === clause.version.minor;
+      }
+      return comparison === 0;
     case "~":
       return (
         comparison >= 0 &&
