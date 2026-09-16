@@ -1,77 +1,94 @@
-# Contributing
+# Contributing to bitty-plugin-sdk
 
-Thank you for considering a contribution to the Bitty Plugin SDK.
+This guide is for contributors to the `bitty-plugin-sdk` repository. The
+repository is pre-implementation: everything here is governance scaffolding,
+SDK tooling, generated LuaLS declarations, and candidate conventions, not
+shipped product behavior. Do not add product code until a separately authorized
+task has accepted the API, security, packaging, and compatibility gates.
 
-## Project status
+## Repository ground rules
 
-This repository is documentation-first and pre-implementation. Nothing in it
-yet constitutes implemented SDK, host API, or product behavior; governance and
-scaffolding files describe proposed conventions, not shipped functionality.
-Do not add product code until a separately authorized task has accepted the
-API, security, packaging, and compatibility gates.
-
-## Read first
-
-- [AGENTS.md](AGENTS.md) — binding repository doctrine: authority, scope,
-  CarryCtx workflow, SDK boundaries, and toolchain policy.
-- [SECURITY.md](SECURITY.md) — how to report vulnerabilities privately.
-- [CHANGELOG.md](CHANGELOG.md) — notable changes are recorded per release.
+- Read [AGENTS.md](AGENTS.md) before making any change. It defines authority,
+  scope boundaries, CarryCtx workflow, SDK and compatibility boundaries, and
+  the toolchain policy that overrides convenience.
+- Canonical plugin architecture, API, packaging, compatibility, and security
+  contracts live in `bitty-docs` and `bitty-plugins-docs`. The SDK derives from
+  the host contract; it must not invent plugin capabilities, lifecycle
+  semantics, Terminal Truth, or package semantics independently.
+- Never commit, push, publish packages, or mutate remote state without
+  explicit authorization from the owning task.
 
 ## Prerequisites
 
-- `just` — command runner; quality gates run only through repository justfile
-  targets so that formatter, linter, and tool versions stay pinned in one
-  place. Run `just check` before proposing changes.
-- `bun` / `bunx --bun` — JavaScript execution and package management. Never
+Toolchain expectations (dependency versions are pinned in
+[package.json](package.json) and locked in `bun.lock`; never invoke formatters
+or linters by name):
+
+- `just` — command runner owning all quality-gate invocations; the justfile
+  pins the version of every gate tool it invokes.
+- `bun` / `bun run <bin>` — JavaScript execution and package management. Never
   use `npm`, `npx`, or `yarn` in any Bitty repository.
-- `markdownlint-cli2` — Markdown linting for documentation changes.
+- `markdownlint-cli2`, `prettier`, `commitlint`, `lefthook` — invoked through
+  the justfile; `just install` materializes the locked package dependencies
+  first.
 
 The canonical toolchain matrix lives in
 `bitty-docs/docs/development/toolchain-policy.md`; treat it as authoritative
 where this file is silent.
 
-## Development loop
+## Development setup
 
-1. Pick up or create a GitHub Issue describing the change.
-2. Bind the work to a CarryCtx task with explicit allowed paths (scopes).
-3. Make the change; keep edits inside the declared scope.
-4. Run quality gates on every changed file before review.
-5. Open a pull request linking the Issue and CarryCtx task, stating impact,
-   validation evidence, and any cross-repository ordering.
+1. Enter this repository before running Git, CarryCtx, or toolchain commands.
+2. Install pinned development dependencies: `just install`.
+3. Enable Git hooks (optional): `just hooks-install`.
+4. Run all quality gates: `just check` (Markdown lint, Prettier format check,
+   type-check, test suites, and Lua-definition drift check). CI runs the same
+   aggregate target.
+5. Record scoped work in CarryCtx (task, session, progress, checkpoint) and
+   stop at review; independent review is required for acceptance.
 
 ## Delivery lifecycle
 
-Contributions follow the standard lifecycle:
+Changes follow Issue -> Branch -> Commit -> Pull Request -> Review -> Merge,
+where independent review plus required CI must pass before merge. Commit
+messages follow Conventional Commits and are validated by
+[commitlint.config.ts](commitlint.config.ts).
 
-```text
-Issue -> Branch -> Commit -> Pull Request -> Review -> Merge
-```
+Every pull request states its Issue and CarryCtx task links, impact areas
+(host/API, security, compatibility, documentation, examples, packaging),
+security and privacy impact, reproducible gate evidence, and
+documentation-synchronization status. Labels (`feat`/`fix`/`docs`/`chore`,
+`P0`/`P1`/`P2`, `area:*`) and milestone `v0.1.0` are kept in sync.
 
-Review is independent from implementation. Changes merge only after required
-findings and CI-equivalent checks pass. Documentation synchronization is part
-of definition of done: an SDK surface is incomplete while canonical
-`bitty-docs` contracts or plugin-author guidance remain stale.
+## Contributor branches
 
-### Branch and worktree naming
+The project is managed with CarryCtx. Official branches follow the CarryCtx
+task convention `ctx-XXXX/<type>-<slug>`, where `XXXX` is the owning task id,
+`<type>` is one of `feat|fix|chore|docs`, and the slug is short kebab-case.
+Commander housekeeping branches use `cmd/<slug>`.
 
-Branches use `ctx-XXXX/<type>-<short-slug>`, where `XXXX` is the owning
-CarryCtx task number, `<type>` is one of `feat|fix|chore|docs`, and the slug
-is short kebab-case (for example `ctx-0031/feat-isolation-rfc`). CarryCtx-bound
-worktrees live at `.worktrees/ctx-XXXX-<type>-<short-slug>` with `/` mapped to
-`-`. One branch per task; commander housekeeping branches may use `cmd/<slug>`.
+External contributors must use a distinguishable prefix such as
+`<github-handle>/<type>-<slug>` (for example `octocat/fix-lint-message`) so
+their branches are never confused with maintainer task branches.
 
-## Committing
+## Capabilities and privacy
 
-Use Conventional Commits:
+The SDK describes and validates the host's deny-by-default capability model; it
+must never widen it. Manifest validation, generated declarations, mocks, and
+helpers stay least-privilege and must not introduce ambient filesystem,
+process, network, clipboard, terminal-input, or host-management authority.
+Never add secrets, install-time code execution, or permissive allow-all
+defaults as a side effect of an unrelated change.
 
-```text
-feat(docs): draft plugin manifest reference
-fix(rules): correct scope overlap guidance
-chore(governance): add security policy scaffolding
-```
+## Workflow snapshots
 
-Commit messages are validated by `commitlint.config.ts` against Conventional
-Commits rules. Run `just hooks-install` once per clone to enable the Git
-hooks: `commit-msg` rejects non-conforming messages through
-`just commit-check`, and `pre-commit` lints and format-checks staged Markdown
-files through the justfile targets.
+The engineering workflow snapshot lives in this repository on the branch
+`refs/heads/carryctx-snapshots`. Merges run `just workflow-publish` (dry run:
+`just workflow-publish-dry`) as part of the commander closeout; snapshots are
+redacted publication artifacts and are never merged back. Fresh clones restore
+with `just workflow-import` (`just workflow-import-dry`).
+
+## Reporting
+
+Report bugs and feature requests through the GitHub issue templates. Report
+security issues privately per [SECURITY.md](SECURITY.md).

@@ -1,37 +1,58 @@
 # Security Policy
 
+This document describes how security reports for the `bitty-plugin-sdk`
+repository are handled. Normative product security requirements live in the
+canonical `bitty-docs` security corpus and take precedence over anything stated
+here.
+
 ## Supported Versions
 
-The Bitty Plugin SDK has not released any version yet. No version is
-supported until an initial release has been accepted and published.
+| Version    | Supported                                         |
+| ---------- | ------------------------------------------------- |
+| Unreleased | No — no version of this project has been released |
 
-| Version           | Supported      |
-| ----------------- | -------------- |
-| none (unreleased) | Not applicable |
-
-This section will list supported versions after the first release.
+There are currently no supported releases. Do not rely on this repository for
+production use.
 
 ## Reporting a Vulnerability
 
 Report security vulnerabilities privately by opening a
 [GitHub Security Advisory](https://github.com/bitty-terminal/bitty-plugin-sdk/security/advisories/new).
 
-Do **not** report security vulnerabilities via public GitHub issues,
-discussions, or pull requests.
+Do not report security vulnerabilities through public GitHub issues, pull
+requests, or discussion channels.
 
-Please include as much of the following as possible:
+When reporting, please include as much of the following as possible:
 
-- A description of the vulnerability and its suspected impact.
-- Steps or inputs needed to reproduce it.
-- Affected files, components, or contracts, if known.
+- A description of the vulnerability and its potential impact.
+- Steps to reproduce, or a proof of concept.
+- Affected files, helper code, LuaLS declarations, manifest shapes, fixtures,
+  or generated outputs.
+- Any known mitigations or workarounds.
 
-## Disclosure Policy and Response Expectations
+## Disclosure Policy
 
-- Reports receive a first response within 5 business days of filing.
-- Accepted reports are triaged, and the reporter receives status updates at
-  least weekly until resolution or an agreed pause.
-- Fixes are developed privately, then released and disclosed in coordination
-  with the reporter under coordinated disclosure. Credit is given by default;
-  tell us if you prefer to remain anonymous.
-- Details are published only after a fix or mitigation is available, unless
-  active exploitation forces earlier disclosure.
+Reports are handled through coordinated disclosure:
+
+1. The report is acknowledged and triaged privately.
+2. A fix is developed and validated out of public view.
+3. Once releases exist, a release containing the fix is published.
+4. A public advisory is published afterward, crediting the reporter unless
+   anonymity is requested.
+
+## Response Expectations
+
+The targets below are proposed policy and take effect once this repository
+accepts them:
+
+- Acknowledge a new advisory within 5 business days.
+- Provide a status update at least every 14 calendar days while a report is
+  open.
+- Publish the advisory after a fixed version is available, or after 90 days if
+  no fix is feasible, whichever comes first.
+
+## Scope Note
+
+The SDK ships no credentials, no install-time execution, and no ambient OS
+authority; its helpers, declarations, and mocks are deny-by-default and derive
+from the accepted host contract. Any deviation is a security-relevant defect.

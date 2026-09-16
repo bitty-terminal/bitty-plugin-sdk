@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Repository-metadata refresh: `packageManager` pins `bun@1.4.2`, the
+  `carryctx` devDependency moves to 0.11.5, a conservative `.gitattributes`
+  baseline normalizes text files to LF, and CONTRIBUTING/SECURITY document the
+  contributor-branch convention and the canonical security baseline
+  (`CTX-0039`).
 - Mark the `bitty-plugin-lint` entry point executable so dependency-installed
   `.bin` links run without a build step, and document the commit-pinned
   `github:` consumption path for generated plugin repositories (CTX-0038).
