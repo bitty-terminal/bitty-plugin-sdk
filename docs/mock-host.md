@@ -135,7 +135,10 @@ bounds are checked by the same bounded walk, so a cycle cannot be reached
 before a bound rejects it. An acyclic shared-reference (DAG) value is explored
 once per node, and its JSON size is measured under a hard visit cap, so the
 exponential serialization of a deep diamond graph is rejected by the existing
-size bound instead of hanging.
+size bound instead of hanging. UI depth is enforced from each subtree's
+memoized height (`depth + height - 1 <= UI_MAX_DEPTH`), so an aliased subtree
+reused both above and below the limit in one component gets the deep-only
+verdict regardless of traversal order or where it was first validated.
 
 ## Lifecycle and generations
 
