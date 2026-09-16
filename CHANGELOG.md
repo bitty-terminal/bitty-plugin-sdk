@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Adopt the canonical `.editorconfig` baseline (`CTX-0023` slice); the
+  repository-metadata baseline guide and ADR-0011 remain Proposed.
 - Fix the full plugin example's `[lazy].claims` token from the legacy
   `workspaceline` to `tabline`, the only accepted exclusive UI slot, and pin it
   with a mock-host test that mounting the shipped example does not fail
