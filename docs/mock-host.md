@@ -108,11 +108,17 @@ ignored, and a declared-but-ungranted call fails closed with
 Service version requirements use the shared structural grammar in
 `src/version-range.ts` (P1-2): comma-separated conjunctions of an optional
 comparator (`=`/`==`/`>=`/`<=`/`>`/`<`/`^`/`~`, default `=`) and a version with
-optional shorthand segments (`^1.0` means `^1.0.0`). The manifest linter uses
-the same parser for `compat.*`, `dependencies.*`, and `tools.git.version`, so a
-range that passes `bitty-plugin-lint` is never rejected at resolution as
-malformed, and a range the linter rejects always fails closed with
-`E_SERVICE_VERSION_INVALID` here (`tests/version-range.test.ts`).
+optional shorthand segments (`^1.0` means `^1.0.0`). Evaluation follows the
+reference host resolver's comparator expansion, including the caret zero-major
+tightening: `^1.2.3` is `>=1.2.3 <2.0.0`, `^0.2.3` is `>=0.2.3 <0.3.0`,
+`^0.0.3` pins `=0.0.3`, and `^0.1` does not match `0.9.9` (PX-0141). The
+manifest linter uses the same parser for `compat.*`, `dependencies.*`, and
+`tools.git.version`, so a range that passes `bitty-plugin-lint` is never
+rejected at resolution as malformed, and a range the linter rejects always
+fails closed with `E_SERVICE_VERSION_INVALID` here
+(`tests/version-range.test.ts`). Structural acceptance intentionally differs
+from the resolver's closed grammar; see
+[Contract choices and divergences](#contract-choices-and-divergences).
 
 Settings keys are relative to `plugins.<owner>.<name>` per the accepted
 [Plugin API v1 Lua Surface RFC](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/specifications/plugin-api-v1-lua-surface-rfc.md);
@@ -370,6 +376,17 @@ explicitly.
   and the 64-byte bound).
 - **High-risk capabilities.** The lint-side escalation set is documented in
   [`docs/manifest.md`](manifest.md); the mock does not re-derive it.
+- **Version-range structural grammar.** The mock and the linter share one
+  parser whose accepted structure is wider than the reference resolver's in
+  compatible ways (comparator-list shorthand, `==` as `=`, caret/tilde
+  combined with a comma, leading-zero components, more than 16 comparator
+  clauses, and numeric components above `u32::MAX`) and narrower in one
+  fail-closed way (prerelease/build range segments are rejected). These
+  structural differences are kept for corpus compatibility pending the
+  `bitty-plugins` `DEC-0008` decision; matching semantics for every accepted
+  range follow the resolver, including caret zero-major tightening. The full
+  list and directions live in [`docs/manifest.md`](manifest.md) "Known gaps
+  and open questions".
 
 ## Known gaps
 

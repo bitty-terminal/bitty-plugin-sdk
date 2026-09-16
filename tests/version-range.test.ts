@@ -95,6 +95,107 @@ describe("version-range agreement", () => {
   });
 });
 
+describe("caret range semantics", () => {
+  interface CaretCase {
+    readonly range: string;
+    readonly version: string;
+    readonly satisfies: boolean;
+    readonly note: string;
+  }
+
+  // The host resolver's `expand_caret` (bitty-package `requirement.rs`) pins
+  // `^0.0.z` exactly, caps `^0.x.y` at the next minor, and keeps the
+  // next-major cap for major >= 1. These cases discriminate the previous
+  // same-major matching, where `^0.1` matched `0.9.9` (PX-0141).
+  const CARET_CASES: readonly CaretCase[] = [
+    { range: "^0.1", version: "0.1.0", satisfies: true, note: "lower bound" },
+    {
+      range: "^0.1",
+      version: "0.1.9",
+      satisfies: true,
+      note: "same zero-major minor",
+    },
+    {
+      range: "^0.1",
+      version: "0.9.9",
+      satisfies: false,
+      note: "zero-major caret does not cross the minor",
+    },
+    {
+      range: "^0.1",
+      version: "0.2.0",
+      satisfies: false,
+      note: "next minor is the upper bound",
+    },
+    {
+      range: "^0.1",
+      version: "0.0.9",
+      satisfies: false,
+      note: "below the lower bound",
+    },
+    { range: "^0.1", version: "1.1.0", satisfies: false, note: "major past 0" },
+    { range: "^0.2.3", version: "0.2.3", satisfies: true, note: "lower bound" },
+    {
+      range: "^0.2.3",
+      version: "0.2.9",
+      satisfies: true,
+      note: "patch updates inside 0.2",
+    },
+    { range: "^0.2.3", version: "0.3.0", satisfies: false, note: "next minor" },
+    {
+      range: "^0.2.3",
+      version: "0.2.2",
+      satisfies: false,
+      note: "below the lower bound",
+    },
+    {
+      range: "^0.0.3",
+      version: "0.0.3",
+      satisfies: true,
+      note: "zero-minor caret pins exactly",
+    },
+    { range: "^0.0.3", version: "0.0.4", satisfies: false, note: "no drift" },
+    { range: "^0.0.3", version: "0.0.2", satisfies: false, note: "below pin" },
+    {
+      range: "^0",
+      version: "0.0.0",
+      satisfies: true,
+      note: "one-segment zero pin",
+    },
+    {
+      range: "^0",
+      version: "0.0.1",
+      satisfies: false,
+      note: "one-segment zero pin is exact",
+    },
+    { range: "^1.0", version: "1.0.0", satisfies: true, note: "lower bound" },
+    {
+      range: "^1.0",
+      version: "1.9.9",
+      satisfies: true,
+      note: "major caret spans minor and patch",
+    },
+    { range: "^1.0", version: "2.0.0", satisfies: false, note: "next major" },
+    { range: "^1.0", version: "0.9.9", satisfies: false, note: "other major" },
+  ];
+
+  test("caret matches the host resolver's zero-major tightening", () => {
+    for (const entry of CARET_CASES) {
+      expect({
+        range: entry.range,
+        version: entry.version,
+        note: entry.note,
+        satisfies: versionSatisfies(entry.version, entry.range),
+      }).toEqual({
+        range: entry.range,
+        version: entry.version,
+        note: entry.note,
+        satisfies: entry.satisfies,
+      });
+    }
+  });
+});
+
 describe("mock host uses the shared grammar", () => {
   const MANIFEST = `
 [plugin]
@@ -105,6 +206,17 @@ description = "Version-range matrix fixture."
 
 [services.provided]
 "conformance.greet" = "1.2.3"
+`;
+
+  const ZERO_MAJOR_MANIFEST = `
+[plugin]
+id = "conformance.range-zero"
+name = "Range Zero"
+version = "0.9.9"
+description = "Zero-major version-range fixture."
+
+[services.provided]
+"conformance.greet" = "0.9.9"
 `;
 
   function hostWithProvider(): MockHost {
@@ -127,6 +239,21 @@ description = "Version-range matrix fixture."
         `runtime should accept ${range}`,
       ).toBeDefined();
     }
+  });
+
+  test("zero-major caret does not resolve across a minor boundary", () => {
+    const host = new MockHost({ manifestSource: ZERO_MAJOR_MANIFEST });
+    host.beginActivation();
+    host.bitty.services.provide("conformance.greet", { greet: () => "ok" });
+    host.endActivation();
+    expect(
+      host.bitty.services.get("conformance.greet", { version: "^0.9" }),
+      "same-minor caret should resolve",
+    ).toBeDefined();
+    expect(
+      () => host.bitty.services.get("conformance.greet", { version: "^0.1" }),
+      "next-minor caret should fail closed",
+    ).toThrow(HostError);
   });
 
   test("ranges the linter rejects fail closed at runtime", () => {

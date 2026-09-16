@@ -73,12 +73,20 @@ conjunction of clauses; each clause is an optional comparator and a version:
   but not inside an operator or a version.
 - Disjunctions (`||`), conjunction punctuation other than commas, bare
   operators, and prerelease/build segments (`-rc.1`, `+build`) are rejected.
+- Range evaluation follows the reference host resolver's comparator expansion:
+  `^1.2.3` means `>=1.2.3 <2.0.0`, `^0.2.3` means `>=0.2.3 <0.3.0`, `^0.0.3`
+  pins `=0.0.3`, and `~1.2.3` means `>=1.2.3 <1.3.0`. In particular a
+  zero-major caret never crosses the next minor (`^0.1` does not match
+  `0.9.9`).
 
 The linter accepts a range exactly when the resolver can evaluate it, so a
 range that passes `bitty-plugin-lint` never fails later with an
 `E_SERVICE_VERSION_INVALID` resolver error (`tests/version-range.test.ts`).
 Concrete versions (`plugin.version` and `[services.provided]` values) are
-separate complete SemVer 2 checks, not ranges.
+separate complete SemVer 2 checks, not ranges. Structural acceptance is the
+linter contract and is intentionally not identical to the host resolver's
+closed grammar; the compatible differences and their directions are listed
+under [Known gaps and open questions](#known-gaps-and-open-questions).
 
 ### `[dependencies]` (optional)
 
@@ -408,9 +416,34 @@ cannot drift from the validator.
 - Version ranges are checked with the shared structural grammar in
   `src/version-range.ts`, the same parser the mock-host resolver uses, so the
   linter and the mock agree on accept/reject ([Version ranges](#version-ranges)).
-  Whether a concrete version satisfies a range, and how the real host package
-  layer resolves providers, remain host-owned beyond the comparator behavior
-  the mock mirrors.
+  Range evaluation mirrors the reference host resolver's comparator expansion
+  for every three-segment prerelease-free concrete version the mock accepts,
+  including the `^` zero-major tightening (PX-0141). Prerelease precedence and
+  build metadata remain host-owned beyond that subset, as does provider
+  resolution.
+- The shared range grammar is deliberately **not** the resolver's closed
+  grammar. Structural differences kept for ecosystem compatibility, pending
+  the `bitty-plugins` `DEC-0008` corpus decision (full resolver alignment is
+  deferred to the 0.1.0 timeframe):
+  - Accepted here, rejected by the resolver: comparator-list shorthand only
+    (`>=0.5,<1.0`, `>=2.30`, `0.1`; caret/tilde shorthand such as `^0.1` and
+    `~1.2` is normalized by both sides), a caret/tilde expression combined
+    with a comma (`^1.0,<2.0`), `==` as a synonym for `=`, and leading-zero
+    components (`>=01.0`). Every official manifest in the corpus uses
+    shorthand ranges, so rejecting them would break it.
+  - Accepted here, rejected by the resolver (budget; no corpus impact): a
+    comparator list with more than 16 clauses (17 × `0.0.0` is 101 bytes,
+    under the 128-byte bound) and numeric components above the resolver's
+    `u32` bound (`>=4294967296.0.0`). These two dimensions are wider than the
+    resolver, not fail-closed; the shared 128-byte requirement bound still
+    limits both.
+  - Rejected here, accepted by the resolver: prerelease and build segments in
+    range clauses (`>=1.0.0-rc.1`, `1.0.0+build`). The mock is stricter, never
+    more permissive: such a range fails closed with `E_SERVICE_VERSION_INVALID`
+    instead of being resolved.
+  - Neither direction changes `^`/`~`/comparator **matching**; the caret
+    runtime semantics now agree with the resolver (see [Version
+    ranges](#version-ranges) and `tests/version-range.test.ts`).
 - The `env` family accepts exactly the `env:BITTY_*` suffix pattern from
   ADR 0006 and no other wildcard; a broader `env:BITTY_<PREFIX>_*` form would
   be a reviewed additive change, not an implicit widening.
