@@ -61,6 +61,26 @@ The schema, diagnostic codes, capability table, and known contract gaps are
 documented in [`docs/manifest.md`](docs/manifest.md), with validated examples
 under [`docs/examples/`](docs/examples/).
 
+### Consuming the linter from a plugin repository
+
+Generated plugin repositories run the authoritative linter instead of a local
+re-implementation. `bitty-plugin-lint` is plain TypeScript with a
+`#!/usr/bin/env bun` shebang, so the dependency needs no build step and no
+registry publication; Bun must be on `PATH`:
+
+```sh
+bun add --dev "github:bitty-terminal/bitty-plugin-sdk#<40-char-commit-sha>"
+bun run bitty-plugin-lint bitty-plugin.toml
+```
+
+Pin the full commit SHA: branch and tag refs move, so the validation contract
+is stable only per commit. The `github:` specifier
+resolves only after the pinned commit is pushed to the canonical remote. For
+local development against an unpublished checkout, use a local dependency
+instead (`bun add --dev "file:/path/to/bitty-plugin-sdk"` or `bun link`). The
+SDK is not published to a registry (`private: true`), so registry-based
+`bunx`/`npx` installs do not resolve.
+
 ## Plugin API v1 LuaLS definitions
 
 `lua/bitty.d.lua` is generated from the accepted Plugin API v1 surface in
@@ -123,7 +143,8 @@ This repository does not currently provide:
 - a Lua helper SDK or library;
 - public Lua functions or host APIs beyond the generated declarations and the
   test-double mock host;
-- installation commands or a published package;
+- a published package or registry release (the linter is consumed as a
+  commit-pinned Git dependency);
 - host-version compatibility, deprecation, or support promises; or
 - a release, release schedule, or publication channel.
 

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Mark the `bitty-plugin-lint` entry point executable so dependency-installed
+  `.bin` links run without a build step, and document the commit-pinned
+  `github:` consumption path for generated plugin repositories (CTX-0038).
 - Adopt the canonical `.editorconfig` baseline (`CTX-0023` slice); the
   repository-metadata baseline guide and ADR-0011 remain Proposed.
 - Fix the full plugin example's `[lazy].claims` token from the legacy

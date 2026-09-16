@@ -336,10 +336,22 @@ behavior (see [`docs/mock-host.md`](mock-host.md)).
 ## CLI usage
 
 ```sh
+# Development inside this repository:
 bun src/cli.ts bitty-plugin.toml            # human-readable report
 bun src/cli.ts --json bitty-plugin.toml     # machine-readable report
 bun link && bitty-plugin-lint bitty-plugin.toml
+
+# From a consuming plugin repository, pinned by full commit SHA:
+bun add --dev "github:bitty-terminal/bitty-plugin-sdk#<40-char-commit-sha>"
+bun run bitty-plugin-lint bitty-plugin.toml
 ```
+
+The bin entry is unbuilt TypeScript with a `#!/usr/bin/env bun` shebang: the
+consuming repository needs Bun on `PATH`, runs no install-time build, and pins
+the SDK to a full commit SHA because branch and tag refs move. The `github:`
+specifier resolves only once the pinned commit is pushed to the canonical
+remote; use `bun link` or a `file:` dependency against an unpublished checkout.
+The SDK is not published to a registry (`private: true`).
 
 Exit codes: `0` valid, `1` invalid manifest, `2` usage or I/O error. Without a
 path argument the CLI reads `./bitty-plugin.toml`. Reading from stdin is not
