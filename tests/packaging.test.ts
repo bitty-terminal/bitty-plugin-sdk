@@ -24,7 +24,7 @@ describe("packaging for dependency consumers", () => {
 
   test("bin entry resolves to an existing entry point with a bun shebang", () => {
     const source = readFileSync(cliEntryPoint(), "utf8");
-    expect(source.startsWith("#!/usr/bin/env bun\n")).toBe(true);
+    expect(source.split(/\r?\n/, 1)[0]).toBe("#!/usr/bin/env bun");
   });
 
   test.skipIf(process.platform === "win32")(
