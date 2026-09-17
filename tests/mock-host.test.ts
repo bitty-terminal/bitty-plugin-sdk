@@ -1336,6 +1336,92 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     ).toBeUndefined();
   });
 
+  test.each([0, 10])(
+    "queued timer cancellation preserves eligible timers at delay %s",
+    (delay) => {
+      const host = makeHost();
+      host.beginActivation();
+      const calls: string[] = [];
+      const cancellations: boolean[] = [];
+      const first = host.bitty.timers.create(delay, () => {
+        calls.push("first");
+        cancellations.push(host.bitty.timers.cancel(first));
+        cancellations.push(host.bitty.timers.cancel(cancelled));
+        cancellations.push(host.bitty.timers.cancel(cancelled));
+      });
+      const cancelled = host.bitty.timers.create(delay, () =>
+        calls.push("cancelled"),
+      );
+      host.bitty.timers.create(delay + 1, () => calls.push("future"));
+      host.bitty.timers.create(delay, () => calls.push("eligible"));
+      host.endActivation();
+
+      host.advanceTimers(delay);
+      expect(cancellations).toEqual([false, true, false]);
+      expect(calls).toEqual(["first", "eligible"]);
+      host.advanceTimers(1);
+      host.advanceTimers(0);
+      expect(calls).toEqual(["first", "eligible", "future"]);
+      expect(host.handlerViolations).toHaveLength(0);
+    },
+  );
+
+  test("queued timers remain one-shot when a callback advances the clock", () => {
+    const host = makeHost();
+    host.beginActivation();
+    const calls: string[] = [];
+    host.bitty.timers.create(0, () => {
+      calls.push("first");
+      host.advanceTimers(0);
+    });
+    const second = host.bitty.timers.create(0, () => calls.push("second"));
+    host.bitty.timers.create(0, () => calls.push("third"));
+    host.endActivation();
+
+    host.advanceTimers(0);
+    expect(calls).toEqual(["first", "second", "third"]);
+    expect(host.bitty.timers.cancel(second)).toBe(false);
+    host.advanceTimers(0);
+    expect(calls).toEqual(["first", "second", "third"]);
+    expect(host.handlerViolations).toHaveLength(0);
+  });
+
+  test.each([false, true])(
+    "queued timer disposal invalidates the remaining batch with reload=%s",
+    (reload) => {
+      const host = makeHost();
+      host.beginActivation();
+      const calls: string[] = [];
+      host.bitty.timers.create(0, () => {
+        calls.push("first");
+        host.dispose();
+        if (reload) {
+          host.beginActivation();
+          host.bitty.timers.create(0, () => calls.push("new"));
+          host.endActivation();
+        }
+      });
+      const stale = host.bitty.timers.create(0, () => calls.push("stale"));
+      host.endActivation();
+      const generation = host.currentGeneration;
+
+      host.advanceTimers(0);
+      expect(calls).toEqual(["first"]);
+      expect(host.bitty.timers.cancel(stale)).toBe(false);
+      expect(host.currentState).toBe(reload ? "active" : "disposed");
+      if (reload) {
+        expect(host.currentGeneration).toBe(generation + 1);
+        host.advanceTimers(0);
+        expect(calls).toEqual(["first", "new"]);
+      } else {
+        expect(denial(() => host.advanceTimers(0)).code).toBe(
+          HOST_CODES.GENERATION_DISPOSED,
+        );
+      }
+      expect(host.handlerViolations).toHaveLength(0);
+    },
+  );
+
   test("tasks and timers enforce caps and virtual time", () => {
     const host = makeHost();
     activate(host);
