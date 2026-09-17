@@ -561,6 +561,61 @@ describe("suspended dispatch", () => {
     },
   );
 
+  describe.each([false, true])("suspension cleanup reload=%s", (reload) => {
+    test.each(["observation", "interception", "timer"] as const)(
+      "disposal stops snapshotted %s callbacks",
+      (surface) => {
+        const host = makeHost();
+        host.beginActivation();
+        const calls: string[] = [];
+        const kind =
+          surface === "observation" ? "terminal.bell" : "intercept.paste";
+        const register = (callback: () => unknown) => {
+          if (surface === "timer") host.bitty.timers.create(0, callback);
+          else host.bitty.events.subscribe(kind, callback);
+        };
+        host.bitty.events.subscribe("plugin.disposed", () => {
+          calls.push("disposed");
+        });
+        host.bitty.events.subscribe("plugin.suspended", () => {
+          host.dispose();
+          if (reload) {
+            host.beginActivation();
+            register(() => calls.push("new"));
+            host.endActivation();
+          }
+        });
+        register(() => {
+          calls.push("first");
+          host.suspend();
+        });
+        register(() => calls.push("stale"));
+        host.endActivation();
+        const dispatch = () => {
+          if (surface === "timer") host.advanceTimers(0);
+          else {
+            expect(
+              host.publish(
+                kind,
+                surface === "observation"
+                  ? {}
+                  : { action: "paste", origin: "fixture", preview: "fixture" },
+              ),
+            ).toEqual({ delivered: 1, vetoed: false });
+          }
+        };
+        dispatch();
+        expect(calls).toEqual(["first", "disposed"]);
+        expect(host.currentState).toBe(reload ? "active" : "disposed");
+        expect(host.handlerViolations).toHaveLength(0);
+        if (reload) {
+          dispatch();
+          expect(calls).toEqual(["first", "disposed", "new"]);
+        }
+      },
+    );
+  });
+
   test("queued tasks and timers stay detached and cancellable until disposal", () => {
     const host = makeHost();
     host.beginActivation();
@@ -673,16 +728,17 @@ describe("suspended dispatch", () => {
     expect(
       denial(() =>
         host.bitty.services.get("conformance.greet", { version: "^1.0" }),
-      ).code,
-    ).toBe(HOST_CODES.LIFECYCLE_STATE);
+      ),
+    ).toMatchObject({
+      class: "resolution",
+      code: HOST_CODES.SERVICE_RESOLUTION,
+    });
     expect(
-      denial(() =>
-        host.bitty.services.get("conformance.greet", {
-          version: "^1.0",
-          optional: true,
-        }),
-      ).code,
-    ).toBe(HOST_CODES.LIFECYCLE_STATE);
+      host.bitty.services.get("conformance.greet", {
+        version: "^1.0",
+        optional: true,
+      }),
+    ).toBeUndefined();
     expect(calls).toBe(1);
     host.dispose();
     host.beginActivation();
@@ -695,6 +751,34 @@ describe("suspended dispatch", () => {
         ?.hello?.(),
     ).toBe("new");
   });
+
+  test.each([false, true])(
+    "suspended service resolution preserves optional=%s for absent and detached providers",
+    (optional) => {
+      const host = makeHost(
+        `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
+      );
+      host.beginActivation();
+      let calls = 0;
+      host.bitty.services.provide("conformance.greet", {
+        hello: () => ++calls,
+      });
+      host.endActivation();
+      host.suspend();
+      for (const iface of ["conformance.absent", "conformance.greet"]) {
+        const resolve = () =>
+          host.bitty.services.get(iface, { version: "^1.0", optional });
+        if (optional) expect(resolve()).toBeUndefined();
+        else {
+          expect(denial(resolve)).toMatchObject({
+            class: "resolution",
+            code: HOST_CODES.SERVICE_RESOLUTION,
+          });
+        }
+      }
+      expect(calls).toBe(0);
+    },
+  );
 
   test("a service call fails closed when its provider suspends before returning", () => {
     const host = makeHost(

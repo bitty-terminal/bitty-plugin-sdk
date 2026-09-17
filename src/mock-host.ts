@@ -995,7 +995,12 @@ export class MockHost {
         return left[0] - right[0];
       });
     for (const [handle, record] of due) {
-      if (this.state === "suspended") continue;
+      if (
+        record.generation !== this.generation ||
+        this.state === "disposed" ||
+        this.state === "suspended"
+      )
+        continue;
       record.fired = true;
       this.runHostCallback(record.callback, `timer ${handle}`);
     }
@@ -1606,14 +1611,7 @@ export class MockHost {
     }
     const record = this.services.get(iface);
     const optional = opts.optional === true;
-    if (this.state === "suspended") {
-      fail(
-        "validation",
-        HOST_CODES.LIFECYCLE_STATE,
-        "the plugin generation is suspended; ordinary dispatch is detached",
-      );
-    }
-    if (record === undefined || !record.alive) {
+    if (this.state === "suspended" || record === undefined || !record.alive) {
       if (optional) return undefined;
       fail(
         "resolution",
@@ -1803,6 +1801,7 @@ export class MockHost {
     for (const subscription of [...this.subscriptions]) {
       if (subscription.kind !== kind) continue;
       if (subscription.generation !== this.generation) continue;
+      if (this.state === "disposed") continue;
       if (!lifecycle && this.state === "suspended") continue;
       delivered += 1;
       try {

@@ -206,13 +206,17 @@ verdict regardless of traversal order or where it was first validated.
   deliveries are detached (zero delivered, never vetoes); queued tasks and
   timers stay retained (still cancellable) but never fire; resolved service
   methods fail with `E_SERVICE_GONE`, including an in-flight call whose
-  provider suspends itself. Only the host-internal lifecycle deliveries
+  provider suspends itself. New service lookups treat the suspended provider as
+  unavailable: `resolution/E_SERVICE_RESOLUTION`, or `undefined` (Lua `nil`)
+  with `optional: true`, as for an absent provider. Only the host-internal lifecycle deliveries
   (`plugin.activated`, `plugin.suspended`, `plugin.disposed`,
   `handler.violation`) remain — lifecycle callbacks can still run cleanup and
   read the store and grants, but their ordinary dispatch attempts also fail
   closed. Resume is out of scope for Plugin API v1; the mock never reopens
   dispatch inside one generation, and disposal keeps detached tasks and timers
-  invalid in every later generation.
+  invalid in every later generation. Snapshotted timer and event batches also
+  stop delivering disposed-generation callbacks when suspension cleanup calls
+  `dispose()`, even if cleanup then activates a new generation.
 - `dispose()` delivers `plugin.disposed` before invalidation. Handles from a
   disposed generation are invalid: `ui.update` and the cancel calls return
   `false` rather than touching new-generation resources.
