@@ -50,6 +50,7 @@ export interface MockHostOptions {
   readonly manifestSource: string;
   /** Host environment snapshot; only granted keys are readable. */
   readonly environment?: Readonly<Record<string, string>>;
+  readonly schemaValidatingServices?: readonly string[];
 }
 
 /** Notification payload accepted by `bitty.notify.show`. */
@@ -148,6 +149,46 @@ interface ServiceRecord {
   readonly version: string;
   readonly impl: Record<string, ServiceMethod>;
   alive: boolean;
+}
+
+function canonicalValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalValue).join(",")}]`;
+  if (isPlainObject(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalValue(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function normalizeSchema(
+  schema: JsonSchema | undefined,
+): JsonSchema | undefined {
+  if (schema === undefined) return undefined;
+  const normalized: JsonSchema = {};
+  for (const [key, value] of Object.entries(schema)) {
+    if (key === "properties" && isPlainObject(value)) {
+      normalized[key] = Object.fromEntries(
+        Object.entries(value).map(([name, child]) => [
+          name,
+          normalizeSchema(child as JsonSchema),
+        ]),
+      );
+    } else if (key === "items" && isPlainObject(value)) {
+      normalized[key] = normalizeSchema(value);
+    } else if (key === "type" && typeof value === "string") {
+      normalized[key] = [canonicalValue(value)];
+    } else if (
+      ["required", "enum", "type"].includes(key) &&
+      Array.isArray(value)
+    ) {
+      normalized[key] = value.map(canonicalValue).sort();
+    } else {
+      normalized[key] = value;
+    }
+  }
+  return normalized;
 }
 
 function deepCopy<T>(value: T, seen = new WeakMap<object, unknown>()): T {
@@ -687,11 +728,15 @@ export class MockHost {
   private readonly tasks = new Map<number, TaskRecord>();
   private readonly timers = new Map<number, TimerRecord>();
   private readonly services = new Map<string, ServiceRecord>();
+  private readonly schemaValidatingServices: ReadonlySet<string>;
   private terminalSnapshot: Record<string, unknown> = {};
   private deliveringViolation = false;
 
   constructor(options: MockHostOptions) {
     this.manifest = loadManifestModel(options.manifestSource);
+    this.schemaValidatingServices = new Set(
+      options.schemaValidatingServices ?? [],
+    );
     this.environment = Object.freeze({ ...(options.environment ?? {}) });
     const envDeclared = this.declaredEnvCapabilities().length > 0;
 
@@ -1229,8 +1274,30 @@ export class MockHost {
         `command ${qualified} is already registered`,
       );
     }
+    const declared = this.manifest.commandSchemas.get(qualified);
+    if (declared !== undefined) {
+      for (const [field, schema, staticSchema] of [
+        ["args_schema", def.args_schema, declared.argsSchema],
+        ["result_schema", def.result_schema, declared.resultSchema],
+      ] as const) {
+        if (
+          canonicalValue(normalizeSchema(schema)) !==
+          canonicalValue(normalizeSchema(staticSchema))
+        ) {
+          fail(
+            "validation",
+            HOST_CODES.SCHEMA_INVALID,
+            `${field} differs from the static command declaration`,
+            field,
+          );
+        }
+      }
+    }
     const handle = this.nextHandle();
-    this.commands.set(qualified, { generation: this.generation, def });
+    this.commands.set(qualified, {
+      generation: this.generation,
+      def: deepCopy(def),
+    });
     return handle;
   }
 
@@ -1640,15 +1707,36 @@ export class MockHost {
         );
       }
     }
+    const schemas = this.manifest.providedServiceSchemas.get(iface);
+    if (this.schemaValidatingServices.has(iface) && schemas === undefined) {
+      if (optional) return undefined;
+      fail(
+        "resolution",
+        HOST_CODES.SERVICE_RESOLUTION,
+        `schema-validating consumer requires a table-form provider for ${iface}`,
+      );
+    }
     const service: Record<string, ServiceMethod> = {};
     for (const [method, member] of Object.entries(record.impl)) {
       service[method] = (args?: JsonValue): unknown => {
         this.assertServiceAvailable(record, iface);
+        if (schemas?.argsSchema !== undefined) {
+          const problem = valueProblem(schemas.argsSchema, args);
+          if (problem !== undefined)
+            fail("validation", HOST_CODES.ARGS_INVALID, problem);
+        }
+        let result: unknown;
         try {
-          return member(args);
+          result = member(args);
         } finally {
           this.assertServiceAvailable(record, iface);
         }
+        if (schemas?.resultSchema !== undefined) {
+          const problem = valueProblem(schemas.resultSchema, result);
+          if (problem !== undefined)
+            fail("validation", HOST_CODES.RESULT_INVALID, problem);
+        }
+        return result;
       };
     }
     return service;
