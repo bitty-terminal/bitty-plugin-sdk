@@ -191,6 +191,13 @@ verdict regardless of traversal order or where it was first validated.
   `timers.create` fail with `E_REGISTRATION_CLOSED`; a new generation's
   `drainTasks()` / `advanceTimers()` never runs a disposed generation's
   callbacks, and its handles fail closed.
+- `advanceTimers()` revalidates every queued due record immediately before its
+  callback runs: a record cancelled, already fired, removed (disposal), or
+  owned by a non-current generation is skipped, and delivery stops when the
+  batch itself suspended or disposed the host. A callback can therefore cancel
+  a later due timer in the same batch and the cancelled callback never fires,
+  while unrelated eligible timers still deliver in due-time order. The
+  cancellation return value and observed delivery agree.
 - Grants: `suspend()` retains grants (same generation, matching the accepted
   runtime lifecycle). `dispose()` clears the grant set as a deliberate
   fail-closed harness simplification; the accepted grant record is persistent

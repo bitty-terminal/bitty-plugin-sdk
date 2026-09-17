@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Recheck each queued timer's eligibility immediately before its callback runs
+  in `advanceTimers()`: cancellation, already-fired state, record membership,
+  generation ownership, and the suspended/disposed lifecycle are validated per
+  record, so a callback can cancel a later due timer in the same batch and the
+  cancelled callback never fires, callback-triggered disposal or suspension
+  ends the remaining batch, and unrelated eligible timers still deliver
+  (PLUG-SDK-005, CTX-0045 / #87).
+
 - Stop ordinary MockHost dispatch while suspended: commands fail closed with
   `E_LIFECYCLE_STATE`, observation and interception deliveries detach, queued
   tasks and timers stay retained but never fire, and resolved service methods

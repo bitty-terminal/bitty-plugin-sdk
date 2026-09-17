@@ -996,6 +996,9 @@ export class MockHost {
       });
     for (const [handle, record] of due) {
       if (
+        this.timers.get(handle) !== record ||
+        record.cancelled ||
+        record.fired ||
         record.generation !== this.generation ||
         this.state === "disposed" ||
         this.state === "suspended"
