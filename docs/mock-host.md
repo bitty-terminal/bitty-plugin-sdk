@@ -166,9 +166,26 @@ verdict regardless of traversal order or where it was first validated.
 | `disposed`   | Subscriptions/registrations/handles cleared; calls fail closed      |
 
 - Registration calls (`commands.register`, `events.subscribe`,
-  `keymaps.suggest`, `services.provide`, `tasks.spawn`, `timers.create`) are
-  valid only while `activating`; later attempts fail with
+  `keymaps.suggest`, `ui.mount`, `services.provide`, `tasks.spawn`,
+  `timers.create`) are valid only while `activating`; later attempts fail with
   `E_REGISTRATION_CLOSED` (`validation`).
+- New UI mounts in every slot must occur between `beginActivation()` and
+  `endActivation()`, matching the accepted
+  [activation entry point contract](https://github.com/bitty-terminal/bitty-plugins-docs/blob/main/specifications/plugin-api-v1-lua-surface-rfc.md#activation-entry-point-lua-oq-12).
+  Mounts from active or suspended generations, including lifecycle callbacks,
+  fail with `E_REGISTRATION_CLOSED`; calls before activation or after disposal
+  fail with `E_GENERATION_DISPOSED`. This registration guard runs before
+  capability and component validation. During activation, mounts still require
+  declared and granted `ui.rich`, plus `ui.overlay` for the overlay slot, and
+  an exclusive slot claim where applicable.
+- `ui.update` is not a new registration: a live block mounted during activation
+  can still be updated after `endActivation()`. Its existing capability,
+  component-validation, and generation checks remain independent; revoking
+  `ui.rich` denies updates, and stale handles return `false` in a new,
+  explicitly authorized generation. Tests cover every mount slot, lifecycle
+  callbacks, capability denial/revocation, and disposal/reload; conformance
+  case `05-lifecycle-registration.json` separately exercises active/suspended
+  late-mount denial and an active live-block update.
 - Tasks and timers are generation-owned and created only during the activation
   window (ADR 0009 LUA-OQ-12). After `endActivation()`, `tasks.spawn` and
   `timers.create` fail with `E_REGISTRATION_CLOSED`; a new generation's

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Restrict MockHost `ui.mount` to the activation window in every UI slot,
+  rejecting active/suspended late mounts with `E_REGISTRATION_CLOSED` while
+  preserving independent live-block updates and capability/generation checks.
+  Correct the lifecycle conformance fixture and add mount, callback, denial,
+  and reload regression coverage (CTX-0043 / #85).
+
 - Fix the documented `bitty-plugin-sdk` root import with direct TypeScript
   runtime and type exports for Bun consumers; keep internal subpaths private
   and the CLI entry unchanged. Add independent runtime and TypeScript consumer
