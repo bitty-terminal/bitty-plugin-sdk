@@ -111,3 +111,7 @@
 {"created_at":"2026-09-17T15:05:24.011330123+00:00","id":"01M2QYD9SBRM1K3FV9EE0S214W","kind":"include","pattern":"conformance/cases/05-lifecycle-registration.json","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2QYCWT1C4PDA8W8MSMWAGBV"}
 {"created_at":"2026-09-17T15:05:24.038640006+00:00","id":"01M2QYD9T6YR52G0TPG5HKZ158","kind":"include","pattern":"docs/mock-host.md","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2QYCWT1C4PDA8W8MSMWAGBV"}
 {"created_at":"2026-09-17T15:05:24.060030772+00:00","id":"01M2QYD9TWN73MC2S5CFMSCTVB","kind":"include","pattern":"CHANGELOG.md","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2QYCWT1C4PDA8W8MSMWAGBV"}
+{"created_at":"2026-09-17T15:27:49.991040269+00:00","id":"01M2QZPC77M9AQ111DQN4P825M","kind":"include","pattern":"src/mock-host.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2QZP0GS0YP508XWCT2T199F"}
+{"created_at":"2026-09-17T15:27:50.020421725+00:00","id":"01M2QZPC84QNE7D7ZH5JVHZ93S","kind":"include","pattern":"tests/mock-host.test.ts","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2QZP0GS0YP508XWCT2T199F"}
+{"created_at":"2026-09-17T15:27:50.049516318+00:00","id":"01M2QZPC91EHFDE9ZKS30ENY8V","kind":"include","pattern":"docs/mock-host.md","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2QZP0GS0YP508XWCT2T199F"}
+{"created_at":"2026-09-17T15:27:50.076450042+00:00","id":"01M2QZPC9WHX5VDN5BHPK17TYP","kind":"include","pattern":"CHANGELOG.md","project_id":"01M0WAMXDNP8JK3508TSSP3ZSG","task_id":"01M2QZP0GS0YP508XWCT2T199F"}
