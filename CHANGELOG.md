@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Close the acknowledged static-schema mock coverage gap: compare table-form
+  command metadata with runtime schemas after canonicalization, validate service
+  arguments before callbacks and results before return, and reject string-form
+  providers selected by schema-validating host-harness consumers. Preserve
+  optional schema omissions, legacy string-provider resolution, and lifecycle
+  denial precedence; retain table-form markers and copy registered command
+  definitions. Add bounded regression cases and synchronize mock-host guidance
+  (PLUG-SDK-006, CTX-0046 / #88).
+
 - Recheck each queued timer's eligibility immediately before its callback runs
   in `advanceTimers()`: cancellation, already-fired state, record membership,
   generation ownership, and the suspended/disposed lifecycle are validated per

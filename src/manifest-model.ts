@@ -147,12 +147,7 @@ function readLazyCommands(value: unknown): {
     if (isTable(entry.result_schema)) {
       declared.resultSchema = entry.result_schema;
     }
-    if (
-      declared.argsSchema !== undefined ||
-      declared.resultSchema !== undefined
-    ) {
-      schemas.set(entry.id, declared);
-    }
+    schemas.set(entry.id, declared);
   }
   return { commands, schemas };
 }
@@ -189,12 +184,7 @@ function readProvidedServices(services: unknown): {
     if (isTable(entry.value.result_schema)) {
       declared.resultSchema = entry.value.result_schema;
     }
-    if (
-      declared.argsSchema !== undefined ||
-      declared.resultSchema !== undefined
-    ) {
-      schemas.set(entry.path, declared);
-    }
+    schemas.set(entry.path, declared);
   }
   return { versions, schemas };
 }

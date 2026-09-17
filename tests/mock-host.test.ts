@@ -28,6 +28,7 @@ import {
   UI_V1_NODE_KINDS,
 } from "../src/host-surface.js";
 import { MockHost } from "../src/mock-host.js";
+import type { JsonValue } from "../src/json-schema.js";
 
 const MANIFEST = `
 [plugin]
@@ -942,6 +943,287 @@ describe("closed event set round-trips", () => {
     expect(delivered).toHaveLength(1);
     expect(host.handlerViolations).toHaveLength(1);
     expect(host.handlerViolations[0]?.code).toBe(HOST_CODES.HANDLER_VIOLATION);
+  });
+});
+
+describe("static schema enforcement", () => {
+  const argsSchema = {
+    type: "object",
+    properties: { value: { type: "string", maxLength: 8 } },
+    required: ["value"],
+    additionalProperties: false,
+  };
+  const resultSchema = { type: "integer", minimum: 0 };
+  const commandManifest = MANIFEST.replace(
+    '"conformance.basic:echo",',
+    '{ id = "conformance.basic:echo", args_schema = { type = "object", properties = { value = { type = "string", maxLength = 8 } }, required = ["value"], additionalProperties = false }, result_schema = { type = "integer", minimum = 0 } },',
+  );
+  const serviceManifest = `${MANIFEST}
+[services.provided]
+"conformance.greet" = { version = "1.0.0", args_schema = { type = "object", properties = { value = { type = "string", maxLength = 8 } }, required = ["value"], additionalProperties = false }, result_schema = { type = "integer", minimum = 0 } }
+`;
+
+  test("reordered static command schemas register and enforce both directions", () => {
+    const host = makeHost(commandManifest);
+    let calls = 0;
+    activate(host);
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      args_schema: {
+        additionalProperties: false,
+        required: ["value"],
+        properties: { value: { maxLength: 8, type: "string" } },
+        type: "object",
+      },
+      result_schema: { minimum: 0, type: "integer" },
+      run: () => ++calls,
+    });
+    host.endActivation();
+    expect(
+      host.dispatchCommand("conformance.basic:echo", { value: "hi" }),
+    ).toBe(1);
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", { value: 1 }))
+        .code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+    expect(calls).toBe(1);
+  });
+
+  for (const field of ["args_schema", "result_schema"] as const) {
+    for (const schema of [undefined, { type: "boolean" }]) {
+      test(`static command rejects ${field} ${schema === undefined ? "omission" : "mismatch"}`, () => {
+        const host = makeHost(commandManifest);
+        let calls = 0;
+        activate(host);
+        const diagnostic = denial(() =>
+          host.bitty.commands.register({
+            id: "echo",
+            title: "Echo",
+            args_schema: argsSchema,
+            result_schema: resultSchema,
+            [field]: schema,
+            run: () => ++calls,
+          }),
+        );
+        expect(diagnostic.code).toBe(HOST_CODES.SCHEMA_INVALID);
+        expect(diagnostic.class).toBe("validation");
+        expect(
+          denial(() => host.dispatchCommand("conformance.basic:echo", {})).code,
+        ).toBe(HOST_CODES.COMMAND_UNDECLARED);
+        expect(calls).toBe(0);
+      });
+    }
+  }
+
+  test("canonicalization treats schema sets as unordered but preserves array values", () => {
+    const source = MANIFEST.replace(
+      '"conformance.basic:echo",',
+      '{ id = "conformance.basic:echo", args_schema = { type = "object", additionalProperties = false, required = ["first", "second"], properties = { first = { type = ["string", "null"], enum = ["a", "b"] }, second = { type = "array", items = { type = "integer" }, default = [1, 2] } } } },',
+    );
+    const schema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["second", "first"],
+      properties: {
+        second: { default: [1, 2], items: { type: "integer" }, type: "array" },
+        first: { enum: ["b", "a"], type: ["null", "string"] },
+      },
+    };
+    const host = makeHost(source);
+    activate(host);
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      args_schema: schema,
+      run: () => true,
+    });
+    expect(
+      host.dispatchCommand("conformance.basic:echo", {
+        first: "a",
+        second: [1],
+      }),
+    ).toBe(true);
+    const mismatch = makeHost(source);
+    activate(mismatch);
+    schema.properties.second.default.reverse();
+    expect(
+      denial(() =>
+        mismatch.bitty.commands.register({
+          id: "echo",
+          title: "Echo",
+          args_schema: schema,
+          run: () => true,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.SCHEMA_INVALID);
+  });
+
+  test("empty static command metadata differs from a string reservation", () => {
+    const source = MANIFEST.replace(
+      '"conformance.basic:echo",',
+      '{ id = "conformance.basic:echo" },',
+    );
+    const host = makeHost(source);
+    activate(host);
+    expect(
+      denial(() =>
+        host.bitty.commands.register({
+          id: "echo",
+          title: "Echo",
+          args_schema: argsSchema,
+          run: () => null,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.SCHEMA_INVALID);
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      run: () => null,
+    });
+    expect(host.dispatchCommand("conformance.basic:echo", {})).toBeNull();
+  });
+
+  test("registered static contracts cannot drift through the original definition", () => {
+    const host = makeHost(commandManifest);
+    activate(host);
+    const schema = { type: "integer", minimum: 0 };
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      args_schema: argsSchema,
+      result_schema: schema,
+      run: () => "wrong",
+    });
+    schema.type = "string";
+    expect(
+      denial(() =>
+        host.dispatchCommand("conformance.basic:echo", { value: "hi" }),
+      ).code,
+    ).toBe(HOST_CODES.RESULT_INVALID);
+  });
+
+  test("schema-validated services preserve provider liveness precedence", () => {
+    for (const action of ["suspend", "dispose", "removeService"] as const) {
+      const host = makeHost(serviceManifest);
+      activate(host);
+      let calls = 0;
+      host.bitty.services.provide("conformance.greet", {
+        hello: () => {
+          calls += 1;
+          if (action === "removeService")
+            host.removeService("conformance.greet");
+          else host[action]();
+          return "invalid result";
+        },
+      });
+      host.endActivation();
+      const service = host.bitty.services.get("conformance.greet", {
+        version: "^1.0",
+      })!;
+      expect(denial(() => service.hello!({ value: "hi" })).code).toBe(
+        HOST_CODES.SERVICE_GONE,
+      );
+      expect(denial(() => service.hello!({ value: 1 })).code).toBe(
+        HOST_CODES.SERVICE_GONE,
+      );
+      expect(calls).toBe(1);
+    }
+  });
+
+  test("table service validates arguments before calling and results before returning", () => {
+    const host = makeHost(serviceManifest);
+    let calls = 0;
+    activate(host);
+    host.bitty.services.provide("conformance.greet", {
+      hello: () => ++calls,
+      invalid: () => {
+        calls += 1;
+        return "wrong";
+      },
+    });
+    host.endActivation();
+    const service = host.bitty.services.get("conformance.greet", {
+      version: "^1.0",
+    })!;
+    const invalidArgs: JsonValue[] = [
+      { value: 1 },
+      {},
+      { value: "too-long-value" },
+      { value: "hi", extra: true },
+    ];
+    for (const args of invalidArgs) {
+      expect(denial(() => service.hello!(args)).code).toBe(
+        HOST_CODES.ARGS_INVALID,
+      );
+    }
+    expect(calls).toBe(0);
+    expect(service.hello!({ value: "hi" })).toBe(1);
+    expect(denial(() => service.invalid!({ value: "hi" })).code).toBe(
+      HOST_CODES.RESULT_INVALID,
+    );
+    expect(calls).toBe(2);
+  });
+
+  test("unsupported static service schemas fail at manifest validation", () => {
+    expect(() =>
+      makeHost(
+        serviceManifest.replace(
+          'type = "integer", minimum = 0',
+          'type = "string", format = "email"',
+        ),
+      ),
+    ).toThrow("manifest rejected: services.schema");
+  });
+
+  test("validating consumers reject string providers without changing legacy resolution", () => {
+    const source = `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`;
+    const host = new MockHost({
+      manifestSource: source,
+      schemaValidatingServices: ["conformance.greet"],
+    });
+    let calls = 0;
+    activate(host);
+    host.bitty.services.provide("conformance.greet", { hello: () => ++calls });
+    expect(
+      denial(() =>
+        host.bitty.services.get("conformance.greet", { version: "^1.0" }),
+      ).code,
+    ).toBe(HOST_CODES.SERVICE_RESOLUTION);
+    expect(
+      host.bitty.services.get("conformance.greet", {
+        version: "^1.0",
+        optional: true,
+      }),
+    ).toBeUndefined();
+    expect(calls).toBe(0);
+    const legacy = makeHost(source);
+    activate(legacy);
+    legacy.bitty.services.provide("conformance.greet", {
+      hello: () => "legacy",
+    });
+    expect(
+      legacy.bitty.services.get("conformance.greet", { version: "^1.0" })!
+        .hello!(),
+    ).toBe("legacy");
+  });
+
+  test("validating consumers accept table providers including optional schema omissions", () => {
+    for (const source of [
+      serviceManifest,
+      serviceManifest.replace(/, args_schema = .* } }\n/, " }\n"),
+    ]) {
+      const host = new MockHost({
+        manifestSource: source,
+        schemaValidatingServices: ["conformance.greet"],
+      });
+      activate(host);
+      host.bitty.services.provide("conformance.greet", { hello: () => 1 });
+      expect(
+        host.bitty.services.get("conformance.greet", { version: "^1.0" })!
+          .hello!({ value: "hi" }),
+      ).toBe(1);
+    }
   });
 });
 

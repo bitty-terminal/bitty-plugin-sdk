@@ -88,6 +88,38 @@ Timers run on a virtual clock: `advanceTimers(ms)` fires due one-shot timers in
 due order. Tasks are drained cooperatively with `drainTasks()`. No test ever
 waits on wall-clock time.
 
+## Static schema enforcement
+
+The mock enforces ADR 0009 LUA-OQ-3 and LUA-OQ-8 within its existing bounded
+JSON Schema subset. Table-form `[lazy].commands` metadata must match both
+runtime schemas at registration, including omissions. Canonical comparison
+ignores object-key order and the order of `required`, `enum`, and union `type`
+sets; arrays inside literal values such as `default` remain ordered. A mismatch
+fails registration with `E_SCHEMA_INVALID` (`validation`) before the command is
+installed. String-form reservations still allow runtime-only schemas. The
+registered definition is copied so later caller mutation cannot change it.
+
+For table-form `[services.provided]`, every method validates supplied arguments
+against `args_schema` before entering the callback (`E_ARGS_INVALID`) and its
+result against `result_schema` before returning (`E_RESULT_INVALID`). Both are
+mock-owned `validation` codes. Omitted schemas impose no additional constraint.
+Provider liveness is checked before argument validation and after execution;
+provider disappearance still wins with `E_SERVICE_GONE`.
+
+To model a schema-validating consumer, construct the host with
+`schemaValidatingServices: ["example.interface"]`. This is **host-harness
+configuration**, not a new Lua `services.get` option or manifest field. For each
+listed interface, a string-form provider cannot resolve: required lookups fail
+with `E_SERVICE_RESOLUTION`, optional lookups return `undefined` (Lua `nil`).
+Table-form entries remain distinguishable even when optional schemas are absent.
+Without this configuration, legacy string-form resolution remains available;
+provided table schemas are enforced regardless of this selection.
+
+These bounded in-memory checks close the acknowledged SDK coverage gap (#88),
+not a production host defect. They do not establish cross-VM or full resolver
+conformance. Regression evidence lives in the `static schema enforcement` group
+in `tests/mock-host.test.ts`.
+
 ## Surface model
 
 | Namespace  | Modeled behavior                                                                                                                                           |
@@ -447,10 +479,6 @@ explicitly.
   `surface/bitty-plugin-api-v1.json` in `tests/conformance.test.ts`. LuaLS
   semantics beyond those identifiers (type shapes) remain owned by R-SDK-1 and
   are not restated by the mock.
-- **Manifest table forms.** ADR 0009 `[lazy].commands` and
-  `[services.provided]` table entries are accepted by the linter and modeled
-  with their static schemas; consumer-side schema validation and the
-  static/dynamic schema-equivalence checks remain host-bridge work.
 - **Strict schema subset.** The mock validates a strict JSON Schema subset and
   rejects schemas using `pattern`, `format`, `$ref`, or composition keywords
   at registration. This is deliberate fail-closed behavior (never more
