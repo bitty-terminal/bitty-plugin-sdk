@@ -931,7 +931,7 @@ export class MockHost {
 
   /** Dispatch one registered command after schema validation. */
   dispatchCommand(qualified: string, args: unknown = {}): unknown {
-    this.assertAlive();
+    this.assertOrdinaryDispatch();
     const record = this.commands.get(qualified);
     if (record === undefined || record.generation !== this.generation) {
       fail(
@@ -963,6 +963,7 @@ export class MockHost {
     for (const [handle, record] of this.tasks) {
       if (record.generation !== this.generation) continue;
       if (record.cancelled || record.done) continue;
+      if (this.state === "suspended") continue;
       record.done = true;
       this.runHostCallback(record.run, `task ${handle}`);
     }
@@ -994,6 +995,7 @@ export class MockHost {
         return left[0] - right[0];
       });
     for (const [handle, record] of due) {
+      if (this.state === "suspended") continue;
       record.fired = true;
       this.runHostCallback(record.callback, `timer ${handle}`);
     }
@@ -1031,6 +1033,34 @@ export class MockHost {
         "runtime",
         HOST_CODES.GENERATION_DISPOSED,
         "the plugin generation is not active",
+      );
+    }
+  }
+
+  private assertServiceAvailable(record: ServiceRecord, iface: string): void {
+    if (!record.alive || record.generation !== this.generation) {
+      fail(
+        "runtime",
+        HOST_CODES.SERVICE_GONE,
+        `provider for service ${iface} is gone`,
+      );
+    }
+    if (this.state === "suspended") {
+      fail(
+        "runtime",
+        HOST_CODES.SERVICE_GONE,
+        `provider for service ${iface} is suspended`,
+      );
+    }
+  }
+
+  private assertOrdinaryDispatch(): void {
+    this.assertAlive();
+    if (this.state === "suspended") {
+      fail(
+        "validation",
+        HOST_CODES.LIFECYCLE_STATE,
+        "the plugin generation is suspended; ordinary dispatch is detached",
       );
     }
   }
@@ -1576,6 +1606,13 @@ export class MockHost {
     }
     const record = this.services.get(iface);
     const optional = opts.optional === true;
+    if (this.state === "suspended") {
+      fail(
+        "validation",
+        HOST_CODES.LIFECYCLE_STATE,
+        "the plugin generation is suspended; ordinary dispatch is detached",
+      );
+    }
     if (record === undefined || !record.alive) {
       if (optional) return undefined;
       fail(
@@ -1605,14 +1642,12 @@ export class MockHost {
     const service: Record<string, ServiceMethod> = {};
     for (const [method, member] of Object.entries(record.impl)) {
       service[method] = (args?: JsonValue): unknown => {
-        if (!record.alive || record.generation !== this.generation) {
-          fail(
-            "runtime",
-            HOST_CODES.SERVICE_GONE,
-            `provider for service ${iface} is gone`,
-          );
+        this.assertServiceAvailable(record, iface);
+        try {
+          return member(args);
+        } finally {
+          this.assertServiceAvailable(record, iface);
         }
-        return member(args);
       };
     }
     return service;
@@ -1768,6 +1803,7 @@ export class MockHost {
     for (const subscription of [...this.subscriptions]) {
       if (subscription.kind !== kind) continue;
       if (subscription.generation !== this.generation) continue;
+      if (!lifecycle && this.state === "suspended") continue;
       delivered += 1;
       try {
         const result = subscription.handler(envelope);

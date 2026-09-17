@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Stop ordinary MockHost dispatch while suspended: commands fail closed with
+  `E_LIFECYCLE_STATE`, observation and interception deliveries detach, queued
+  tasks and timers stay retained but never fire, and resolved service methods
+  fail with `E_SERVICE_GONE` (including self-suspending providers), while
+  lifecycle cleanup callbacks, grants, and store data are preserved per the
+  accepted runtime and Lua-surface contracts. Add suspended-dispatch
+  regression coverage (CTX-0044 / #86).
+
 - Restrict MockHost `ui.mount` to the activation window in every UI slot,
   rejecting active/suspended late mounts with `E_REGISTRATION_CLOSED` while
   preserving independent live-block updates and capability/generation checks.

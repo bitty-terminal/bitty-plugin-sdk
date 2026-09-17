@@ -462,6 +462,262 @@ describe("registration window and lifecycle", () => {
   });
 });
 
+describe("suspended dispatch", () => {
+  test("commands fail closed without running retained registrations", () => {
+    const host = makeHost();
+    host.beginActivation();
+    let calls = 0;
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => ++calls,
+    });
+    host.endActivation();
+    expect(host.dispatchCommand("conformance.basic:hello")).toBe(1);
+    host.suspend();
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:hello")),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.LIFECYCLE_STATE,
+    });
+    expect(calls).toBe(1);
+  });
+
+  test.each(EVENT_KINDS.filter((spec) => spec.class !== "lifecycle"))(
+    "$kind delivery is detached while suspended",
+    (spec) => {
+      const host = makeHost();
+      host.beginActivation();
+      let calls = 0;
+      host.bitty.events.subscribe(spec.kind, () => {
+        calls += 1;
+        return false;
+      });
+      host.endActivation();
+      host.suspend();
+      const payload =
+        spec.class === "interception"
+          ? { action: "fixture", origin: "fixture", preview: "fixture" }
+          : spec.kind === "terminal.opened"
+            ? { terminal_id: 1, runtime_id: 1, generation: 1 }
+            : spec.kind === "terminal.closed"
+              ? { terminal_id: 1, runtime_id: 1, reason: "closed" }
+              : spec.kind === "terminal.title-changed"
+                ? { terminal_id: 1, runtime_id: 1, title: "fixture" }
+                : spec.kind === "terminal.cwd-changed"
+                  ? { terminal_id: 1, runtime_id: 1, cwd: "fixture" }
+                  : spec.kind === "focus.changed" ||
+                      spec.kind === "selection.changed"
+                    ? { view_id: 1 }
+                    : spec.kind === "process.exited"
+                      ? { terminal_id: 1, runtime_id: 1, exit_code: 0 }
+                      : {};
+      expect(host.publish(spec.kind, payload)).toEqual({
+        delivered: 0,
+        vetoed: false,
+      });
+      expect(calls).toBe(0);
+    },
+  );
+
+  test.each(["observation", "interception", "task", "timer"] as const)(
+    "suspension inside a %s callback stops the remaining batch",
+    (surface) => {
+      const host = makeHost();
+      host.beginActivation();
+      const calls: string[] = [];
+      const first = () => {
+        calls.push("first");
+        host.suspend();
+      };
+      const second = () => calls.push("second");
+      if (surface === "task") {
+        host.bitty.tasks.spawn(first);
+        host.bitty.tasks.spawn(second);
+      } else if (surface === "timer") {
+        host.bitty.timers.create(0, first);
+        host.bitty.timers.create(0, second);
+      } else {
+        const kind =
+          surface === "observation" ? "terminal.bell" : "intercept.paste";
+        host.bitty.events.subscribe(kind, first);
+        host.bitty.events.subscribe(kind, second);
+      }
+      host.endActivation();
+      if (surface === "task") host.drainTasks();
+      else if (surface === "timer") host.advanceTimers(0);
+      else {
+        expect(
+          host.publish(
+            surface === "observation" ? "terminal.bell" : "intercept.paste",
+            surface === "observation"
+              ? {}
+              : { action: "paste", origin: "fixture", preview: "fixture" },
+          ),
+        ).toEqual({ delivered: 1, vetoed: false });
+      }
+      expect(calls).toEqual(["first"]);
+    },
+  );
+
+  test("queued tasks and timers stay detached and cancellable until disposal", () => {
+    const host = makeHost();
+    host.beginActivation();
+    let calls = 0;
+    const task = host.bitty.tasks.spawn(() => ++calls);
+    const timer = host.bitty.timers.create(0, () => ++calls);
+    host.endActivation();
+    host.suspend();
+    host.drainTasks();
+    host.advanceTimers(1);
+    expect(calls).toBe(0);
+    expect(host.bitty.tasks.cancel(task)).toBe(true);
+    expect(host.bitty.timers.cancel(timer)).toBe(true);
+    host.dispose();
+    host.beginActivation();
+    host.endActivation();
+    host.drainTasks();
+    host.advanceTimers(1);
+    expect(calls).toBe(0);
+    expect(host.bitty.tasks.cancel(task)).toBe(false);
+    expect(host.bitty.timers.cancel(timer)).toBe(false);
+  });
+
+  test("lifecycle cleanup retains store and grants without reopening ordinary dispatch", () => {
+    const host = makeHost();
+    host.grant("platform.notify");
+    host.beginActivation();
+    host.bitty.store.set("retained", "value");
+    const lifecycle: string[] = [];
+    const results: unknown[] = [];
+    const denials: HostDiagnostic[] = [];
+    let ordinary = 0;
+    host.bitty.events.subscribe("terminal.bell", () => ++ordinary);
+    host.bitty.tasks.spawn(() => ++ordinary);
+    host.bitty.timers.create(0, () => ++ordinary);
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => ++ordinary,
+    });
+    for (const kind of [
+      "plugin.suspended",
+      "plugin.disposed",
+      "handler.violation",
+    ]) {
+      host.bitty.events.subscribe(kind, () => {
+        lifecycle.push(kind);
+        results.push(host.bitty.store.get("retained"));
+        results.push(host.isGranted("platform.notify"));
+        results.push(host.publish("terminal.bell"));
+        host.drainTasks();
+        host.advanceTimers(0);
+        denials.push(
+          denial(() => host.dispatchCommand("conformance.basic:hello")),
+        );
+      });
+    }
+    host.bitty.events.subscribe("plugin.suspended", () => {
+      throw new Error("cleanup failure");
+    });
+    host.endActivation();
+    host.suspend();
+    expect(host.currentState).toBe("suspended");
+    host.revoke("platform.notify");
+    expect(denial(() => host.bitty.notify.show({ title: "denied" })).code).toBe(
+      HOST_CODES.CAPABILITY_DENIED,
+    );
+    host.grant("platform.notify");
+    host.dispose();
+    expect(lifecycle).toEqual([
+      "plugin.suspended",
+      "handler.violation",
+      "plugin.disposed",
+    ]);
+    expect(results).toEqual(
+      Array.from({ length: 3 }, () => [
+        "value",
+        true,
+        { delivered: 0, vetoed: false },
+      ]).flat(),
+    );
+    expect(denials).toHaveLength(3);
+    expect(
+      denials.every((entry) => entry.code === HOST_CODES.LIFECYCLE_STATE),
+    ).toBe(true);
+    expect(ordinary).toBe(0);
+    expect(host.handlerViolations).toHaveLength(1);
+    host.beginActivation();
+    expect(host.bitty.store.get("retained")).toBe("value");
+    expect(host.isGranted("platform.notify")).toBe(false);
+  });
+
+  test("suspended providers reject saved methods and new resolution", () => {
+    const host = makeHost(
+      `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
+    );
+    host.beginActivation();
+    let calls = 0;
+    host.bitty.services.provide("conformance.greet", { hello: () => ++calls });
+    const service = host.bitty.services.get("conformance.greet", {
+      version: "^1.0",
+    });
+    host.endActivation();
+    expect(service?.hello?.()).toBe(1);
+    host.suspend();
+    expect(denial(() => service?.hello?.())).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.SERVICE_GONE,
+    });
+    expect(
+      denial(() =>
+        host.bitty.services.get("conformance.greet", { version: "^1.0" }),
+      ).code,
+    ).toBe(HOST_CODES.LIFECYCLE_STATE);
+    expect(
+      denial(() =>
+        host.bitty.services.get("conformance.greet", {
+          version: "^1.0",
+          optional: true,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.LIFECYCLE_STATE);
+    expect(calls).toBe(1);
+    host.dispose();
+    host.beginActivation();
+    host.bitty.services.provide("conformance.greet", { hello: () => "new" });
+    host.endActivation();
+    expect(denial(() => service?.hello?.()).code).toBe(HOST_CODES.SERVICE_GONE);
+    expect(
+      host.bitty.services
+        .get("conformance.greet", { version: "^1.0" })
+        ?.hello?.(),
+    ).toBe("new");
+  });
+
+  test("a service call fails closed when its provider suspends before returning", () => {
+    const host = makeHost(
+      `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
+    );
+    host.beginActivation();
+    host.bitty.services.provide("conformance.greet", {
+      hello: () => {
+        host.suspend();
+        return "unavailable";
+      },
+    });
+    const service = host.bitty.services.get("conformance.greet", {
+      version: "^1.0",
+    });
+    host.endActivation();
+    expect(denial(() => service?.hello?.())).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.SERVICE_GONE,
+    });
+  });
+});
+
 describe("closed event set round-trips", () => {
   test("every kind is known and unknown kinds are rejected", () => {
     const host = makeHost();

@@ -157,13 +157,13 @@ verdict regardless of traversal order or where it was first validated.
 
 ## Lifecycle and generations
 
-| State        | Meaning                                                             |
-| ------------ | ------------------------------------------------------------------- |
-| `created`    | No generation; calls fail with `E_GENERATION_DISPOSED`              |
-| `activating` | Registration window open (`init.lua` execution in the real host)    |
-| `active`     | Registration closed; `plugin.activated` delivered at the transition |
-| `suspended`  | Registration closed; `plugin.suspended` delivered                   |
-| `disposed`   | Subscriptions/registrations/handles cleared; calls fail closed      |
+| State        | Meaning                                                                       |
+| ------------ | ----------------------------------------------------------------------------- |
+| `created`    | No generation; calls fail with `E_GENERATION_DISPOSED`                        |
+| `activating` | Registration window open (`init.lua` execution in the real host)              |
+| `active`     | Registration closed; `plugin.activated` delivered at the transition           |
+| `suspended`  | Registration closed; `plugin.suspended` delivered; ordinary dispatch detached |
+| `disposed`   | Subscriptions/registrations/handles cleared; calls fail closed                |
 
 - Registration calls (`commands.register`, `events.subscribe`,
   `keymaps.suggest`, `ui.mount`, `services.provide`, `tasks.spawn`,
@@ -200,6 +200,19 @@ verdict regardless of traversal order or where it was first validated.
   [Contract choices and divergences](#contract-choices-and-divergences)).
   Until the harness re-grants, a declared-but-ungranted call fails closed with
   `E_CAPABILITY_DENIED`.
+- `suspend()` detaches ordinary dispatch for the suspended generation while
+  retaining registrations, grants, tasks, timers, and store data: commands fail
+  with `E_LIFECYCLE_STATE` without running; observation and interception
+  deliveries are detached (zero delivered, never vetoes); queued tasks and
+  timers stay retained (still cancellable) but never fire; resolved service
+  methods fail with `E_SERVICE_GONE`, including an in-flight call whose
+  provider suspends itself. Only the host-internal lifecycle deliveries
+  (`plugin.activated`, `plugin.suspended`, `plugin.disposed`,
+  `handler.violation`) remain — lifecycle callbacks can still run cleanup and
+  read the store and grants, but their ordinary dispatch attempts also fail
+  closed. Resume is out of scope for Plugin API v1; the mock never reopens
+  dispatch inside one generation, and disposal keeps detached tasks and timers
+  invalid in every later generation.
 - `dispose()` delivers `plugin.disposed` before invalidation. Handles from a
   disposed generation are invalid: `ui.update` and the cancel calls return
   `false` rather than touching new-generation resources.
@@ -224,7 +237,9 @@ compatibility (ADR 0009 LUA-OQ-10); kinds that declare no payload fields
 deep-frozen payload copy. Observation and lifecycle handler return values are
 ignored; interception handlers veto with `false` and approve with anything
 else. A handler that throws is recorded once in `host.handlerViolations` and
-does not stop delivery to later handlers.
+does not stop delivery to later handlers. While suspended, only lifecycle
+deliveries run; observation and interception deliveries are detached
+entirely (see [Lifecycle and generations](#lifecycle-and-generations)).
 
 ## Bounds
 
