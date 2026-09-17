@@ -1016,6 +1016,75 @@ describe("static schema enforcement", () => {
     }
   }
 
+  for (const field of ["args_schema", "result_schema"] as const) {
+    for (const location of ["root", "properties", "items"] as const) {
+      for (const staticArray of [false, true]) {
+        test(`singleton type equivalence in ${field} ${location} with static ${staticArray ? "array" : "scalar"}`, () => {
+          const staticType = staticArray ? '["string"]' : '"string"';
+          const runtimeType = staticArray ? "string" : ["string"];
+          const variants = {
+            root: {
+              declaration: `{ type = ${staticType} }`,
+              schema: { type: runtimeType },
+              valid: "hello",
+              invalid: 1,
+            },
+            properties: {
+              declaration: `{ type = "object", additionalProperties = false, required = ["value"], properties = { value = { type = ${staticType} } } }`,
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                required: ["value"],
+                properties: { value: { type: runtimeType } },
+              },
+              valid: { value: "hello" },
+              invalid: { value: 1 },
+            },
+            items: {
+              declaration: `{ type = "array", items = { type = ${staticType} } }`,
+              schema: { type: "array", items: { type: runtimeType } },
+              valid: ["hello"],
+              invalid: [1],
+            },
+          };
+          const { declaration, schema, valid, invalid } = variants[location];
+          const source = MANIFEST.replace(
+            '"conformance.basic:echo",',
+            `{ id = "conformance.basic:echo", ${field} = ${declaration} },`,
+          );
+          const host = makeHost(source);
+          let result: unknown = valid;
+          let calls = 0;
+          activate(host);
+          host.bitty.commands.register({
+            id: "echo",
+            title: "Echo",
+            [field]: schema,
+            run: () => {
+              calls += 1;
+              return result;
+            },
+          });
+          host.endActivation();
+          expect(host.dispatchCommand("conformance.basic:echo", valid)).toEqual(
+            valid,
+          );
+          result = invalid;
+          expect(
+            denial(() =>
+              host.dispatchCommand("conformance.basic:echo", invalid),
+            ).code,
+          ).toBe(
+            field === "args_schema"
+              ? HOST_CODES.ARGS_INVALID
+              : HOST_CODES.RESULT_INVALID,
+          );
+          expect(calls).toBe(field === "args_schema" ? 1 : 2);
+        });
+      }
+    }
+  }
+
   test("canonicalization treats schema sets as unordered but preserves array values", () => {
     const source = MANIFEST.replace(
       '"conformance.basic:echo",',

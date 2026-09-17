@@ -177,6 +177,8 @@ function normalizeSchema(
       );
     } else if (key === "items" && isPlainObject(value)) {
       normalized[key] = normalizeSchema(value);
+    } else if (key === "type" && typeof value === "string") {
+      normalized[key] = [canonicalValue(value)];
     } else if (
       ["required", "enum", "type"].includes(key) &&
       Array.isArray(value)

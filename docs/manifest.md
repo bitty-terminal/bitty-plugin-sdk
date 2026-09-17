@@ -461,5 +461,9 @@ cannot drift from the validator.
   be a reviewed additive change, not an implicit widening.
 - ADR 0009 table-form `[services.provided]` entries are accepted and validated
   by the linter (`services.schema`), and the manifest model exposes their static
-  schemas. Consumer-side schema validation and the static/dynamic
-  schema-equivalence check remain host-bridge work (R-SDK-3).
+  schemas. The [mock host](mock-host.md#static-schema-enforcement) enforces
+  provided service argument/result schemas and static/dynamic command-schema
+  equivalence after canonicalization. Its harness-only `schemaValidatingServices`
+  option rejects string-form providers for schema-validating consumers. These
+  bounded SDK checks do not establish production host, cross-VM, or full resolver
+  conformance.
