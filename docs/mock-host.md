@@ -41,6 +41,15 @@ conformance tests can run deterministically on Bun only.
 
 ## Usage
 
+Consume the SDK as a commit-pinned Git dependency or a local checkout, as
+shown in the [README](../README.md#consuming-the-linter-from-a-plugin-repository).
+The supported library import is the package root, `bitty-plugin-sdk`: its
+runtime and type exports both resolve directly to `src/index.ts`. No package
+subpaths are exported; do not import internal `src/*` paths. This is a
+Bun/TypeScript library with no build step, not a registry publication or a
+Node.js compatibility promise. The `bitty-plugin-lint` executable remains a
+separate CLI entry.
+
 ```ts
 import { MockHost } from "bitty-plugin-sdk";
 

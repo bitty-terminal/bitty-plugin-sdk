@@ -81,6 +81,22 @@ instead (`bun add --dev "file:/path/to/bitty-plugin-sdk"` or `bun link`). The
 SDK is not published to a registry (`private: true`), so registry-based
 `bunx`/`npx` installs do not resolve.
 
+### Consuming the library from Bun/TypeScript
+
+The same commit-pinned or local dependency also supports the package-root
+library import:
+
+```ts
+import { MockHost } from "bitty-plugin-sdk";
+```
+
+Runtime and type exports resolve directly to `src/index.ts`; no build step is
+needed. Only the package root is exported, not internal `src/*` subpaths.
+The CLI remains available as `bitty-plugin-lint`. This support is for
+Bun/TypeScript consumers, not Node.js or registry publication. See
+[`docs/mock-host.md`](docs/mock-host.md#usage) for construction and lifecycle
+usage.
+
 ## Plugin API v1 LuaLS definitions
 
 `lua/bitty.d.lua` is generated from the accepted Plugin API v1 surface in
