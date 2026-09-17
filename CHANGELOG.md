@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Fix the documented `bitty-plugin-sdk` root import with direct TypeScript
+  runtime and type exports for Bun consumers; keep internal subpaths private
+  and the CLI entry unchanged. Add independent runtime and TypeScript consumer
+  regression tests (CTX-0042 / #84).
+
 - Repository-metadata refresh: `packageManager` pins `bun@1.4.2`, the
   `carryctx` devDependency moves to 0.11.5, a conservative `.gitattributes`
   baseline normalizes text files to LF, and CONTRIBUTING/SECURITY document the

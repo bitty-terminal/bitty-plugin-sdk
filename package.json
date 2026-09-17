@@ -6,6 +6,12 @@
   "description": "Developer-facing support for Bitty terminal plugins.",
   "license": "MIT",
   "packageManager": "bun@1.4.2",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "bin": {
     "bitty-plugin-lint": "./src/cli.ts"
   },
