@@ -236,6 +236,109 @@ describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
 });
 
 describe("registration window and lifecycle", () => {
+  test.each([...UI_SLOTS])(
+    "ui.mount requires activation for slot %s",
+    (slot) => {
+      const host = makeHost(
+        MANIFEST.replace("[lazy]", '[lazy]\nclaims = ["tabline"]'),
+      );
+      host.grant("ui.rich");
+      host.grant("ui.overlay");
+      const mount = () =>
+        host.bitty.ui.mount(slot, { kind: "Text", text: "panel" });
+      expect(denial(mount)).toMatchObject({
+        code: HOST_CODES.GENERATION_DISPOSED,
+        class: "runtime",
+      });
+      host.beginActivation();
+      const block = mount();
+      expect(block).toBeGreaterThan(0);
+      host.endActivation();
+      expect(denial(mount)).toMatchObject({
+        code: HOST_CODES.REGISTRATION_CLOSED,
+        class: "validation",
+      });
+      expect(
+        host.bitty.ui.update(block, { kind: "Text", text: "updated" }),
+      ).toBe(true);
+      host.suspend();
+      expect(denial(mount)).toMatchObject({
+        code: HOST_CODES.REGISTRATION_CLOSED,
+        class: "validation",
+      });
+      host.dispose();
+      expect(denial(mount)).toMatchObject({
+        code: HOST_CODES.GENERATION_DISPOSED,
+        class: "runtime",
+      });
+      host.beginActivation();
+      expect(denial(mount).code).toBe(HOST_CODES.CAPABILITY_DENIED);
+      host.grant("ui.rich");
+      host.grant("ui.overlay");
+      expect(mount()).toBeGreaterThan(block);
+      expect(host.bitty.ui.update(block, { kind: "Text", text: "stale" })).toBe(
+        false,
+      );
+    },
+  );
+
+  test("lifecycle callbacks cannot mount after activation closes", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    host.beginActivation();
+    const diagnostics: HostDiagnostic[] = [];
+    for (const event of [
+      "plugin.activated",
+      "plugin.suspended",
+      "plugin.disposed",
+    ]) {
+      host.bitty.events.subscribe(event, () => {
+        diagnostics.push(
+          denial(() =>
+            host.bitty.ui.mount("top", { kind: "Text", text: "late" }),
+          ),
+        );
+      });
+    }
+    host.endActivation();
+    host.suspend();
+    host.dispose();
+    expect(diagnostics).toHaveLength(3);
+    for (const diagnostic of diagnostics) {
+      expect(diagnostic).toMatchObject({
+        code: HOST_CODES.REGISTRATION_CLOSED,
+        class: "validation",
+      });
+    }
+    expect(host.handlerViolations).toHaveLength(0);
+  });
+
+  test("UI activation and live updates retain capability denial", () => {
+    const host = makeHost();
+    host.beginActivation();
+    const mount = () =>
+      host.bitty.ui.mount("top", { kind: "Text", text: "panel" });
+    expect(denial(mount).code).toBe(HOST_CODES.CAPABILITY_DENIED);
+    host.grant("ui.rich");
+    const block = mount();
+    host.revoke("ui.rich");
+    expect(denial(mount).code).toBe(HOST_CODES.CAPABILITY_DENIED);
+    host.endActivation();
+    const update = () =>
+      host.bitty.ui.update(block, { kind: "Text", text: "updated" });
+    expect(denial(update).code).toBe(HOST_CODES.CAPABILITY_DENIED);
+    host.grant("ui.rich");
+    expect(update()).toBe(true);
+    const undeclared = makeHost(MANIFEST.replace("ui.rich = true\n", ""));
+    undeclared.grant("ui.rich");
+    undeclared.beginActivation();
+    expect(
+      denial(() =>
+        undeclared.bitty.ui.mount("top", { kind: "Text", text: "denied" }),
+      ).code,
+    ).toBe(HOST_CODES.CAPABILITY_DENIED);
+  });
+
   test("registration is valid only while the generation is activating", () => {
     const host = makeHost();
     activate(host);

@@ -1388,7 +1388,7 @@ export class MockHost {
   }
 
   private uiMount(slot: string, component: Record<string, unknown>): number {
-    this.assertAlive();
+    this.assertRegistrationOpen("bitty.ui.mount");
     this.assertCapability("bitty.ui.mount", "ui.rich");
     if (slot === "overlay") {
       this.assertCapability("bitty.ui.mount:overlay", "ui.overlay");

@@ -35,6 +35,13 @@
       "args": { "delay_ms": 100, "run_result": null },
       "capture": "timer"
     },
+    { "op": "grant", "capability": "ui.rich" },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": { "slot": "top", "component": { "kind": "Text", "text": "x" } },
+      "capture": "block"
+    },
     { "op": "end-activation" },
     {
       "op": "expect-event",
@@ -56,12 +63,37 @@
         "denial": { "code": "E_REGISTRATION_CLOSED", "class": "validation" }
       }
     },
-    { "op": "grant", "capability": "ui.rich" },
     {
       "op": "call",
       "surface": "ui.mount",
-      "args": { "slot": "top", "component": { "kind": "Text", "text": "x" } },
-      "capture": "block"
+      "args": {
+        "slot": "top",
+        "component": { "kind": "Text", "text": "late" }
+      },
+      "expect": {
+        "denial": { "code": "E_REGISTRATION_CLOSED", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.update",
+      "args": {
+        "handle": { "$ref": "block" },
+        "component": { "kind": "Text", "text": "updated" }
+      },
+      "expect": { "result": true }
+    },
+    { "op": "suspend" },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": { "kind": "Text", "text": "suspended" }
+      },
+      "expect": {
+        "denial": { "code": "E_REGISTRATION_CLOSED", "class": "validation" }
+      }
     },
     { "op": "dispose" },
     {
