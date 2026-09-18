@@ -989,6 +989,30 @@ commands = [{ id = "xuepoo.example:toggle", args_schema = { type = "string", des
     expect(codes(result)).toContain("lazy.commands.schema");
   });
 
+  test("table-form command schema with non-object property is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", args_schema = { type = "object", additionalProperties = false, properties = { value = 123 } } }]
+`);
+    expect(codes(result)).toContain("lazy.commands.schema");
+  });
+
+  test("table-form command schema with invalid items is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", args_schema = { type = "array", items = 123 } }]
+`);
+    expect(codes(result)).toContain("lazy.commands.schema");
+  });
+
+  test("table-form command schema with inverted bounds is rejected", () => {
+    const result = lint(`
+[lazy]
+commands = [{ id = "xuepoo.example:toggle", args_schema = { type = "string", minLength = 5, maxLength = 2 } }]
+`);
+    expect(codes(result)).toContain("lazy.commands.schema");
+  });
+
   test("table-form commands count toward the 128-command limit", () => {
     const commands = Array.from(
       { length: 129 },
