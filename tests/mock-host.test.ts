@@ -27,7 +27,7 @@ import {
   UI_V1_EXCLUDED_NODE_KINDS,
   UI_V1_NODE_KINDS,
 } from "../src/host-surface.js";
-import { MockHost } from "../src/mock-host.js";
+import { MockHost, MOCK_PLUGIN_API_VERSION } from "../src/mock-host.js";
 import type { JsonValue } from "../src/json-schema.js";
 
 const MANIFEST = `
@@ -2362,5 +2362,115 @@ describe("manifest integration", () => {
           ),
         }),
     ).toThrow();
+  });
+});
+
+describe("Plugin API version compatibility", () => {
+  function manifestWithPluginApi(range?: string): string {
+    if (range === undefined) {
+      return MANIFEST.replace('plugin-api = "^1.0"\n', "");
+    }
+    return MANIFEST.replace('plugin-api = "^1.0"', `plugin-api = "${range}"`);
+  }
+
+  test("mock host exports default MOCK_PLUGIN_API_VERSION as 1.0.0", () => {
+    expect(MOCK_PLUGIN_API_VERSION).toBe("1.0.0");
+  });
+
+  test("compatible plugin_api ranges begin activation successfully", () => {
+    const compatibleRanges = ["^1.0.0", "~1.0", ">=1.0.0"];
+    for (const range of compatibleRanges) {
+      const host = new MockHost({
+        manifestSource: manifestWithPluginApi(range),
+      });
+      expect(host.manifest.pluginApiRange).toBe(range);
+      expect(host.pluginApiVersion).toBe(MOCK_PLUGIN_API_VERSION);
+      expect(host.currentState).toBe("created");
+      expect(host.currentGeneration).toBe(0);
+
+      host.beginActivation();
+
+      expect(host.currentState).toBe("activating");
+      expect(host.currentGeneration).toBe(1);
+      host.endActivation();
+      expect(host.currentState).toBe("active");
+    }
+  });
+
+  test("incompatible plugin_api ranges fail beginActivation and do not advance generation or state", () => {
+    const incompatibleRanges = ["^2.0.0", "<1.0.0"];
+    for (const range of incompatibleRanges) {
+      const host = new MockHost({
+        manifestSource: manifestWithPluginApi(range),
+      });
+      expect(host.manifest.pluginApiRange).toBe(range);
+      expect(host.currentState).toBe("created");
+      expect(host.currentGeneration).toBe(0);
+
+      const err = denial(() => host.beginActivation());
+      expect(err.code).toBe(HOST_CODES.LIFECYCLE_STATE);
+      expect(err.class).toBe("validation");
+      expect(err.message).toBe(
+        `plugin requires Plugin API '${range}', but mock host provides 1.0.0`,
+      );
+
+      // Does not advance generation or state
+      expect(host.currentState).toBe("created");
+      expect(host.currentGeneration).toBe(0);
+    }
+  });
+
+  test("manifest without plugin_api range succeeds as default unconstrained", () => {
+    const host = new MockHost({
+      manifestSource: manifestWithPluginApi(undefined),
+    });
+    expect(host.manifest.pluginApiRange).toBeUndefined();
+    expect(host.currentState).toBe("created");
+    expect(host.currentGeneration).toBe(0);
+
+    host.beginActivation();
+
+    expect(host.currentState).toBe("activating");
+    expect(host.currentGeneration).toBe(1);
+    host.endActivation();
+    expect(host.currentState).toBe("active");
+  });
+
+  test("custom pluginApiVersion in MockHostOptions validates against custom host bridge version", () => {
+    const v2Manifest = manifestWithPluginApi("^2.0.0");
+
+    // Default host fails against ^2.0.0
+    const defaultHost = new MockHost({ manifestSource: v2Manifest });
+    expect(defaultHost.pluginApiVersion).toBe("1.0.0");
+    expect(defaultHost.bitty.api_version).toBe("1.0.0");
+    const defaultErr = denial(() => defaultHost.beginActivation());
+    expect(defaultErr.code).toBe(HOST_CODES.LIFECYCLE_STATE);
+    expect(defaultHost.currentState).toBe("created");
+    expect(defaultHost.currentGeneration).toBe(0);
+
+    // Custom host with pluginApiVersion 2.0.0 succeeds against ^2.0.0
+    const customHost = new MockHost({
+      manifestSource: v2Manifest,
+      pluginApiVersion: "2.0.0",
+    });
+    expect(customHost.pluginApiVersion).toBe("2.0.0");
+    expect(customHost.bitty.api_version).toBe("2.0.0");
+    customHost.beginActivation();
+    expect(customHost.currentState).toBe("activating");
+    expect(customHost.currentGeneration).toBe(1);
+
+    // Custom host with pluginApiVersion 2.0.0 rejects ^1.0.0
+    const v1Manifest = manifestWithPluginApi("^1.0.0");
+    const incompatibleCustomHost = new MockHost({
+      manifestSource: v1Manifest,
+      pluginApiVersion: "2.0.0",
+    });
+    const customErr = denial(() => incompatibleCustomHost.beginActivation());
+    expect(customErr.code).toBe(HOST_CODES.LIFECYCLE_STATE);
+    expect(customErr.message).toBe(
+      "plugin requires Plugin API '^1.0.0', but mock host provides 2.0.0",
+    );
+    expect(incompatibleCustomHost.currentState).toBe("created");
+    expect(incompatibleCustomHost.currentGeneration).toBe(0);
   });
 });
