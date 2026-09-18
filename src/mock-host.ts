@@ -28,7 +28,6 @@ import {
   INTERCEPTION_KINDS,
   LIFECYCLE_KINDS,
   MOCK_LIMITS,
-  PLUGIN_API_VERSION,
   SNAPSHOT_SCOPE_ONLY,
   STORE_KEY_PATTERN,
   UI_SLOTS,
@@ -44,6 +43,9 @@ import {
 import { loadManifestModel, type ManifestModel } from "./manifest-model.js";
 import { versionSatisfies } from "./version-range.js";
 
+/** Default Plugin API version provided by the mock host bridge. */
+export const MOCK_PLUGIN_API_VERSION = "1.0.0";
+
 /** Construction options for one mock host bound to one plugin manifest. */
 export interface MockHostOptions {
   /** `bitty-plugin.toml` source; validated by the accepted R-SDK-2 linter. */
@@ -51,6 +53,8 @@ export interface MockHostOptions {
   /** Host environment snapshot; only granted keys are readable. */
   readonly environment?: Readonly<Record<string, string>>;
   readonly schemaValidatingServices?: readonly string[];
+  /** Mock host Plugin API bridge version; defaults to MOCK_PLUGIN_API_VERSION. */
+  readonly pluginApiVersion?: string;
 }
 
 /** Notification payload accepted by `bitty.notify.show`. */
@@ -680,10 +684,15 @@ function chordProblem(chord: unknown): string | undefined {
   return undefined;
 }
 
+function quote(raw: string): string {
+  return raw.length > 80 ? `'${raw.slice(0, 77)}...'` : `'${raw}'`;
+}
+
 /** Mock host bound to one plugin manifest and one generation at a time. */
 export class MockHost {
   readonly manifest: ManifestModel;
   readonly environment: Readonly<Record<string, string>>;
+  readonly pluginApiVersion: string;
   readonly notifications: NotifyPayload[] = [];
   readonly handlerViolations: HostDiagnostic[] = [];
 
@@ -764,6 +773,7 @@ export class MockHost {
 
   constructor(options: MockHostOptions) {
     this.manifest = loadManifestModel(options.manifestSource);
+    this.pluginApiVersion = options.pluginApiVersion ?? MOCK_PLUGIN_API_VERSION;
     this.schemaValidatingServices = new Set(
       options.schemaValidatingServices ?? [],
     );
@@ -778,7 +788,7 @@ export class MockHost {
       : undefined;
 
     this.bitty = {
-      api_version: PLUGIN_API_VERSION,
+      api_version: this.pluginApiVersion,
       commands: {
         register: (def: CommandDefinition): number => this.registerCommand(def),
       },
@@ -866,6 +876,19 @@ export class MockHost {
 
   /** Open the activation window for a new generation. */
   beginActivation(): void {
+    if (this.manifest.pluginApiRange !== undefined) {
+      const satisfied = versionSatisfies(
+        this.pluginApiVersion,
+        this.manifest.pluginApiRange,
+      );
+      if (satisfied === undefined || !satisfied) {
+        fail(
+          "validation",
+          HOST_CODES.LIFECYCLE_STATE,
+          `plugin requires Plugin API ${quote(this.manifest.pluginApiRange)}, but mock host provides ${this.pluginApiVersion}`,
+        );
+      }
+    }
     if (this.state === "disposed" || this.state === "created") {
       this.generation += 1;
       this.state = "activating";
