@@ -11,7 +11,7 @@
 import { parse, TomlError } from "smol-toml";
 
 import { validateCapabilityId } from "./capabilities.js";
-import { error, type Diagnostic } from "./diagnostics.js";
+import { error, warning, type Diagnostic } from "./diagnostics.js";
 import { EVENT_KIND_SET } from "./host-surface.js";
 import { schemaProblem } from "./json-schema.js";
 import { pathPatternProblem } from "./path-pattern.js";
@@ -602,6 +602,11 @@ function validateFilesystem(value: unknown, diagnostics: Diagnostic[]): void {
   }
   const perAccess = new Map<string, number>();
   let totalPatternBytes = 0;
+  let hasWriteRiskWarning = diagnostics.some(
+    (diagnostic) =>
+      diagnostic.code === "capabilities.high-risk" &&
+      diagnostic.message.includes("'fs.write'"),
+  );
   value.forEach((entry: unknown, index: number): void => {
     const entryPath = `${path}[${index}]`;
     if (!isTable(entry)) {
@@ -634,6 +639,16 @@ function validateFilesystem(value: unknown, diagnostics: Diagnostic[]): void {
       );
     } else {
       accessKind = access;
+      if (accessKind === "write" && !hasWriteRiskWarning) {
+        hasWriteRiskWarning = true;
+        diagnostics.push(
+          warning(
+            "capabilities.high-risk",
+            `${entryPath}.access`,
+            "capability 'fs.write' is high-risk; consent must present it distinctly and grant it only when no narrower capability (one entry, exact key or path) suffices",
+          ),
+        );
+      }
     }
 
     const paths = entry.paths;

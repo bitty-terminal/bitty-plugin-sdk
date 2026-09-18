@@ -790,6 +790,74 @@ ${JSON.stringify(capability)} = true
     // fs.write is a high-risk escalation shape and must be warned (P2-1).
     expect(codes(result)).toContain("capabilities.high-risk");
   });
+
+  test("structured filesystem write capability is warned as high-risk", () => {
+    const result = lint(`
+[[capabilities.filesystem]]
+access = "write"
+paths = ["notes/file..txt"]
+`);
+    expect(result.valid).toBe(true);
+    expect(
+      result.diagnostics.filter((entry) => entry.severity === "error"),
+    ).toEqual([]);
+    expect(codes(result)).toContain("capabilities.high-risk");
+    const warnings = result.diagnostics.filter(
+      (entry) => entry.code === "capabilities.high-risk",
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.severity).toBe("warning");
+    expect(warnings[0]?.path).toBe("capabilities.filesystem[0].access");
+    expect(warnings[0]?.message).toBe(
+      "capability 'fs.write' is high-risk; consent must present it distinctly and grant it only when no narrower capability (one entry, exact key or path) suffices",
+    );
+  });
+
+  test("structured filesystem read capability does not produce high-risk warning", () => {
+    const result = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = ["~/Documents/**/*.md"]
+`);
+    expect(result.valid).toBe(true);
+    expect(codes(result)).not.toContain("capabilities.high-risk");
+  });
+
+  test("structured filesystem declarations produce high-risk warning without duplicate redundancy", () => {
+    const mixed = lint(`
+[[capabilities.filesystem]]
+access = "read"
+paths = ["~/Documents/**/*.md"]
+
+[[capabilities.filesystem]]
+access = "write"
+paths = ["notes/**"]
+`);
+    expect(mixed.valid).toBe(true);
+    const mixedWarnings = mixed.diagnostics.filter(
+      (entry) => entry.code === "capabilities.high-risk",
+    );
+    expect(mixedWarnings).toHaveLength(1);
+    expect(mixedWarnings[0]?.path).toBe("capabilities.filesystem[1].access");
+
+    const multiWrite = lint(`
+[[capabilities.filesystem]]
+access = "write"
+paths = ["notes/**"]
+
+[[capabilities.filesystem]]
+access = "write"
+paths = ["logs/**"]
+`);
+    expect(multiWrite.valid).toBe(true);
+    const multiWriteWarnings = multiWrite.diagnostics.filter(
+      (entry) => entry.code === "capabilities.high-risk",
+    );
+    expect(multiWriteWarnings).toHaveLength(1);
+    expect(multiWriteWarnings[0]?.path).toBe(
+      "capabilities.filesystem[0].access",
+    );
+  });
 });
 
 describe("lazy triggers", () => {
