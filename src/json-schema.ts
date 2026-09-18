@@ -160,15 +160,43 @@ function schemaNodeProblem(
     ["maxItems", schema.maxItems],
   ];
   for (const [name, value] of bounds) {
-    if (value !== undefined && (typeof value !== "number" || value < 0)) {
-      return `${path}.${name}: expected a non-negative number`;
+    if (
+      value !== undefined &&
+      (typeof value !== "number" || !Number.isInteger(value) || value < 0)
+    ) {
+      return `${path}.${name}: expected a non-negative integer`;
     }
   }
+  if (
+    typeof schema.minLength === "number" &&
+    typeof schema.maxLength === "number" &&
+    schema.minLength > schema.maxLength
+  ) {
+    return `${path}.minLength: cannot exceed maxLength`;
+  }
+  if (
+    typeof schema.minItems === "number" &&
+    typeof schema.maxItems === "number" &&
+    schema.minItems > schema.maxItems
+  ) {
+    return `${path}.minItems: cannot exceed maxItems`;
+  }
+
   for (const name of ["minimum", "maximum"] as const) {
     const value = schema[name];
-    if (value !== undefined && typeof value !== "number") {
-      return `${path}.${name}: expected a number`;
+    if (
+      value !== undefined &&
+      (typeof value !== "number" || !Number.isFinite(value))
+    ) {
+      return `${path}.${name}: expected a finite number`;
     }
+  }
+  if (
+    typeof schema.minimum === "number" &&
+    typeof schema.maximum === "number" &&
+    schema.minimum > schema.maximum
+  ) {
+    return `${path}.minimum: cannot exceed maximum`;
   }
 
   if (schema.enum !== undefined && !Array.isArray(schema.enum)) {
@@ -176,29 +204,36 @@ function schemaNodeProblem(
   }
 
   const properties = schema.properties;
+  if (properties !== undefined) {
+    if (!isPlainObject(properties)) {
+      return `${path}.properties: expected a table`;
+    }
+    for (const [name, child] of Object.entries(properties)) {
+      if (!isPlainObject(child)) {
+        return `${path}.properties.${name}: expected a table`;
+      }
+      const problem = schemaNodeProblem(child, `${path}.properties.${name}`);
+      if (problem !== undefined) return problem;
+    }
+  }
+
+  if (
+    schema.additionalProperties !== undefined &&
+    typeof schema.additionalProperties !== "boolean"
+  ) {
+    return `${path}.additionalProperties: expected a boolean`;
+  }
+
   const wantsObject =
     types.includes("object") ||
     (types.length === 0 &&
-      (properties !== undefined || schema.required !== undefined));
+      (properties !== undefined ||
+        schema.required !== undefined ||
+        schema.additionalProperties !== undefined));
 
   if (wantsObject) {
-    if (properties !== undefined && !isPlainObject(properties)) {
-      return `${path}.properties: expected a table`;
-    }
     if (schema.additionalProperties === undefined) {
       return `${path}.additionalProperties: must be explicit for object schemas`;
-    }
-    if (typeof schema.additionalProperties !== "boolean") {
-      return `${path}.additionalProperties: expected a boolean`;
-    }
-    if (isPlainObject(properties)) {
-      for (const [name, child] of Object.entries(properties)) {
-        const problem = schemaNodeProblem(
-          child as Record<string, unknown>,
-          `${path}.properties.${name}`,
-        );
-        if (problem !== undefined) return problem;
-      }
     }
   }
 
@@ -206,12 +241,14 @@ function schemaNodeProblem(
     if (schema.items === undefined) {
       return `${path}.items: array schemas must declare items`;
     }
-    if (isPlainObject(schema.items)) {
-      const problem = schemaNodeProblem(schema.items, `${path}.items`);
-      if (problem !== undefined) return problem;
-    } else {
+  }
+
+  if (schema.items !== undefined) {
+    if (!isPlainObject(schema.items)) {
       return `${path}.items: expected a table`;
     }
+    const problem = schemaNodeProblem(schema.items, `${path}.items`);
+    if (problem !== undefined) return problem;
   }
 
   return undefined;
@@ -322,7 +359,7 @@ export function valueProblem(
       return `${path}: more items than ${schema.maxItems}`;
     }
     const items = schema.items as Record<string, unknown> | undefined;
-    if (items !== undefined) {
+    if (items !== undefined && isPlainObject(items)) {
       for (let index = 0; index < value.length; index += 1) {
         const problem = valueProblem(items, value[index], `${path}[${index}]`);
         if (problem !== undefined) return problem;
