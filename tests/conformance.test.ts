@@ -7,7 +7,7 @@
  * before execution; a failing case fails this suite.
  */
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   mkdirSync,
   mkdtempSync,
@@ -31,6 +31,7 @@ import {
   SNAPSHOT_SCOPE_ONLY,
   V1_SURFACE_FUNCTIONS,
 } from "../src/host-surface.js";
+import { MockHost } from "../src/mock-host.js";
 import { MANIFEST_MAX_BYTES } from "../src/schema.js";
 
 const CONFORMANCE_DIR = join(import.meta.dir, "..", "conformance");
@@ -134,6 +135,150 @@ describe("conformance fixtures", () => {
       expect(result.passed).toBe(false);
       expect(result.error ?? "").toContain("fixture manifest exceeds");
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("case exceeding timeout with timeoutMs: 0 fails with passed: false and exceeded error", async () => {
+    const result = await runConformanceCaseFile(
+      join(CASES_DIR, "01-deny-by-default.json"),
+      {
+        rootDir: CONFORMANCE_DIR,
+        timeoutMs: 0,
+      },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.error ?? "").toContain("exceeded 0 ms");
+  });
+
+  test("normal conformance case well within timeout passes cleanly", async () => {
+    const result = await runConformanceCaseFile(
+      join(CASES_DIR, "01-deny-by-default.json"),
+      {
+        rootDir: CONFORMANCE_DIR,
+        timeoutMs: 5000,
+      },
+    );
+    expect(result.passed).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.assertions.length).toBeGreaterThan(0);
+  });
+
+  test("between-step monotonic elapsed time check triggers timeout and cleans up active host", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bitty-sdk-budget-active-"));
+    const disposeSpy = spyOn(MockHost.prototype, "dispose");
+    try {
+      const casesDir = join(dir, "cases");
+      const manifestsDir = join(dir, "manifests");
+      mkdirSync(casesDir, { recursive: true });
+      mkdirSync(manifestsDir, { recursive: true });
+      writeFileSync(
+        join(manifestsDir, "minimal.toml"),
+        readFileSync(join(CONFORMANCE_DIR, "manifests", "minimal.toml")),
+      );
+      writeFileSync(
+        join(casesDir, "step-timeout.json"),
+        JSON.stringify({
+          name: "step-timeout-case",
+          description: "A case that triggers timeout between steps.",
+          manifest: "manifests/minimal.toml",
+          steps: [
+            { op: "begin-activation" },
+            { op: "end-activation" },
+            { op: "advance-time", ms: 10 },
+          ],
+        }),
+      );
+
+      let callCount = 0;
+      let virtualNow = 1000;
+      const nowSpy = spyOn(performance, "now").mockImplementation(() => {
+        callCount++;
+        // Advance clock past the 50ms budget after initial setup and activation steps
+        if (callCount > 3) {
+          virtualNow += 100;
+        }
+        return virtualNow;
+      });
+
+      try {
+        const result = await runConformanceCaseFile(
+          join(casesDir, "step-timeout.json"),
+          {
+            rootDir: dir,
+            timeoutMs: 50,
+          },
+        );
+        expect(result.passed).toBe(false);
+        expect(result.error ?? "").toContain("step-timeout-case");
+        expect(result.error ?? "").toContain("exceeded 50 ms");
+        expect(disposeSpy).toHaveBeenCalled();
+        expect(result.assertions).toHaveLength(3); // manifest, begin-activation, end-activation
+      } finally {
+        nowSpy.mockRestore();
+      }
+    } finally {
+      disposeSpy.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("between-step monotonic elapsed time check cleans up suspended host", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "bitty-sdk-budget-suspended-"));
+    const disposeSpy = spyOn(MockHost.prototype, "dispose");
+    try {
+      const casesDir = join(dir, "cases");
+      const manifestsDir = join(dir, "manifests");
+      mkdirSync(casesDir, { recursive: true });
+      mkdirSync(manifestsDir, { recursive: true });
+      writeFileSync(
+        join(manifestsDir, "minimal.toml"),
+        readFileSync(join(CONFORMANCE_DIR, "manifests", "minimal.toml")),
+      );
+      writeFileSync(
+        join(casesDir, "suspend-timeout.json"),
+        JSON.stringify({
+          name: "suspend-timeout-case",
+          description: "A case that triggers timeout while suspended.",
+          manifest: "manifests/minimal.toml",
+          steps: [
+            { op: "begin-activation" },
+            { op: "end-activation" },
+            { op: "suspend" },
+            { op: "advance-time", ms: 10 },
+          ],
+        }),
+      );
+
+      let callCount = 0;
+      let virtualNow = 1000;
+      const nowSpy = spyOn(performance, "now").mockImplementation(() => {
+        callCount++;
+        // Advance clock past budget after suspension
+        if (callCount > 4) {
+          virtualNow += 100;
+        }
+        return virtualNow;
+      });
+
+      try {
+        const result = await runConformanceCaseFile(
+          join(casesDir, "suspend-timeout.json"),
+          {
+            rootDir: dir,
+            timeoutMs: 50,
+          },
+        );
+        expect(result.passed).toBe(false);
+        expect(result.error ?? "").toContain("suspend-timeout-case");
+        expect(result.error ?? "").toContain("exceeded 50 ms");
+        expect(disposeSpy).toHaveBeenCalled();
+        expect(result.assertions).toHaveLength(4); // manifest, begin-activation, end-activation, suspend
+      } finally {
+        nowSpy.mockRestore();
+      }
+    } finally {
+      disposeSpy.mockRestore();
       rmSync(dir, { recursive: true, force: true });
     }
   });

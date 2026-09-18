@@ -360,15 +360,20 @@ async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   label: string,
+  startedAt?: number,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const remainingMs =
+    startedAt !== undefined
+      ? Math.max(0, timeoutMs - (performance.now() - startedAt))
+      : timeoutMs;
   try {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new CaseFailure(`${label} exceeded ${timeoutMs} ms`)),
-          timeoutMs,
+          remainingMs,
         );
       }),
     ]);
@@ -388,9 +393,11 @@ export async function runConformanceCaseFile(
   options: ConformanceRunOptions,
 ): Promise<ConformanceCaseResult> {
   const startedAt = performance.now();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const assertions: ConformanceAssertion[] = [];
   const publishedKinds: string[] = [];
   let name = file;
+  let activeHost: MockHost | undefined;
   try {
     const stats = statSync(file);
     if (!stats.isFile()) throw new CaseFailure("case path is not a file");
@@ -433,6 +440,7 @@ export async function runConformanceCaseFile(
         ? {}
         : { environment: conformanceCase.environment }),
     });
+    activeHost = host;
     for (const capability of conformanceCase.grants ?? []) {
       host.grant(capability);
     }
@@ -800,10 +808,23 @@ export async function runConformanceCaseFile(
 
     await withTimeout(
       (async () => {
-        for (const step of conformanceCase.steps) runStep(step);
+        for (const step of conformanceCase.steps) {
+          if (performance.now() - startedAt > timeoutMs) {
+            throw new CaseFailure(
+              `case '${conformanceCase.name}' exceeded ${timeoutMs} ms`,
+            );
+          }
+          runStep(step);
+        }
+        if (performance.now() - startedAt > timeoutMs) {
+          throw new CaseFailure(
+            `case '${conformanceCase.name}' exceeded ${timeoutMs} ms`,
+          );
+        }
       })(),
-      options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      timeoutMs,
       `case '${conformanceCase.name}'`,
+      startedAt,
     );
 
     if (host.currentState === "active" || host.currentState === "suspended") {
@@ -819,6 +840,13 @@ export async function runConformanceCaseFile(
       durationMs: Math.round((performance.now() - startedAt) * 1000) / 1000,
     };
   } catch (cause) {
+    if (
+      activeHost !== undefined &&
+      (activeHost.currentState === "active" ||
+        activeHost.currentState === "suspended")
+    ) {
+      activeHost.dispose();
+    }
     return {
       name,
       file,

@@ -399,8 +399,14 @@ handle) inside `args` or `expect`. `expect` supports `{ "result": ... }` and
 
 The runner validates each fixture manifest with the accepted R-SDK-2 linter
 before constructing the host, records one assertion per step, bounds case files
-to 1 MiB and 512 steps, and applies a per-case timeout (default 5000 ms). No
-network or process work is involved.
+to 1 MiB and 512 steps, and applies a per-case timeout (default 5000 ms). The
+execution budget covers manifest linting, host initialization, and all step
+evaluations. Monotonic elapsed time (`performance.now()`) is verified between
+steps in addition to the asynchronous `withTimeout` race timer, ensuring both
+synchronous step sequences and asynchronous operations strictly observe the
+timeout. When a case exceeds its budget, the runner marks the case as failed with
+an exceeded-timeout error and cleans up any active or suspended host state
+(`dispose()`). No network or process work is involved.
 
 ```sh
 just conformance   # runs tests/conformance.test.ts
