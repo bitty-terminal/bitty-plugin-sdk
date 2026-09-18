@@ -1986,6 +1986,234 @@ describe("contract alignment", () => {
   });
 });
 
+describe("isolation across settings and call boundaries", () => {
+  test("mutating an object returned by settings.get does not mutate internal settings or future reads", () => {
+    const host = makeHost();
+    activate(host);
+    const initial = {
+      theme: "dark",
+      layout: { compact: true },
+      tags: ["nav", "status"],
+    };
+    expect(host.bitty.settings.set("view.preferences", initial)).toBe(true);
+
+    // Caller mutation of the original object passed to set does not affect internal settings
+    initial.theme = "light";
+    initial.layout.compact = false;
+    initial.tags.push("extra");
+
+    const read1 = host.bitty.settings.get("view.preferences") as typeof initial;
+    expect(read1).toEqual({
+      theme: "dark",
+      layout: { compact: true },
+      tags: ["nav", "status"],
+    });
+
+    // Caller mutation of the object returned by get does not affect host internal settings
+    read1.theme = "high-contrast";
+    read1.layout.compact = false;
+    read1.tags.push("sidebar");
+
+    const read2 = host.bitty.settings.get("view.preferences");
+    expect(read2).toEqual({
+      theme: "dark",
+      layout: { compact: true },
+      tags: ["nav", "status"],
+    });
+
+    // Prior state remains unchanged after validation failures
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    expect(
+      denial(() => host.bitty.settings.set("view.preferences", cyclic as never))
+        .code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+    expect(host.bitty.settings.get("view.preferences")).toEqual({
+      theme: "dark",
+      layout: { compact: true },
+      tags: ["nav", "status"],
+    });
+  });
+
+  test("command dispatch isolates arguments from caller mutation and return values from provider mutation", () => {
+    const host = makeHost();
+    activate(host);
+    let retainedArgs: Record<string, unknown> | undefined;
+    const providerState = {
+      status: "ready",
+      metrics: { count: 42 },
+      entries: ["first", "second"],
+    };
+
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      run: (args) => {
+        retainedArgs = args as Record<string, unknown>;
+        if (args && typeof args === "object") {
+          (args as Record<string, unknown>).modifiedByRun = true;
+          const nested = (args as Record<string, unknown>).nested;
+          if (nested && typeof nested === "object") {
+            (nested as Record<string, unknown>).flag = false;
+          }
+        }
+        return providerState;
+      },
+    });
+
+    host.endActivation();
+
+    const callerArgs = {
+      modifiedByRun: false,
+      nested: { flag: true },
+      options: ["a", "b"],
+    };
+
+    const result = host.dispatchCommand(
+      "conformance.basic:echo",
+      callerArgs,
+    ) as typeof providerState;
+
+    // Mutating args inside run did not mutate caller's arguments object
+    expect(callerArgs.modifiedByRun).toBe(false);
+    expect(callerArgs.nested.flag).toBe(true);
+    expect(callerArgs.options).toEqual(["a", "b"]);
+
+    // Mutating callerArgs after dispatch does not mutate what the command retained
+    callerArgs.nested.flag = true;
+    (callerArgs as Record<string, unknown>).extra = "leaked";
+    expect(retainedArgs?.extra).toBeUndefined();
+
+    // Mutating command return value does not mutate provider's state
+    result.status = "corrupted";
+    result.metrics.count = 999;
+    result.entries.push("third");
+
+    expect(providerState.status).toBe("ready");
+    expect(providerState.metrics.count).toBe(42);
+    expect(providerState.entries).toEqual(["first", "second"]);
+
+    // Provider mutating its own state after returning does not mutate caller's result
+    providerState.metrics.count = 100;
+    expect(result.metrics.count).toBe(999);
+  });
+
+  test("service method calls isolate arguments and results between caller and provider", () => {
+    const source = `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`;
+    const host = makeHost(source);
+    activate(host);
+
+    let retainedServiceArgs: Record<string, unknown> | undefined;
+    const providerResponse = {
+      ok: true,
+      data: { score: 10 },
+      flags: ["verified"],
+    };
+
+    host.bitty.services.provide("conformance.greet", {
+      greet: (args) => {
+        retainedServiceArgs = args as Record<string, unknown>;
+        if (args && typeof args === "object") {
+          (args as Record<string, unknown>).mutatedByProvider = true;
+          const payload = (args as Record<string, unknown>).payload;
+          if (payload && typeof payload === "object") {
+            (payload as Record<string, unknown>).active = false;
+          }
+        }
+        return providerResponse;
+      },
+    });
+
+    host.endActivation();
+
+    const service = host.bitty.services.get("conformance.greet", {
+      version: "^1.0",
+    })!;
+
+    const callerArgs = {
+      mutatedByProvider: false,
+      payload: { active: true },
+      items: [1, 2],
+    };
+
+    const result = service.greet!(callerArgs) as typeof providerResponse;
+
+    // Mutating args inside provider does not mutate caller's arguments object
+    expect(callerArgs.mutatedByProvider).toBe(false);
+    expect(callerArgs.payload.active).toBe(true);
+    expect(callerArgs.items).toEqual([1, 2]);
+
+    // Mutating callerArgs after call does not mutate provider's retained args
+    callerArgs.payload.active = true;
+    (callerArgs as Record<string, unknown>).sneaky = "present";
+    expect(retainedServiceArgs?.sneaky).toBeUndefined();
+
+    // Mutating service return value does not mutate provider's state
+    result.ok = false;
+    result.data.score = 0;
+    result.flags.push("tampered");
+
+    expect(providerResponse.ok).toBe(true);
+    expect(providerResponse.data.score).toBe(10);
+    expect(providerResponse.flags).toEqual(["verified"]);
+
+    // Provider mutating its own state after returning does not mutate caller's result
+    providerResponse.data.score = 20;
+    expect(result.data.score).toBe(0);
+  });
+
+  test("schema validation failure leaves prior state unchanged across commands and services", () => {
+    const host = makeHost();
+    activate(host);
+    let runCalls = 0;
+    const providerState = { ok: true, nested: { counter: 5 } };
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      args_schema: {
+        type: "object",
+        properties: { count: { type: "integer" } },
+        required: ["count"],
+        additionalProperties: false,
+      },
+      result_schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          nested: {
+            type: "object",
+            properties: { counter: { type: "integer" } },
+            required: ["counter"],
+            additionalProperties: false,
+          },
+        },
+        required: ["ok", "nested"],
+        additionalProperties: false,
+      },
+      run: () => {
+        runCalls += 1;
+        return providerState;
+      },
+    });
+    host.endActivation();
+
+    expect(
+      denial(() =>
+        host.dispatchCommand("conformance.basic:echo", { count: "invalid" }),
+      ).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+    expect(runCalls).toBe(0);
+    expect(providerState.nested.counter).toBe(5);
+
+    const res = host.dispatchCommand("conformance.basic:echo", {
+      count: 1,
+    }) as typeof providerState;
+    expect(runCalls).toBe(1);
+    res.nested.counter = 999;
+    expect(providerState.nested.counter).toBe(5);
+  });
+});
+
 describe("manifest integration", () => {
   test("the mock host refuses an invalid manifest", () => {
     expect(

@@ -992,14 +992,14 @@ export class MockHost {
         fail("validation", HOST_CODES.ARGS_INVALID, problem);
       }
     }
-    const result = def.run(args as JsonValue);
+    const result = def.run(deepCopy(args) as JsonValue);
     if (def.result_schema !== undefined) {
       const problem = valueProblem(def.result_schema, result, "result");
       if (problem !== undefined) {
         fail("validation", HOST_CODES.RESULT_INVALID, problem);
       }
     }
-    return result;
+    return deepCopy(result);
   }
 
   /** Run queued task callbacks cooperatively in insertion order. */
@@ -1371,7 +1371,7 @@ export class MockHost {
       fail("validation", HOST_CODES.SETTINGS_KEY_INVALID, problem);
     }
     const value = this.settings.get(key);
-    return value === undefined ? null : value;
+    return value === undefined ? null : deepCopy(value);
   }
 
   private settingsSet(key: string, value: JsonValue): boolean {
@@ -1727,7 +1727,7 @@ export class MockHost {
         }
         let result: unknown;
         try {
-          result = member(args);
+          result = member(deepCopy(args));
         } finally {
           this.assertServiceAvailable(record, iface);
         }
@@ -1736,7 +1736,7 @@ export class MockHost {
           if (problem !== undefined)
             fail("validation", HOST_CODES.RESULT_INVALID, problem);
         }
-        return result;
+        return deepCopy(result);
       };
     }
     return service;

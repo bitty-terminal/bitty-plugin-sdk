@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Isolate settings reads and command/service call boundaries with deep copies:
+  `settings.get` returns a deep copy to prevent caller mutation of internal
+  settings state, `dispatchCommand` delivers a deep copy of arguments to `run`
+  and returns a deep copy of results, and resolved service methods invoke
+  providers with copied arguments and return copied results. Add regression
+  tests verifying independent nested values and unchanged prior state across
+  settings, command dispatch, and service calls (PLUG-SDK-008, CTX-0048 / #90).
+
 - Close the acknowledged static-schema mock coverage gap: compare table-form
   command metadata with runtime schemas after canonicalization, validate service
   arguments before callbacks and results before return, and reject string-form
