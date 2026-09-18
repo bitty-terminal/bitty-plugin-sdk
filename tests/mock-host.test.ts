@@ -1387,6 +1387,143 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     expect(quota?.code).toBe(HOST_CODES.STORE_QUOTA);
   });
 
+  test("nested stored and settings values are validated recursively before serialization", () => {
+    const host = makeHost();
+    activate(host);
+
+    const invalidNestedValues: Array<[string, unknown, string]> = [
+      ["nested NaN", { a: [Number.NaN] }, "value contains a non-finite number"],
+      [
+        "nested Infinity",
+        { a: [Number.POSITIVE_INFINITY] },
+        "value contains a non-finite number",
+      ],
+      [
+        "nested -Infinity",
+        { a: [Number.NEGATIVE_INFINITY] },
+        "value contains a non-finite number",
+      ],
+      [
+        "nested function",
+        { nested: { fn: () => {} } },
+        "value is not JSON-compatible data",
+      ],
+      [
+        "nested symbol",
+        { s: Symbol("sym") },
+        "value is not JSON-compatible data",
+      ],
+      ["nested bigint", { b: 10n }, "value is not JSON-compatible data"],
+      [
+        "nested undefined property",
+        { u: undefined },
+        "value is not JSON-compatible data",
+      ],
+      [
+        "nested undefined in array",
+        { arr: [undefined] },
+        "value is not JSON-compatible data",
+      ],
+      ["nested Date", { d: new Date() }, "value contains a non-plain object"],
+      [
+        "nested RegExp",
+        { reg: /pattern/ },
+        "value contains a non-plain object",
+      ],
+      ["nested Map", { m: new Map() }, "value contains a non-plain object"],
+      ["nested Set", { s: new Set() }, "value contains a non-plain object"],
+    ];
+
+    for (const [desc, val, expectedMessage] of invalidNestedValues) {
+      const storeDiag = denial(() =>
+        host.bitty.store.set("invalid.key", val as never),
+      );
+      expect(storeDiag.code).toBe(HOST_CODES.STORE_VALUE_INVALID);
+      expect(storeDiag.message).toBe(expectedMessage);
+
+      const settingsDiag = denial(() =>
+        host.bitty.settings.set("invalid.key", val as never),
+      );
+      expect(settingsDiag.code).toBe(HOST_CODES.STORE_VALUE_INVALID);
+      expect(settingsDiag.message).toBe(expectedMessage);
+    }
+
+    // Rejected operations preserve any previously stored values without mutating them
+    const originalStore = { safe: 42, text: "original" };
+    expect(host.bitty.store.set("persisted.key", originalStore)).toBe(true);
+    expect(host.bitty.store.get("persisted.key")).toEqual(originalStore);
+
+    expect(
+      denial(() =>
+        host.bitty.store.set("persisted.key", {
+          safe: 99,
+          bad: [Number.NaN],
+        } as never),
+      ).code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+    expect(
+      denial(() =>
+        host.bitty.store.set("persisted.key", {
+          safe: 99,
+          bad: () => {},
+        } as never),
+      ).code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+    expect(host.bitty.store.get("persisted.key")).toEqual(originalStore);
+
+    const originalSettings = { enabled: true, level: 1 };
+    expect(host.bitty.settings.set("config.key", originalSettings)).toBe(true);
+    expect(host.bitty.settings.get("config.key")).toEqual(originalSettings);
+
+    expect(
+      denial(() =>
+        host.bitty.settings.set("config.key", {
+          enabled: false,
+          bad: 99n,
+        } as never),
+      ).code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+    expect(
+      denial(() =>
+        host.bitty.settings.set("config.key", {
+          enabled: false,
+          bad: new Date(),
+        } as never),
+      ).code,
+    ).toBe(HOST_CODES.STORE_VALUE_INVALID);
+    expect(host.bitty.settings.get("config.key")).toEqual(originalSettings);
+
+    // Valid nested JSON data continues to round-trip correctly
+    const validData = {
+      title: "Bitty Plugin",
+      version: 1,
+      ratio: 3.14159,
+      enabled: true,
+      disabled: false,
+      empty: null,
+      tags: ["terminal", "editor", null, 42],
+      matrix: [
+        [1, 2],
+        [3, 4],
+      ],
+      meta: {
+        author: "dev",
+        permissions: ["store.read", "store.write"],
+        nested: {
+          deep: {
+            leaf: "ok",
+          },
+        },
+      },
+    };
+
+    expect(host.bitty.store.set("valid.nested", validData)).toBe(true);
+    expect(host.bitty.store.get("valid.nested")).toEqual(validData);
+
+    expect(host.bitty.settings.set("valid.settings", validData)).toBe(true);
+    expect(host.bitty.settings.get("valid.settings")).toEqual(validData);
+  });
+
   test("cyclic references fail typed across store, settings, ui, and snapshot", () => {
     const host = makeHost();
     host.grant("ui.rich");

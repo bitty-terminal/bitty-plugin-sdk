@@ -250,7 +250,12 @@ function utf8Bytes(value: string): number {
 function jsonBytes(value: unknown, limit: number): number {
   if (Number.isFinite(limit)) {
     const scan = scanStructure(value, limit, limit);
-    if (scan.cycle || scan.nodes > limit || scan.depth > limit) {
+    if (
+      scan.cycle ||
+      scan.problem !== undefined ||
+      scan.nodes > limit ||
+      scan.depth > limit
+    ) {
       return limit + 1;
     }
   }
@@ -272,6 +277,7 @@ interface StructureScan {
   readonly cycle: boolean;
   readonly depth: number;
   readonly nodes: number;
+  readonly problem?: string;
 }
 
 /**
@@ -293,6 +299,7 @@ function scanStructure(
   let nodes = 0;
   let depth = 0;
   let cycle = false;
+  let problem: string | undefined;
   const ancestors = new WeakSet<object>();
   const stack: Array<{ value: unknown; level: number; exit: boolean }> = [
     { value, level: 0, exit: false },
@@ -310,8 +317,28 @@ function scanStructure(
     nodes += 1;
     if (nodes > maxNodes) break;
     const current = frame.value;
+    if (
+      typeof current === "function" ||
+      typeof current === "symbol" ||
+      typeof current === "bigint" ||
+      current === undefined
+    ) {
+      problem = "value is not JSON-compatible data";
+      break;
+    }
+    if (typeof current === "number" && !Number.isFinite(current)) {
+      problem = "value contains a non-finite number";
+      break;
+    }
     if (current === null || typeof current !== "object") continue;
-    if (!Array.isArray(current) && !isPlainObject(current)) continue;
+    if (!Array.isArray(current) && !isPlainObject(current)) {
+      problem = "value contains a non-plain object";
+      break;
+    }
+    if (Object.getOwnPropertySymbols(current).length > 0) {
+      problem = "value is not JSON-compatible data";
+      break;
+    }
     if (ancestors.has(current)) {
       cycle = true;
       break;
@@ -328,7 +355,7 @@ function scanStructure(
       stack.push({ value: child, level: containerLevel, exit: false });
     }
   }
-  return { cycle, depth, nodes };
+  return { cycle, depth, nodes, problem };
 }
 
 /**
@@ -397,6 +424,9 @@ function storeValueProblem(value: unknown): string | undefined {
     }
     if (scan.nodes > MOCK_LIMITS.STORE_MAX_NODES) {
       return `value node count exceeds ${MOCK_LIMITS.STORE_MAX_NODES}`;
+    }
+    if (scan.problem !== undefined) {
+      return scan.problem;
     }
   }
   if (
