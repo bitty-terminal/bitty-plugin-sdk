@@ -2478,3 +2478,91 @@ describe("Plugin API version compatibility", () => {
     expect(incompatibleCustomHost.currentGeneration).toBe(0);
   });
 });
+
+describe("tools.git activation (Layer-2 CTX-0425)", () => {
+  const TOOLS_MANIFEST = `${MANIFEST}\n[tools.git]\nrequired = true\nversion = ">=2.30"\n`;
+  const OPTIONAL_MANIFEST = `${MANIFEST}\n[tools.git]\nrequired = false\nversion = ">=2.30"\n`;
+
+  test("tool codes are mock-owned until an accepted contract fixes them verbatim", () => {
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.TOOL_ABSENT)).toBe(false);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.TOOL_MISMATCH)).toBe(false);
+    expect(MOCK_HOST_CODES.has(HOST_CODES.TOOL_ABSENT)).toBe(true);
+    expect(MOCK_HOST_CODES.has(HOST_CODES.TOOL_MISMATCH)).toBe(true);
+  });
+
+  test("manifest model exposes the accepted [tools.git] declaration", async () => {
+    const { loadManifestModel } = await import("../src/manifest-model.js");
+    const model = loadManifestModel(TOOLS_MANIFEST);
+    expect(model.toolsGit).toEqual({ required: true, version: ">=2.30" });
+    const plain = loadManifestModel(MANIFEST);
+    expect(plain.toolsGit).toBeUndefined();
+  });
+
+  test("present git satisfying the range proceeds through activation", () => {
+    const host = new MockHost({
+      manifestSource: TOOLS_MANIFEST,
+      toolsGitVersion: "2.44.0",
+    });
+    expect(host.manifest.toolsGit).toEqual({
+      required: true,
+      version: ">=2.30",
+    });
+    host.beginActivation();
+    expect(host.currentState).toBe("activating");
+    host.endActivation();
+    expect(host.currentState).toBe("active");
+  });
+
+  test("absent git fails closed with E_TOOL_ABSENT and never opens the window", () => {
+    for (const toolsGitVersion of [undefined, null] as const) {
+      const host = new MockHost({
+        manifestSource: TOOLS_MANIFEST,
+        ...(toolsGitVersion === undefined ? {} : { toolsGitVersion }),
+      });
+      const diagnostic = denial(() => host.beginActivation());
+      expect(diagnostic.code).toBe(HOST_CODES.TOOL_ABSENT);
+      expect(diagnostic.class).toBe("resolution");
+      expect(diagnostic.path).toBe("tools.git");
+      expect(host.currentState).toBe("created");
+      expect(host.currentGeneration).toBe(0);
+    }
+  });
+
+  test("mismatched or malformed git fails closed with E_TOOL_MISMATCH", () => {
+    for (const toolsGitVersion of ["2.20.0", "not-a-version"]) {
+      const host = new MockHost({
+        manifestSource: TOOLS_MANIFEST,
+        toolsGitVersion,
+      });
+      const diagnostic = denial(() => host.beginActivation());
+      expect(diagnostic.code).toBe(HOST_CODES.TOOL_MISMATCH);
+      expect(diagnostic.class).toBe("validation");
+      expect(diagnostic.path).toBe("tools.git.version");
+      expect(host.currentState).toBe("created");
+      expect(host.currentGeneration).toBe(0);
+    }
+  });
+
+  test("optional required=false never gates activation", () => {
+    for (const toolsGitVersion of [undefined, null, "2.20.0"] as const) {
+      const host = new MockHost({
+        manifestSource: OPTIONAL_MANIFEST,
+        ...(toolsGitVersion === undefined ? {} : { toolsGitVersion }),
+      });
+      expect(host.manifest.toolsGit).toEqual({
+        required: false,
+        version: ">=2.30",
+      });
+      host.beginActivation();
+      expect(host.currentState).toBe("activating");
+      host.endActivation();
+      expect(host.currentState).toBe("active");
+    }
+  });
+
+  test("manifests without [tools.git] ignore the injected tool version", () => {
+    const host = new MockHost({ manifestSource: MANIFEST });
+    host.beginActivation();
+    expect(host.currentState).toBe("activating");
+  });
+});

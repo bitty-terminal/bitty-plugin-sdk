@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Unblock #82 with the missing Layer-2 `[tools.git]` activation corpus and
+  conformance coverage (CTX-0054): expose the accepted declaration as
+  `ManifestModel.toolsGit`, inject activation presence through
+  `MockHostOptions.toolsGitVersion` (`MAJOR.MINOR.PATCH` when present,
+  `null`/omitted when absent), fail a `required = true` `beginActivation()`
+  closed with mock-owned `E_TOOL_ABSENT` (`resolution`) when git is absent and
+  `E_TOOL_MISMATCH` (`validation`) on version mismatch, accept
+  `toolsGitVersion` plus an optional `expect.denial` on `begin-activation` in
+  the conformance runner, and cover the slice with positive
+  (`13-tools-git-present.json`), absent (`14-tools-git-absent.json`), and
+  mismatch (`15-tools-git-mismatch.json`) fixtures plus the `tools.git
+activation` unit group. `required = false` never gates activation.
+
 - Freeze the SDK generation pipeline on the bitty v1 Lua surface (CTX-0053, issue 107): pin per-namespace host parity from bitty PR 1303 in
   `surface/bitty-plugin-api-v1.json` (`hostParity`) and `src/host-surface.ts`
   (`NAMESPACE_HOST_PARITY`), generate typed `E_NOT_IMPLEMENTED` stubs for the

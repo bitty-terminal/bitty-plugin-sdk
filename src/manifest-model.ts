@@ -32,6 +32,14 @@ export interface ServiceProvidedSchema {
   readonly resultSchema?: JsonSchema;
 }
 
+/** Accepted Layer-2 `[tools.git]` declaration read from the manifest. */
+export interface ToolsGitDeclaration {
+  /** Value of `[tools.git].required`; only `true` gates activation. */
+  readonly required: boolean;
+  /** Value of `[tools.git].version` (shared structural range grammar). */
+  readonly version: string;
+}
+
 /** Closed declaration set read from an accepted manifest. */
 export interface ManifestModel {
   readonly pluginId: string;
@@ -45,6 +53,7 @@ export interface ManifestModel {
   readonly claims: readonly string[];
   readonly providedServices: ReadonlyMap<string, string>;
   readonly providedServiceSchemas: ReadonlyMap<string, ServiceProvidedSchema>;
+  readonly toolsGit?: ToolsGitDeclaration;
 }
 
 /** One manifest that failed the accepted validator. */
@@ -190,6 +199,21 @@ function readProvidedServices(services: unknown): {
 }
 
 /**
+ * Read the accepted Layer-2 `[tools.git]` declaration. The accepted R-SDK-2
+ * linter already enforces the closed shape (`required: boolean`,
+ * `version: range string`); only a well-formed declaration is exposed so the
+ * mock host can gate activation on it.
+ */
+function readToolsGit(value: unknown): ToolsGitDeclaration | undefined {
+  if (!isTable(value)) return undefined;
+  const git = value.git;
+  if (!isTable(git)) return undefined;
+  if (typeof git.required !== "boolean") return undefined;
+  if (typeof git.version !== "string") return undefined;
+  return { required: git.required, version: git.version };
+}
+
+/**
  * Validate and convert one `bitty-plugin.toml` source into a manifest model.
  *
  * Throws {@link ManifestModelError} when the accepted validator reports any
@@ -217,6 +241,7 @@ export function loadManifestModel(source: string): ManifestModel {
     typeof compat["plugin-api"] === "string" ? compat["plugin-api"] : undefined;
   const lazyCommands = readLazyCommands(lazy.commands);
   const providedServices = readProvidedServices(parsed.services);
+  const toolsGit = readToolsGit(parsed.tools);
 
   return {
     pluginId,
@@ -230,5 +255,6 @@ export function loadManifestModel(source: string): ManifestModel {
     claims: readStringArray(lazy.claims),
     providedServices: providedServices.versions,
     providedServiceSchemas: providedServices.schemas,
+    ...(toolsGit === undefined ? {} : { toolsGit }),
   };
 }

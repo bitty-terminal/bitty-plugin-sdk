@@ -57,6 +57,15 @@ export interface MockHostOptions {
   readonly schemaValidatingServices?: readonly string[];
   /** Mock host Plugin API bridge version; defaults to MOCK_PLUGIN_API_VERSION. */
   readonly pluginApiVersion?: string;
+  /**
+   * Injected `git` presence for the accepted Layer-2 `[tools.git]` slice
+   * (CTX-0425): a `MAJOR.MINOR.PATCH` string means git is present at that
+   * version, while `null` or an omitted value means git is absent from the
+   * activation environment. Only a manifest with
+   * `[tools.git] required = true` reads this field; `required = false`
+   * declares an optional dependency and never gates activation.
+   */
+  readonly toolsGitVersion?: string | null;
 }
 
 /** Notification payload accepted by `bitty.notify.show`. */
@@ -770,6 +779,7 @@ export class MockHost {
   private readonly timers = new Map<number, TimerRecord>();
   private readonly services = new Map<string, ServiceRecord>();
   private readonly schemaValidatingServices: ReadonlySet<string>;
+  private readonly toolsGitVersion: string | null | undefined;
   private terminalSnapshot: Record<string, unknown> = {};
   private deliveringViolation = false;
 
@@ -779,6 +789,7 @@ export class MockHost {
     this.schemaValidatingServices = new Set(
       options.schemaValidatingServices ?? [],
     );
+    this.toolsGitVersion = options.toolsGitVersion ?? null;
     this.environment = Object.freeze({ ...(options.environment ?? {}) });
     const envDeclared = this.declaredEnvCapabilities().length > 0;
 
@@ -876,6 +887,37 @@ export class MockHost {
     return this.grants.has(capability);
   }
 
+  /**
+   * Fail closed when a `required = true` `[tools.git]` declaration cannot be
+   * satisfied by the injected activation environment. An omitted or `null`
+   * `toolsGitVersion` means git is absent (`E_TOOL_ABSENT`, `resolution`);
+   * a present version that does not satisfy `[tools.git].version` (including
+   * a malformed injected version) fails with `E_TOOL_MISMATCH`
+   * (`validation`). `required = false` never gates activation.
+   */
+  private checkToolsGitActivation(): void {
+    const toolsGit = this.manifest.toolsGit;
+    if (toolsGit === undefined || !toolsGit.required) return;
+    const provided = this.toolsGitVersion;
+    if (provided === undefined || provided === null) {
+      fail(
+        "resolution",
+        HOST_CODES.TOOL_ABSENT,
+        `plugin requires git ${quote(toolsGit.version)}, but git is absent from the activation environment`,
+        "tools.git",
+      );
+    }
+    const satisfied = versionSatisfies(provided, toolsGit.version);
+    if (satisfied === undefined || !satisfied) {
+      fail(
+        "validation",
+        HOST_CODES.TOOL_MISMATCH,
+        `plugin requires git ${quote(toolsGit.version)}, but activation provides git ${quote(provided)}`,
+        "tools.git.version",
+      );
+    }
+  }
+
   /** Open the activation window for a new generation. */
   beginActivation(): void {
     if (this.manifest.pluginApiRange !== undefined) {
@@ -891,6 +933,7 @@ export class MockHost {
         );
       }
     }
+    this.checkToolsGitActivation();
     if (this.state === "disposed" || this.state === "created") {
       this.generation += 1;
       this.state = "activating";

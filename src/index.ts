@@ -86,7 +86,12 @@ export {
 } from "./manifest.js";
 export type { LintResult } from "./manifest.js";
 export { loadManifestModel, ManifestModelError } from "./manifest-model.js";
-export type { ManifestModel } from "./manifest-model.js";
+export type {
+  LazyCommandSchema,
+  ManifestModel,
+  ServiceProvidedSchema,
+  ToolsGitDeclaration,
+} from "./manifest-model.js";
 export { MockHost, MOCK_PLUGIN_API_VERSION } from "./mock-host.js";
 export type {
   CommandDefinition,

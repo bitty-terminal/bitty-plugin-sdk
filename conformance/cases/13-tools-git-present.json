@@ -1,0 +1,37 @@
+{
+  "name": "tools.git activation proceeds when git satisfies the declared range",
+  "description": "Positive Layer-2 slice: [tools.git] required=true version>=2.30 with git 2.44.0 present opens the activation window and the generation runs to disposal.",
+  "manifest": "manifests/tools-git.toml",
+  "tags": ["tools", "tools-git", "activation"],
+  "toolsGitVersion": "2.44.0",
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "register",
+      "command": {
+        "id": "hello",
+        "title": "Hello",
+        "run_result": "hello"
+      },
+      "capture": "hello-handle"
+    },
+    {
+      "op": "subscribe",
+      "event": "plugin.activated",
+      "capture": "activated"
+    },
+    { "op": "end-activation" },
+    {
+      "op": "expect-event",
+      "capture": "activated",
+      "events": [{ "kind": "plugin.activated", "payload": {} }]
+    },
+    {
+      "op": "dispatch",
+      "command": "conformance.tools-git:hello",
+      "args": {},
+      "expect": { "result": "hello" }
+    },
+    { "op": "dispose" }
+  ]
+}

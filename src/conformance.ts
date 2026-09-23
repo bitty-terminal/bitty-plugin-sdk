@@ -31,6 +31,12 @@ export interface ConformanceCase {
   readonly tags?: readonly string[];
   readonly grants?: readonly string[];
   readonly environment?: Readonly<Record<string, string>>;
+  /**
+   * Injected `git` presence for the accepted Layer-2 `[tools.git]` slice:
+   * a version string means present, `null` means absent. Omitted means
+   * absent (fail-closed default for `required = true` declarations).
+   */
+  readonly toolsGitVersion?: string | null;
   readonly steps: readonly ConformanceStep[];
 }
 
@@ -178,6 +184,14 @@ function parseCase(source: string, file: string): ConformanceCase {
   if (grants !== undefined && !Array.isArray(grants)) {
     throw new CaseFailure("case.grants must be an array");
   }
+  const toolsGitVersion = parsed.toolsGitVersion;
+  if (
+    toolsGitVersion !== undefined &&
+    toolsGitVersion !== null &&
+    typeof toolsGitVersion !== "string"
+  ) {
+    throw new CaseFailure("case.toolsGitVersion must be a string or null");
+  }
   return {
     name,
     description,
@@ -206,6 +220,9 @@ function parseCase(source: string, file: string): ConformanceCase {
           ),
         }
       : {}),
+    ...(toolsGitVersion === undefined
+      ? {}
+      : { toolsGitVersion: toolsGitVersion as string | null }),
     steps: steps as ConformanceStep[],
   };
 }
@@ -439,6 +456,9 @@ export async function runConformanceCaseFile(
       ...(conformanceCase.environment === undefined
         ? {}
         : { environment: conformanceCase.environment }),
+      ...(conformanceCase.toolsGitVersion === undefined
+        ? {}
+        : { toolsGitVersion: conformanceCase.toolsGitVersion }),
     });
     activeHost = host;
     for (const capability of conformanceCase.grants ?? []) {
@@ -758,10 +778,34 @@ export async function runConformanceCaseFile(
           });
           break;
         }
-        case "begin-activation":
-          host.beginActivation();
-          assertions.push({ op: "begin-activation", detail: "window opened" });
+        case "begin-activation": {
+          // A bare `begin-activation` without `expect` asserts success; a
+          // fail-closed `[tools.git]` case carries
+          // `expect: { denial: { code, class, path? } }`.
+          if (table.expect === undefined) {
+            host.beginActivation();
+            assertions.push({
+              op: "begin-activation",
+              detail: "window opened",
+            });
+            break;
+          }
+          let outcome: { ok: boolean; error?: HostError };
+          try {
+            host.beginActivation();
+            outcome = { ok: true };
+          } catch (cause) {
+            if (!(cause instanceof HostError)) throw cause;
+            outcome = { ok: false, error: cause };
+          }
+          const problem = expectProblem(outcome, table.expect, captures);
+          record(
+            problem === undefined,
+            "begin-activation",
+            `${problem ?? "matched"}`,
+          );
           break;
+        }
         case "end-activation":
           host.endActivation();
           assertions.push({ op: "end-activation", detail: "window closed" });

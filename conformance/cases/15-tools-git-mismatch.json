@@ -1,0 +1,19 @@
+{
+  "name": "tools.git activation fails closed on version mismatch",
+  "description": "Fail-closed Layer-2 slice: [tools.git] required=true version>=2.30 with git 2.20.0 present rejects begin-activation with E_TOOL_MISMATCH (validation) and the generation never opens.",
+  "manifest": "manifests/tools-git.toml",
+  "tags": ["tools", "tools-git", "activation"],
+  "toolsGitVersion": "2.20.0",
+  "steps": [
+    {
+      "op": "begin-activation",
+      "expect": {
+        "denial": {
+          "code": "E_TOOL_MISMATCH",
+          "class": "validation",
+          "path": "tools.git.version"
+        }
+      }
+    }
+  ]
+}

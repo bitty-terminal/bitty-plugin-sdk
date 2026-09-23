@@ -38,6 +38,8 @@ export const HOST_CODES = {
   SERVICE_GONE: "E_SERVICE_GONE",
   SERVICE_UNDECLARED: "E_SERVICE_UNDECLARED",
   SERVICE_VERSION_INVALID: "E_SERVICE_VERSION_INVALID",
+  TOOL_ABSENT: "E_TOOL_ABSENT",
+  TOOL_MISMATCH: "E_TOOL_MISMATCH",
   BUDGET_TASK: "E_BUDGET_TASK",
   BUDGET_TIMER: "E_BUDGET_TIMER",
   REGISTRATION_CLOSED: "E_REGISTRATION_CLOSED",
@@ -88,13 +90,18 @@ export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
 
 /**
  * Mock-owned codes for behaviors the accepted corpus requires but does not yet
- * spell with a stable code (registration, keymap, lifecycle, and bounded-input
- * diagnostics). Documented in `docs/mock-host.md`.
+ * spell with a stable code (registration, keymap, lifecycle, bounded-input,
+ * and Layer-2 `[tools.git]` activation diagnostics). Documented in
+ * `docs/mock-host.md`.
  *
  * `E_NOT_IMPLEMENTED` mirrors bitty #1303 `BridgeError::not_implemented`
  * (`runtime` class): accepted v1 namespaces the host has not wired yet stay
  * present and callable, and every call fails closed with it until a follow-up
- * wires the host backend. It stays mock-owned until an accepted contract
+ * wires the host backend. `E_TOOL_ABSENT` (`resolution` class) and
+ * `E_TOOL_MISMATCH` (`validation` class) cover the accepted `[tools.git]`
+ * Layer-2 slice (CTX-0425): a `required = true` declaration fails activation
+ * closed when git is absent or its version does not satisfy
+ * `[tools.git].version`. All three stay mock-owned until an accepted contract
  * fixes the code verbatim.
  */
 export const MOCK_HOST_CODES: ReadonlySet<string> = new Set<string>(

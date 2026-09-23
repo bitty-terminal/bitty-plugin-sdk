@@ -243,6 +243,21 @@ Table-form rules (fail-closed):
   structure only, with the shared range grammar (see
   [Version ranges](#version-ranges)).
 
+Activation contract (Layer-2 slice, implemented by CTX-0054 to unblock #82):
+`required = true` gates `beginActivation()`. The host compares the declared
+`[tools.git].version` range against the git version carried in the activation
+environment using the shared range grammar: an absent git fails closed with
+`E_TOOL_ABSENT` (`resolution`, path `tools.git`), and a present version that
+does not satisfy the range (including a malformed injected version) fails
+closed with `E_TOOL_MISMATCH` (`validation`, path `tools.git.version`).
+Neither failure opens the registration window, advances the generation, or
+changes lifecycle state. `required = false` declares an optional dependency
+and never gates activation. Both codes are mock-owned until an accepted
+contract fixes them verbatim; the manifest model exposes the declaration as
+`ManifestModel.toolsGit`, and the mock host injects presence through
+`MockHostOptions.toolsGitVersion` (a `MAJOR.MINOR.PATCH` string when present,
+`null`/omitted when absent), documented in `docs/mock-host.md`.
+
 ## Hard limits
 
 | Bound                                 | Value                  |
