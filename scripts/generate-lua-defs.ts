@@ -60,6 +60,16 @@ export interface SurfaceConditionalCapability {
   readonly when: string;
 }
 
+export type HostParityStatus = "wired" | "deferred";
+
+export interface SurfaceHostParity {
+  readonly repository: string;
+  readonly commit: string;
+  readonly pr: number;
+  readonly note: string;
+  readonly namespaces: Readonly<Record<string, HostParityStatus>>;
+}
+
 export interface SurfaceFunction {
   readonly path: string;
   readonly level: "L1" | "L2";
@@ -94,6 +104,7 @@ export interface Surface {
   readonly module: string;
   readonly api_version: string;
   readonly output: string;
+  readonly hostParity: SurfaceHostParity;
   readonly sources: readonly SurfaceSource[];
   readonly types: readonly SurfaceType[];
   readonly functions: readonly SurfaceFunction[];
@@ -361,6 +372,64 @@ export function validateSurface(surface: Surface): string[] {
       }
     }
   }
+  const parityNamespaces =
+    surface.hostParity !== undefined && isRecord(surface.hostParity.namespaces)
+      ? (surface.hostParity.namespaces as Record<string, unknown>)
+      : undefined;
+  if (
+    surface.hostParity === undefined ||
+    typeof surface.hostParity.repository !== "string" ||
+    surface.hostParity.repository === "" ||
+    typeof surface.hostParity.commit !== "string" ||
+    !/^[0-9a-f]{40}$/.test(surface.hostParity.commit) ||
+    typeof surface.hostParity.pr !== "number" ||
+    !Number.isInteger(surface.hostParity.pr) ||
+    surface.hostParity.pr <= 0 ||
+    parityNamespaces === undefined
+  ) {
+    problems.push(
+      "hostParity must pin the host repository, 40-hex commit, numeric PR, and namespace map",
+    );
+  } else {
+    const missingPrefixes = new Set<string>();
+    for (const fn of surface.functions) {
+      const prefix = fn.path.split(".")[0] ?? "";
+      const status = parityNamespaces[prefix];
+      if (status !== "wired" && status !== "deferred") {
+        missingPrefixes.add(prefix);
+        continue;
+      }
+      if (status === "deferred") {
+        if (fn.errors.length !== 1 || fn.errors[0] !== "E_NOT_IMPLEMENTED") {
+          problems.push(
+            `${fn.path}: deferred functions must list exactly E_NOT_IMPLEMENTED`,
+          );
+        }
+      } else if (fn.errors.includes("E_NOT_IMPLEMENTED")) {
+        problems.push(
+          `${fn.path}: wired functions must not list E_NOT_IMPLEMENTED`,
+        );
+      }
+    }
+    for (const prefix of missingPrefixes) {
+      problems.push(`hostParity.namespaces misses namespace ${prefix}`);
+    }
+    for (const namespace of Object.keys(parityNamespaces)) {
+      if (!prefixesWithFunctions.has(namespace)) {
+        problems.push(
+          `hostParity.namespaces lists a namespace with no functions: ${namespace}`,
+        );
+      }
+      if (
+        parityNamespaces[namespace] !== "wired" &&
+        parityNamespaces[namespace] !== "deferred"
+      ) {
+        problems.push(
+          `hostParity.namespaces[${namespace}] must be wired or deferred`,
+        );
+      }
+    }
+  }
   for (const [prefix, typeName] of namespaceTypes) {
     if (!prefixesWithFunctions.has(prefix)) {
       problems.push(`${typeName}: namespace has no functions`);
@@ -491,7 +560,11 @@ function renderType(type: SurfaceType): string[] {
   return lines;
 }
 
-function renderFunction(fn: SurfaceFunction, namespaceType: string): string[] {
+function renderFunction(
+  fn: SurfaceFunction,
+  namespaceType: string,
+  deferred: boolean,
+): string[] {
   const lines = wrapDoc(fn.doc).map((line) => `--- ${line}`);
   if (fn.capabilities.length > 0) {
     lines.push(`--- Capabilities: ${fn.capabilities.join(", ")}.`);
@@ -499,6 +572,11 @@ function renderFunction(fn: SurfaceFunction, namespaceType: string): string[] {
   for (const gate of fn.conditionalCapabilities ?? []) {
     lines.push(
       `--- Conditional capabilities: ${gate.capability} (when ${gate.when}).`,
+    );
+  }
+  if (deferred) {
+    lines.push(
+      "--- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.",
     );
   }
   if (fn.errors.length > 0) {
@@ -534,6 +612,11 @@ export function renderDefinitions(surface: Surface): string {
     const prefix = namespacePrefix(type.name);
     if (prefix !== undefined) namespaceByPrefix.set(prefix, type);
   }
+  const deferredNamespaces = new Set(
+    Object.entries(surface.hostParity.namespaces ?? {})
+      .filter(([, status]) => status === "deferred")
+      .map(([namespace]) => namespace),
+  );
 
   for (const type of surface.types) {
     lines.push(...renderType(type));
@@ -543,7 +626,13 @@ export function renderDefinitions(surface: Surface): string {
       lines.push("");
       for (const fn of surface.functions) {
         if (fn.path.startsWith(`${prefix}.`)) {
-          lines.push(...renderFunction(fn, type.name));
+          lines.push(
+            ...renderFunction(
+              fn,
+              type.name,
+              deferredNamespaces.has(prefix ?? ""),
+            ),
+          );
           lines.push("");
         }
       }

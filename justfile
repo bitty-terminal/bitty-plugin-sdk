@@ -10,7 +10,7 @@ lefthook-version := "2.1.10"
 
 default: check
 
-check: lint fmt-check type-check test lua-defs-check
+check: lint fmt-check type-check test lua-defs-check host-parity-check
 
 # Install pinned dependencies from the lockfile before running code gates.
 install:
@@ -31,6 +31,11 @@ conformance: install
 # Fail when lua/bitty.d.lua drifts from surface/bitty-plugin-api-v1.json.
 lua-defs-check:
     bun scripts/generate-lua-defs.ts --check
+
+# Fail when the surface table, wiring model, definitions, or mock disagree
+# about host parity (CTX-0053 regen-sync trigger).
+host-parity-check: install
+    bun scripts/check-host-parity.ts
 
 # Regenerate lua/bitty.d.lua from the surface table.
 lua-defs-write:

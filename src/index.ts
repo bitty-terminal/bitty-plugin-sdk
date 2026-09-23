@@ -43,6 +43,7 @@ export type { DiagnosticClass, HostDiagnostic } from "./host-diagnostics.js";
 export {
   CAPABILITY_GATED_SURFACE,
   COMMAND_ID_PATTERN,
+  DEFERRED_NAMESPACES,
   ENV_CAPABILITY_PREFIX,
   ENV_KEY_PATTERN as HOST_ENV_KEY_PATTERN,
   ENV_MAX_VALUE_BYTES,
@@ -52,9 +53,12 @@ export {
   EVENT_PAYLOAD_FIELDS,
   eventKindSpec,
   EXCLUSIVE_CLAIM_SLOTS,
+  HOST_PARITY_SOURCE,
   INTERCEPTION_KINDS,
   LIFECYCLE_KINDS,
   MOCK_LIMITS,
+  NAMESPACE_HOST_PARITY,
+  namespaceHostParity,
   OBSERVATION_KINDS,
   PLUGIN_API_VERSION,
   SNAPSHOT_SCOPE_ONLY,
@@ -64,7 +68,12 @@ export {
   UI_V1_NODE_KINDS,
   V1_SURFACE_FUNCTIONS,
 } from "./host-surface.js";
-export type { EventClass, EventKindSpec } from "./host-surface.js";
+export type {
+  EventClass,
+  EventKindSpec,
+  HostParityStatus,
+  NamespaceHostParity,
+} from "./host-surface.js";
 export { schemaProblem, valueProblem } from "./json-schema.js";
 export type { JsonSchema, JsonValue } from "./json-schema.js";
 export {

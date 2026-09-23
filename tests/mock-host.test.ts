@@ -15,6 +15,7 @@ import {
   ACCEPTED_HOST_CODES,
   HOST_CODES,
   HostError,
+  MOCK_HOST_CODES,
   type HostDiagnostic,
 } from "../src/host-diagnostics.js";
 import {
@@ -28,7 +29,6 @@ import {
   UI_V1_NODE_KINDS,
 } from "../src/host-surface.js";
 import { MockHost, MOCK_PLUGIN_API_VERSION } from "../src/mock-host.js";
-import type { JsonValue } from "../src/json-schema.js";
 
 const MANIFEST = `
 [plugin]
@@ -137,6 +137,8 @@ describe("surface", () => {
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.STORE_QUOTA)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.BUDGET_TASK)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.REGISTRATION_CLOSED)).toBe(false);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(false);
+    expect(MOCK_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(true);
   });
 });
 
@@ -200,39 +202,130 @@ describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
     expect(host.bitty.env).toBeUndefined();
   });
 
-  test("declared but ungranted env functions fail closed with E_CAPABILITY_DENIED", () => {
+  test("declared env functions fail with E_NOT_IMPLEMENTED, granted or not", () => {
     const host = makeHost();
     activate(host);
     expect(host.bitty.env).toBeDefined();
-    const diagnostic = denial(() => host.bitty.env?.get("FIXTURE_KEY"));
-    expect(diagnostic.code).toBe(HOST_CODES.CAPABILITY_DENIED);
-    expect(diagnostic.class).toBe("runtime");
+    for (const call of [
+      () => host.bitty.env?.get("FIXTURE_KEY"),
+      () => host.bitty.env?.has("FIXTURE_KEY"),
+    ]) {
+      const ungranted = denial(call);
+      expect(ungranted.code).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      expect(ungranted.class).toBe("runtime");
+    }
+    host.grant("env:FIXTURE_KEY");
+    for (const call of [
+      () => host.bitty.env?.get("FIXTURE_KEY"),
+      () => host.bitty.env?.has("FIXTURE_KEY"),
+    ]) {
+      expect(denial(call).code).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    }
   });
 
-  test("granted env reads only the allowlisted key", () => {
+  test("granted env reads stay deferred with E_NOT_IMPLEMENTED (bitty #1303)", () => {
     const host = makeHost(undefined, {
       FIXTURE_KEY: "fixture",
       OTHER_KEY: "other",
     });
     host.grant("env:FIXTURE_KEY");
     activate(host);
-    expect(host.bitty.env?.get("FIXTURE_KEY")).toBe("fixture");
-    expect(host.bitty.env?.get("OTHER_KEY")).toBeNull();
-    expect(host.bitty.env?.has("FIXTURE_KEY")).toBe(true);
-    expect(host.bitty.env?.has("OTHER_KEY")).toBe(false);
-    expect(host.bitty.env?.get("UNSET_KEY")).toBeNull();
+    expect(denial(() => host.bitty.env?.get("FIXTURE_KEY")).code).toBe(
+      HOST_CODES.NOT_IMPLEMENTED,
+    );
+    expect(denial(() => host.bitty.env?.has("FIXTURE_KEY")).code).toBe(
+      HOST_CODES.NOT_IMPLEMENTED,
+    );
   });
 
-  test("invalid and oversized env keys and values fail with the accepted codes", () => {
+  test("deferred env wins before key validation with E_NOT_IMPLEMENTED", () => {
     const host = makeHost(undefined, { FIXTURE_KEY: "x".repeat(5000) });
     host.grant("env:FIXTURE_KEY");
     activate(host);
     expect(denial(() => host.bitty.env?.get("lowercase")).code).toBe(
-      HOST_CODES.ENV_KEY_INVALID,
+      HOST_CODES.NOT_IMPLEMENTED,
     );
-    const diagnostic = denial(() => host.bitty.env?.get("FIXTURE_KEY"));
-    expect(diagnostic.code).toBe(HOST_CODES.ENV_VALUE_TOO_LARGE);
+    expect(denial(() => host.bitty.env?.get("FIXTURE_KEY")).code).toBe(
+      HOST_CODES.NOT_IMPLEMENTED,
+    );
     expect(ENV_MAX_VALUE_BYTES).toBe(4096);
+  });
+});
+
+describe("host parity freeze (bitty #1303)", () => {
+  test("deferred namespaces stay present but fail with E_NOT_IMPLEMENTED", () => {
+    const host = makeHost();
+    activate(host);
+    expect(host.bitty.services).toBeDefined();
+    expect(host.bitty.env).toBeDefined();
+    expect(typeof host.bitty.services.get).toBe("function");
+    expect(typeof host.bitty.services.provide).toBe("function");
+    expect(typeof host.bitty.env?.get).toBe("function");
+    expect(typeof host.bitty.env?.has).toBe("function");
+    for (const call of [
+      () =>
+        host.bitty.services.provide("conformance.greet", {
+          hello: () => null,
+        }),
+      () =>
+        host.bitty.services.get("conformance.greet", { version: ">=1.0.0" }),
+      () => host.bitty.env?.get("FIXTURE_KEY"),
+      () => host.bitty.env?.has("FIXTURE_KEY"),
+    ]) {
+      const diagnostic = denial(call);
+      expect(diagnostic.code).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      expect(diagnostic.class).toBe("runtime");
+    }
+  });
+
+  test("deferred stubs ignore declarations, shapes, grants, and lifecycle state", () => {
+    const host = makeHost();
+    host.grant("env:FIXTURE_KEY");
+    host.beginActivation();
+    expect(
+      denial(() =>
+        host.bitty.services.provide("anything.undeclared", {
+          hello: () => null,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    const get = host.bitty.services.get as unknown as (
+      iface: string,
+      opts?: unknown,
+    ) => unknown;
+    expect(denial(() => get("anything")).code).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    expect(denial(() => host.bitty.env?.get("lowercase")).code).toBe(
+      HOST_CODES.NOT_IMPLEMENTED,
+    );
+    host.endActivation();
+    host.suspend();
+    expect(
+      denial(() => host.bitty.services.get("anything", { version: ">=1.0.0" }))
+        .code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    host.dispose();
+    expect(
+      denial(() => host.bitty.services.get("anything", { version: ">=1.0.0" }))
+        .code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+  });
+
+  test("wired keymaps and tasks keep full bindings", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => null,
+    });
+    const suggestion = host.bitty.keymaps.suggest({
+      chord: "ctrl+p",
+      command: "conformance.basic:hello",
+    });
+    expect(suggestion).toBeGreaterThan(0);
+    const task = host.bitty.tasks.spawn(() => null);
+    expect(task).toBeGreaterThan(0);
+    expect(host.bitty.tasks.cancel(task)).toBe(true);
   });
 });
 
@@ -709,97 +802,82 @@ describe("suspended dispatch", () => {
     expect(host.isGranted("platform.notify")).toBe(false);
   });
 
-  test("suspended providers reject saved methods and new resolution", () => {
+  test("deferred services fail with E_NOT_IMPLEMENTED while suspended and after reload", () => {
     const host = makeHost(
       `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
     );
     host.beginActivation();
-    let calls = 0;
-    host.bitty.services.provide("conformance.greet", { hello: () => ++calls });
-    const service = host.bitty.services.get("conformance.greet", {
-      version: "^1.0",
-    });
+    expect(
+      denial(() =>
+        host.bitty.services.provide("conformance.greet", {
+          hello: () => 1,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     host.endActivation();
-    expect(service?.hello?.()).toBe(1);
     host.suspend();
-    expect(denial(() => service?.hello?.())).toMatchObject({
-      class: "runtime",
-      code: HOST_CODES.SERVICE_GONE,
-    });
     expect(
       denial(() =>
         host.bitty.services.get("conformance.greet", { version: "^1.0" }),
       ),
     ).toMatchObject({
-      class: "resolution",
-      code: HOST_CODES.SERVICE_RESOLUTION,
+      class: "runtime",
+      code: HOST_CODES.NOT_IMPLEMENTED,
     });
     expect(
-      host.bitty.services.get("conformance.greet", {
-        version: "^1.0",
-        optional: true,
-      }),
-    ).toBeUndefined();
-    expect(calls).toBe(1);
+      denial(() =>
+        host.bitty.services.get("conformance.greet", {
+          version: "^1.0",
+          optional: true,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     host.dispose();
     host.beginActivation();
-    host.bitty.services.provide("conformance.greet", { hello: () => "new" });
-    host.endActivation();
-    expect(denial(() => service?.hello?.()).code).toBe(HOST_CODES.SERVICE_GONE);
     expect(
-      host.bitty.services
-        .get("conformance.greet", { version: "^1.0" })
-        ?.hello?.(),
-    ).toBe("new");
+      denial(() =>
+        host.bitty.services.provide("conformance.greet", {
+          hello: () => "new",
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    host.endActivation();
   });
 
   test.each([false, true])(
-    "suspended service resolution preserves optional=%s for absent and detached providers",
+    "deferred service resolution fails with E_NOT_IMPLEMENTED for optional=%s",
     (optional) => {
       const host = makeHost(
         `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
       );
       host.beginActivation();
-      let calls = 0;
-      host.bitty.services.provide("conformance.greet", {
-        hello: () => ++calls,
-      });
       host.endActivation();
       host.suspend();
       for (const iface of ["conformance.absent", "conformance.greet"]) {
-        const resolve = () =>
-          host.bitty.services.get(iface, { version: "^1.0", optional });
-        if (optional) expect(resolve()).toBeUndefined();
-        else {
-          expect(denial(resolve)).toMatchObject({
-            class: "resolution",
-            code: HOST_CODES.SERVICE_RESOLUTION,
-          });
-        }
+        expect(
+          denial(() =>
+            host.bitty.services.get(iface, { version: "^1.0", optional }),
+          ).code,
+        ).toBe(HOST_CODES.NOT_IMPLEMENTED);
       }
-      expect(calls).toBe(0);
     },
   );
 
-  test("a service call fails closed when its provider suspends before returning", () => {
+  test("deferred service provision fails before any provider runs", () => {
     const host = makeHost(
       `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
     );
     host.beginActivation();
-    host.bitty.services.provide("conformance.greet", {
-      hello: () => {
-        host.suspend();
-        return "unavailable";
-      },
-    });
-    const service = host.bitty.services.get("conformance.greet", {
-      version: "^1.0",
-    });
+    let calls = 0;
+    expect(
+      denial(() =>
+        host.bitty.services.provide("conformance.greet", {
+          hello: () => ++calls,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    expect(calls).toBe(0);
     host.endActivation();
-    expect(denial(() => service?.hello?.())).toMatchObject({
-      class: "runtime",
-      code: HOST_CODES.SERVICE_GONE,
-    });
   });
 });
 
@@ -1172,66 +1250,42 @@ describe("static schema enforcement", () => {
     ).toBe(HOST_CODES.RESULT_INVALID);
   });
 
-  test("schema-validated services preserve provider liveness precedence", () => {
+  test("deferred services fail with E_NOT_IMPLEMENTED across suspend, dispose, and removal", () => {
     for (const action of ["suspend", "dispose", "removeService"] as const) {
       const host = makeHost(serviceManifest);
       activate(host);
-      let calls = 0;
-      host.bitty.services.provide("conformance.greet", {
-        hello: () => {
-          calls += 1;
-          if (action === "removeService")
-            host.removeService("conformance.greet");
-          else host[action]();
-          return "invalid result";
-        },
-      });
+      expect(
+        denial(() =>
+          host.bitty.services.provide("conformance.greet", {
+            hello: () => 1,
+          }),
+        ).code,
+      ).toBe(HOST_CODES.NOT_IMPLEMENTED);
       host.endActivation();
-      const service = host.bitty.services.get("conformance.greet", {
-        version: "^1.0",
-      })!;
-      expect(denial(() => service.hello!({ value: "hi" })).code).toBe(
-        HOST_CODES.SERVICE_GONE,
-      );
-      expect(denial(() => service.hello!({ value: 1 })).code).toBe(
-        HOST_CODES.SERVICE_GONE,
-      );
-      expect(calls).toBe(1);
+      if (action === "removeService") host.removeService("conformance.greet");
+      else host[action]();
+      expect(
+        denial(() =>
+          host.bitty.services.get("conformance.greet", { version: "^1.0" }),
+        ).code,
+      ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     }
   });
 
-  test("table service validates arguments before calling and results before returning", () => {
+  test("deferred service provision fails before schema validation", () => {
     const host = makeHost(serviceManifest);
     let calls = 0;
     activate(host);
-    host.bitty.services.provide("conformance.greet", {
-      hello: () => ++calls,
-      invalid: () => {
-        calls += 1;
-        return "wrong";
-      },
-    });
-    host.endActivation();
-    const service = host.bitty.services.get("conformance.greet", {
-      version: "^1.0",
-    })!;
-    const invalidArgs: JsonValue[] = [
-      { value: 1 },
-      {},
-      { value: "too-long-value" },
-      { value: "hi", extra: true },
-    ];
-    for (const args of invalidArgs) {
-      expect(denial(() => service.hello!(args)).code).toBe(
-        HOST_CODES.ARGS_INVALID,
-      );
-    }
+    expect(
+      denial(() =>
+        host.bitty.services.provide("conformance.greet", {
+          hello: () => ++calls,
+          invalid: () => "wrong",
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     expect(calls).toBe(0);
-    expect(service.hello!({ value: "hi" })).toBe(1);
-    expect(denial(() => service.invalid!({ value: "hi" })).code).toBe(
-      HOST_CODES.RESULT_INVALID,
-    );
-    expect(calls).toBe(2);
+    host.endActivation();
   });
 
   test("unsupported static service schemas fail at manifest validation", () => {
@@ -1245,39 +1299,45 @@ describe("static schema enforcement", () => {
     ).toThrow("manifest rejected: services.schema");
   });
 
-  test("validating consumers reject string providers without changing legacy resolution", () => {
+  test("deferred resolution ignores validating-consumer configuration", () => {
     const source = `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`;
     const host = new MockHost({
       manifestSource: source,
       schemaValidatingServices: ["conformance.greet"],
     });
-    let calls = 0;
     activate(host);
-    host.bitty.services.provide("conformance.greet", { hello: () => ++calls });
+    expect(
+      denial(() =>
+        host.bitty.services.provide("conformance.greet", {
+          hello: () => 1,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     expect(
       denial(() =>
         host.bitty.services.get("conformance.greet", { version: "^1.0" }),
       ).code,
-    ).toBe(HOST_CODES.SERVICE_RESOLUTION);
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     expect(
-      host.bitty.services.get("conformance.greet", {
-        version: "^1.0",
-        optional: true,
-      }),
-    ).toBeUndefined();
-    expect(calls).toBe(0);
+      denial(() =>
+        host.bitty.services.get("conformance.greet", {
+          version: "^1.0",
+          optional: true,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     const legacy = makeHost(source);
     activate(legacy);
-    legacy.bitty.services.provide("conformance.greet", {
-      hello: () => "legacy",
-    });
     expect(
-      legacy.bitty.services.get("conformance.greet", { version: "^1.0" })!
-        .hello!(),
-    ).toBe("legacy");
+      denial(() =>
+        legacy.bitty.services.provide("conformance.greet", {
+          hello: () => "legacy",
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
   });
 
-  test("validating consumers accept table providers including optional schema omissions", () => {
+  test("deferred provision fails for table providers including schema omissions", () => {
     for (const source of [
       serviceManifest,
       serviceManifest.replace(/, args_schema = .* } }\n/, " }\n"),
@@ -1287,11 +1347,12 @@ describe("static schema enforcement", () => {
         schemaValidatingServices: ["conformance.greet"],
       });
       activate(host);
-      host.bitty.services.provide("conformance.greet", { hello: () => 1 });
       expect(
-        host.bitty.services.get("conformance.greet", { version: "^1.0" })!
-          .hello!({ value: "hi" }),
-      ).toBe(1);
+        denial(() =>
+          host.bitty.services.provide("conformance.greet", { hello: () => 1 }),
+        ).code,
+      ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      host.endActivation();
     }
   });
 });
@@ -1777,51 +1838,42 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     ).toBe(HOST_CODES.SNAPSHOT_TOO_LARGE);
   });
 
-  test("services resolve declared providers and fail closed when gone", () => {
+  test("deferred services fail with E_NOT_IMPLEMENTED before version checks", () => {
     const manifest = `${MANIFEST}
 [services.provided]
 "conformance.greet" = "1.0.0"
 `;
     const host = makeHost(manifest);
     activate(host);
-    host.bitty.services.provide("conformance.greet", {
-      hello: (args) => `hello ${(args as { name: string }).name}`,
-    });
+    expect(
+      denial(() =>
+        host.bitty.services.provide("conformance.greet", {
+          hello: (args) => `hello ${(args as { name: string }).name}`,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
     host.endActivation();
     const get = host.bitty.services.get as unknown as (
       iface: string,
       opts?: unknown,
     ) => unknown;
-    const service = host.bitty.services.get("conformance.greet", {
-      version: ">=1.0.0",
-    });
-    expect(service?.hello?.({ name: "ada" })).toBe("hello ada");
-    const missingOpts = denial(() => get("conformance.greet"));
-    expect(missingOpts.code).toBe(HOST_CODES.SERVICE_VERSION_INVALID);
-    expect(missingOpts.class).toBe("validation");
-    expect(missingOpts.path).toBe("opts");
-    const missingVersion = denial(() => get("conformance.greet", {}));
-    expect(missingVersion.code).toBe(HOST_CODES.SERVICE_VERSION_INVALID);
-    expect(missingVersion.class).toBe("validation");
-    expect(missingVersion.path).toBe("opts.version");
-    expect(
-      denial(() => get("conformance.greet", { optional: true })).code,
-    ).toBe(HOST_CODES.SERVICE_VERSION_INVALID);
+    for (const opts of [
+      { version: ">=1.0.0" },
+      undefined,
+      {},
+      { optional: true },
+      { version: ">=1.0.0", optional: true },
+    ]) {
+      expect(denial(() => get("conformance.greet", opts)).code).toBe(
+        HOST_CODES.NOT_IMPLEMENTED,
+      );
+    }
     host.removeService("conformance.greet");
-    expect(denial(() => service?.hello?.({ name: "ada" })).code).toBe(
-      HOST_CODES.SERVICE_GONE,
-    );
     expect(
       denial(() =>
         host.bitty.services.get("conformance.greet", { version: ">=1.0.0" }),
       ).code,
-    ).toBe(HOST_CODES.SERVICE_RESOLUTION);
-    expect(
-      host.bitty.services.get("conformance.greet", {
-        version: ">=1.0.0",
-        optional: true,
-      }),
-    ).toBeUndefined();
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
   });
 
   test.each([0, 10])(
@@ -2235,68 +2287,20 @@ describe("isolation across settings and call boundaries", () => {
     expect(result.metrics.count).toBe(999);
   });
 
-  test("service method calls isolate arguments and results between caller and provider", () => {
+  test("deferred service provision runs no provider code", () => {
     const source = `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`;
     const host = makeHost(source);
     activate(host);
-
-    let retainedServiceArgs: Record<string, unknown> | undefined;
-    const providerResponse = {
-      ok: true,
-      data: { score: 10 },
-      flags: ["verified"],
-    };
-
-    host.bitty.services.provide("conformance.greet", {
-      greet: (args) => {
-        retainedServiceArgs = args as Record<string, unknown>;
-        if (args && typeof args === "object") {
-          (args as Record<string, unknown>).mutatedByProvider = true;
-          const payload = (args as Record<string, unknown>).payload;
-          if (payload && typeof payload === "object") {
-            (payload as Record<string, unknown>).active = false;
-          }
-        }
-        return providerResponse;
-      },
-    });
-
+    let calls = 0;
+    expect(
+      denial(() =>
+        host.bitty.services.provide("conformance.greet", {
+          greet: () => ++calls,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    expect(calls).toBe(0);
     host.endActivation();
-
-    const service = host.bitty.services.get("conformance.greet", {
-      version: "^1.0",
-    })!;
-
-    const callerArgs = {
-      mutatedByProvider: false,
-      payload: { active: true },
-      items: [1, 2],
-    };
-
-    const result = service.greet!(callerArgs) as typeof providerResponse;
-
-    // Mutating args inside provider does not mutate caller's arguments object
-    expect(callerArgs.mutatedByProvider).toBe(false);
-    expect(callerArgs.payload.active).toBe(true);
-    expect(callerArgs.items).toEqual([1, 2]);
-
-    // Mutating callerArgs after call does not mutate provider's retained args
-    callerArgs.payload.active = true;
-    (callerArgs as Record<string, unknown>).sneaky = "present";
-    expect(retainedServiceArgs?.sneaky).toBeUndefined();
-
-    // Mutating service return value does not mutate provider's state
-    result.ok = false;
-    result.data.score = 0;
-    result.flags.push("tampered");
-
-    expect(providerResponse.ok).toBe(true);
-    expect(providerResponse.data.score).toBe(10);
-    expect(providerResponse.flags).toEqual(["verified"]);
-
-    // Provider mutating its own state after returning does not mutate caller's result
-    providerResponse.data.score = 20;
-    expect(result.data.score).toBe(0);
   });
 
   test("schema validation failure leaves prior state unchanged across commands and services", () => {

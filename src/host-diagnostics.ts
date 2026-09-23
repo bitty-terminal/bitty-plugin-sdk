@@ -58,6 +58,7 @@ export const HOST_CODES = {
   LIFECYCLE_STATE: "E_LIFECYCLE_STATE",
   HANDLER_VIOLATION: "E_HANDLER_VIOLATION",
   DEF_INVALID: "E_DEF_INVALID",
+  NOT_IMPLEMENTED: "E_NOT_IMPLEMENTED",
 } as const;
 
 export type HostCode = (typeof HOST_CODES)[keyof typeof HOST_CODES];
@@ -89,6 +90,12 @@ export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
  * Mock-owned codes for behaviors the accepted corpus requires but does not yet
  * spell with a stable code (registration, keymap, lifecycle, and bounded-input
  * diagnostics). Documented in `docs/mock-host.md`.
+ *
+ * `E_NOT_IMPLEMENTED` mirrors bitty #1303 `BridgeError::not_implemented`
+ * (`runtime` class): accepted v1 namespaces the host has not wired yet stay
+ * present and callable, and every call fails closed with it until a follow-up
+ * wires the host backend. It stays mock-owned until an accepted contract
+ * fixes the code verbatim.
  */
 export const MOCK_HOST_CODES: ReadonlySet<string> = new Set<string>(
   Object.values(HOST_CODES).filter((code) => !ACCEPTED_HOST_CODES.has(code)),
