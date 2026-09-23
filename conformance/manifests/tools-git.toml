@@ -1,0 +1,21 @@
+[plugin]
+id = "conformance.tools-git"
+name = "Conformance Tools Git"
+version = "1.0.0"
+description = "Tools-git activation fixture for the accepted Layer-2 slice."
+license = "MIT"
+
+[compat]
+plugin-api = "^1.0"
+
+[tools.git]
+required = true
+version = ">=2.30"
+
+[lazy]
+commands = ["conformance.tools-git:hello"]
+events = [
+  "plugin.activated",
+  "plugin.disposed",
+  "terminal.bell",
+]

@@ -1,0 +1,19 @@
+{
+  "name": "tools.git activation fails closed when git is absent",
+  "description": "Fail-closed Layer-2 slice: [tools.git] required=true with no git in the activation environment rejects begin-activation with E_TOOL_ABSENT (resolution) and the generation never opens.",
+  "manifest": "manifests/tools-git.toml",
+  "tags": ["tools", "tools-git", "activation"],
+  "toolsGitVersion": null,
+  "steps": [
+    {
+      "op": "begin-activation",
+      "expect": {
+        "denial": {
+          "code": "E_TOOL_ABSENT",
+          "class": "resolution",
+          "path": "tools.git"
+        }
+      }
+    }
+  ]
+}

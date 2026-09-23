@@ -181,6 +181,47 @@ fails closed with `E_SERVICE_VERSION_INVALID` here
 from the resolver's closed grammar; see
 [Contract choices and divergences](#contract-choices-and-divergences).
 
+## Tool presence (`[tools.git]` activation)
+
+The accepted Layer-2 `[tools.git]` slice (CTX-0425, see `docs/manifest.md`)
+gates `beginActivation()` when the manifest declares `required = true`. The
+manifest model exposes the declaration as `ManifestModel.toolsGit`
+(`{ required, version }`); manifests without `[tools.git]` expose no field
+and ignore tool injection entirely.
+
+Presence is harness configuration, not a Lua surface or manifest field:
+construct the host with `toolsGitVersion?: string | null`. A
+`MAJOR.MINOR.PATCH` string means git is present at that version, while `null`
+or an omitted value means git is absent from the activation environment. The
+default is absent, so a `required = true` fixture without an explicit
+`toolsGitVersion` fails closed by design.
+
+- Absent git fails `beginActivation()` with `E_TOOL_ABSENT` (`resolution`
+  class, path `tools.git`).
+- A present version that does not satisfy `[tools.git].version` under the
+  shared range grammar fails with `E_TOOL_MISMATCH` (`validation` class, path
+  `tools.git.version`). A malformed injected version cannot satisfy any range
+  and fails the same way instead of being guessed.
+- `required = false` declares an optional dependency and never gates
+  activation, regardless of presence or version.
+- A tool denial never opens the registration window, never advances the
+  generation, and never changes lifecycle state, so the harness can assert the
+  denial and stop without cleanup.
+
+```ts
+const host = new MockHost({
+  manifestSource, // declares [tools.git] required = true, version = ">=2.30"
+  toolsGitVersion: "2.44.0", // present; null/omitted means absent
+});
+host.beginActivation(); // throws E_TOOL_ABSENT / E_TOOL_MISMATCH when unmet
+```
+
+Both codes are mock-owned until an accepted contract fixes them verbatim (see
+[Diagnostics](#diagnostics)). Regression evidence lives in the
+`tools.git activation` group in `tests/mock-host.test.ts` and conformance
+cases `13-tools-git-present.json`, `14-tools-git-absent.json`, and
+`15-tools-git-mismatch.json`.
+
 Settings keys are relative to `plugins.<owner>.<name>` per the accepted
 [Plugin API v1 Lua Surface RFC](https://github.com/bitty-terminal/bitty-docs/blob/main/docs/specifications/plugin-api-v1-lua-surface-rfc.md);
 the definitive host-side resolution model for those relative keys is still
@@ -350,25 +391,28 @@ The mock host throws `HostError` carrying
 `{ class, code, message, path? }`. Codes fixed by accepted contracts are
 exported as `ACCEPTED_HOST_CODES`:
 
-| Code                     | Class        | Source                                  |
-| ------------------------ | ------------ | --------------------------------------- |
-| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009                                |
-| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006                                |
-| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                |
-| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                |
-| `E_STORE_QUOTA`          | `budget`     | ADR 0009                                |
-| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                |
-| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                |
-| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                |
-| `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                |
-| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009                     |
-| `E_NOT_IMPLEMENTED`      | `runtime`    | bitty #1303 (mock-owned until accepted) |
-| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009                     |
+| Code                     | Class        | Source                                            |
+| ------------------------ | ------------ | ------------------------------------------------- |
+| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009                                          |
+| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006                                          |
+| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                          |
+| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                          |
+| `E_STORE_QUOTA`          | `budget`     | ADR 0009                                          |
+| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                          |
+| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                          |
+| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                          |
+| `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                          |
+| `E_TOOL_ABSENT`          | `resolution` | Layer-2 `[tools.git]` (mock-owned until accepted) |
+| `E_TOOL_MISMATCH`        | `validation` | Layer-2 `[tools.git]` (mock-owned until accepted) |
+| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009                               |
+| `E_NOT_IMPLEMENTED`      | `runtime`    | bitty #1303 (mock-owned until accepted)           |
+| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009                               |
 
 Behaviors the accepted corpus requires but does not yet spell with a stable
 code use `MOCK_HOST_CODES` (documented test-tool codes, never a replacement
 for an accepted code): registration and lifecycle state (`E_REGISTRATION_CLOSED`,
-`E_LIFECYCLE_STATE`, `E_GENERATION_DISPOSED`), event and command validations
+`E_LIFECYCLE_STATE`, `E_GENERATION_DISPOSED`), Layer-2 `[tools.git]`
+activation (`E_TOOL_ABSENT`, `E_TOOL_MISMATCH`), event and command validations
 (`E_EVENT_UNKNOWN`, `E_EVENT_UNDECLARED`, `E_EVENT_PAYLOAD_INVALID`,
 `E_EVENT_PAYLOAD_TOO_LARGE`, `E_COMMAND_ID_INVALID`, `E_COMMAND_UNDECLARED`,
 `E_COMMAND_DUPLICATE`, `E_SCHEMA_INVALID`, `E_ARGS_INVALID`, `E_RESULT_INVALID`),
@@ -393,7 +437,8 @@ conformance/
 ```
 
 A case names a manifest, optional explicit grants, an optional environment
-snapshot, and an ordered step list:
+snapshot, an optional `toolsGitVersion` injection (`string` when git is
+present, `null` when absent; omitted means absent), and an ordered step list:
 
 ```json
 {
@@ -430,23 +475,23 @@ accepted-contract success (see [Host parity freeze](#host-parity-freeze));
 
 ### Step vocabulary
 
-| Op                                    | Purpose                                                          |
-| ------------------------------------- | ---------------------------------------------------------------- |
-| `grant` / `revoke`                    | Explicit capability consent changes                              |
-| `begin-activation` / `end-activation` | Lifecycle window control                                         |
-| `suspend` / `dispose`                 | Lifecycle transitions and invalidation                           |
-| `register`                            | Register a command from a fixture definition                     |
-| `subscribe`                           | Subscribe to a declared event with an optional veto/throw policy |
-| `publish`                             | Publish an event and assert the delivery result                  |
-| `dispatch`                            | Dispatch a registered command and assert result or denial        |
-| `call`                                | Invoke one modeled surface (`surface` + `args`)                  |
-| `call-service`                        | Invoke a method on a captured resolved service                   |
-| `expect-event`                        | Assert the events captured by one subscription                   |
-| `expect-capture`                      | Assert a captured value (handles, counters)                      |
-| `expect-bitty-env`                    | Assert `bitty.env` presence or absence                           |
-| `advance-time` / `drain-tasks`        | Virtual clock and cooperative task execution                     |
-| `set-terminal-snapshot`               | Inject host snapshot data                                        |
-| `remove-service`                      | Simulate provider disappearance                                  |
+| Op                                    | Purpose                                                                                                               |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `grant` / `revoke`                    | Explicit capability consent changes                                                                                   |
+| `begin-activation` / `end-activation` | Lifecycle window control (`begin-activation` accepts an optional `expect.denial` for fail-closed `[tools.git]` cases) |
+| `suspend` / `dispose`                 | Lifecycle transitions and invalidation                                                                                |
+| `register`                            | Register a command from a fixture definition                                                                          |
+| `subscribe`                           | Subscribe to a declared event with an optional veto/throw policy                                                      |
+| `publish`                             | Publish an event and assert the delivery result                                                                       |
+| `dispatch`                            | Dispatch a registered command and assert result or denial                                                             |
+| `call`                                | Invoke one modeled surface (`surface` + `args`)                                                                       |
+| `call-service`                        | Invoke a method on a captured resolved service                                                                        |
+| `expect-event`                        | Assert the events captured by one subscription                                                                        |
+| `expect-capture`                      | Assert a captured value (handles, counters)                                                                           |
+| `expect-bitty-env`                    | Assert `bitty.env` presence or absence                                                                                |
+| `advance-time` / `drain-tasks`        | Virtual clock and cooperative task execution                                                                          |
+| `set-terminal-snapshot`               | Inject host snapshot data                                                                                             |
+| `remove-service`                      | Simulate provider disappearance                                                                                       |
 
 `{"$ref": "<capture>"}` resolves a previously captured value (for example a
 handle) inside `args` or `expect`. `expect` supports `{ "result": ... }` and
@@ -473,7 +518,9 @@ undeclared capabilities), the `bitty.env` carve-out, the registration window
 and generation invalidation, store persistence across reloads, round-trips for
 every kind of the closed event set, interception veto, command schema
 validation, table-form `[lazy].commands` reservations, store bounds,
-UI/terminal gates, and service/task/timer behavior.
+UI/terminal gates, service/task/timer behavior, and the Layer-2 `[tools.git]`
+activation slice (present-version success plus absent/mismatch fail-closed
+denials with `E_TOOL_ABSENT` / `E_TOOL_MISMATCH`).
 
 ## Contract choices and divergences
 
