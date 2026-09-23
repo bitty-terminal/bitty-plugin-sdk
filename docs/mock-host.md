@@ -38,6 +38,13 @@ conformance tests can run deterministically on Bun only.
   table.
 - Reference host evidence (read-only): `bitty` `1ea2f66`
   `crates/bitty-plugin-host/src/{event,capability,host,manifest}.rs`.
+- Host parity evidence (read-only): `bitty` #1303 (`c01f538`, CTX-0707) wires
+  `keymaps.suggest` and `tasks.spawn`/`cancel` as bridge captures and defers
+  `services.get`/`provide` and `env.get`/`has` with typed `E_NOT_IMPLEMENTED`
+  (`runtime` class), and rules `process.spawn` v1-OUT. The SDK freeze in
+  `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
+  (`NAMESPACE_HOST_PARITY`), and `just host-parity-check` pins these verdicts
+  (see [Host parity freeze](#host-parity-freeze)).
 
 ## Usage
 
@@ -88,7 +95,20 @@ Timers run on a virtual clock: `advanceTimers(ms)` fires due one-shot timers in
 due order. Tasks are drained cooperatively with `drainTasks()`. No test ever
 waits on wall-clock time.
 
+Namespaces the host has not wired yet (`services`, `env`; see
+[Host parity freeze](#host-parity-freeze)) stay present on `host.bitty` but
+every call fails closed with `E_NOT_IMPLEMENTED` (`runtime` class) before
+activation, capability, or argument checks run. Keymaps and tasks are WIRED
+and behave fully.
+
 ## Static schema enforcement
+
+The service paragraphs below describe the accepted-contract implementation,
+which stays in the mock behind the deferral gate so a future host-wiring task
+can re-enable it; every `services.*` call currently fails with
+`E_NOT_IMPLEMENTED` before schema checks run (bitty #1303, see
+[Host parity freeze](#host-parity-freeze)). The command-schema paragraphs are
+WIRED and behave as written.
 
 The mock enforces ADR 0009 LUA-OQ-3 and LUA-OQ-8 within its existing bounded
 JSON Schema subset. Table-form `[lazy].commands` metadata must match both
@@ -130,10 +150,10 @@ in `tests/mock-host.test.ts`.
 | `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                       |
 | `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                          |
 | `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                 |
-| `env`      | Absent unless declared; denied until granted; granted allowlist only; 4 KiB value bound                                                                    |
+| `env`      | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires      |
 | `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; generation-owned block handles   |
 | `terminal` | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                    |
-| `services` | Declared providers only; required `opts.version`; shared range grammar; `E_SERVICE_RESOLUTION`; liveness-checked calls                                     |
+| `services` | DEFERRED (bitty #1303): present; `provide`/`get` fail `E_NOT_IMPLEMENTED`; declarations stay valid manifest metadata; full behavior returns when wired     |
 | `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                             |
 | `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                             |
 
@@ -187,6 +207,34 @@ memoized height (`depth + height - 1 <= UI_MAX_DEPTH`), so an aliased subtree
 reused both above and below the limit in one component gets the deep-only
 verdict regardless of traversal order or where it was first validated.
 
+## Host parity freeze
+
+`surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
+(`NAMESPACE_HOST_PARITY`), the generated `lua/bitty.d.lua` annotations, the
+mock host, and the conformance fixtures are frozen on the bitty #1303
+(CTX-0707) verdicts: `keymaps` and `tasks` are WIRED; `services` and `env` are
+DEFERRED; `process.spawn` is v1-OUT and stays in the surface-table
+`exclusions`. WIRED namespaces generate full bindings; DEFERRED namespaces
+stay present but generate typed `E_NOT_IMPLEMENTED` stubs, so the freeze is
+never silent and never more permissive than the host.
+
+- The deferred gate runs before activation, capability, and argument checks:
+  grants, declarations, key shapes, versions, and `optional` change nothing,
+  and lifecycle state changes nothing.
+- The `bitty.env` absent-unless-declared carve-out stays in the mock per the
+  accepted ADR 0006 contract. The current host bridge always presents the
+  deferred tables (it knows no manifest); the mock carve-out is stricter and
+  therefore fail-closed, never more permissive.
+- The accepted full-contract `services`/`env` implementation stays in the mock
+  behind the gate so a future host-wiring task can re-enable it by flipping
+  the namespace to `wired`; until then fixtures assert `E_NOT_IMPLEMENTED`.
+- Regen-sync (SDK-owned): when a bitty host change flips a namespace or an
+  accepted contract revision moves, update the surface-table `hostParity` pin
+  (and `sources` revisions), run `just lua-defs-write`, and run `just check`
+  (`just lua-defs-check` for drift, `just host-parity-check` for agreement).
+  `api_version` stays `1.0.0` until a `bitty-docs` revision moves it. See
+  `docs/lua-defs.md` for the full procedure.
+
 ## Lifecycle and generations
 
 | State        | Meaning                                                                       |
@@ -198,9 +246,11 @@ verdict regardless of traversal order or where it was first validated.
 | `disposed`   | Subscriptions/registrations/handles cleared; calls fail closed                |
 
 - Registration calls (`commands.register`, `events.subscribe`,
-  `keymaps.suggest`, `ui.mount`, `services.provide`, `tasks.spawn`,
+  `keymaps.suggest`, `ui.mount`, `tasks.spawn`,
   `timers.create`) are valid only while `activating`; later attempts fail with
-  `E_REGISTRATION_CLOSED` (`validation`).
+  `E_REGISTRATION_CLOSED` (`validation`). `services.provide` is DEFERRED (see
+  [Host parity freeze](#host-parity-freeze)): it fails with
+  `E_NOT_IMPLEMENTED` in every lifecycle state, before the window check runs.
 - New UI mounts in every slot must occur between `beginActivation()` and
   `endActivation()`, matching the accepted
   [activation entry point contract](https://github.com/bitty-terminal/bitty-plugins-docs/blob/main/specifications/plugin-api-v1-lua-surface-rfc.md#activation-entry-point-lua-oq-12).
@@ -243,11 +293,9 @@ verdict regardless of traversal order or where it was first validated.
   retaining registrations, grants, tasks, timers, and store data: commands fail
   with `E_LIFECYCLE_STATE` without running; observation and interception
   deliveries are detached (zero delivered, never vetoes); queued tasks and
-  timers stay retained (still cancellable) but never fire; resolved service
-  methods fail with `E_SERVICE_GONE`, including an in-flight call whose
-  provider suspends itself. New service lookups treat the suspended provider as
-  unavailable: `resolution/E_SERVICE_RESOLUTION`, or `undefined` (Lua `nil`)
-  with `optional: true`, as for an absent provider. Only the host-internal lifecycle deliveries
+  timers stay retained (still cancellable) but never fire; `services.*` calls
+  fail with `E_NOT_IMPLEMENTED` in every state (the namespace is DEFERRED, so
+  no provider ever resolves). Only the host-internal lifecycle deliveries
   (`plugin.activated`, `plugin.suspended`, `plugin.disposed`,
   `handler.violation`) remain — lifecycle callbacks can still run cleanup and
   read the store and grants, but their ordinary dispatch attempts also fail
@@ -302,19 +350,20 @@ The mock host throws `HostError` carrying
 `{ class, code, message, path? }`. Codes fixed by accepted contracts are
 exported as `ACCEPTED_HOST_CODES`:
 
-| Code                     | Class        | Source              |
-| ------------------------ | ------------ | ------------------- |
-| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009            |
-| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006            |
-| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006            |
-| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009            |
-| `E_STORE_QUOTA`          | `budget`     | ADR 0009            |
-| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009            |
-| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009            |
-| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009            |
-| `E_SERVICE_GONE`         | `runtime`    | ADR 0009            |
-| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009 |
-| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009 |
+| Code                     | Class        | Source                                  |
+| ------------------------ | ------------ | --------------------------------------- |
+| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009                                |
+| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006                                |
+| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                |
+| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                |
+| `E_STORE_QUOTA`          | `budget`     | ADR 0009                                |
+| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                |
+| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                |
+| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                |
+| `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                |
+| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009                     |
+| `E_NOT_IMPLEMENTED`      | `runtime`    | bitty #1303 (mock-owned until accepted) |
+| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009                     |
 
 Behaviors the accepted corpus requires but does not yet spell with a stable
 code use `MOCK_HOST_CODES` (documented test-tool codes, never a replacement
@@ -329,8 +378,9 @@ keymaps and definitions (`E_KEYMAP_WHEN_UNSUPPORTED`, `E_KEYMAP_CHORD_INVALID`,
 (`E_SNAPSHOT_SCOPE_UNSUPPORTED`), UI exclusivity (`E_UI_CLAIM_REQUIRED`),
 services (`E_SERVICE_UNDECLARED`; a missing
 `opts` or `opts.version` fails the accepted required-argument validation with
-`E_SERVICE_VERSION_INVALID`), and `E_HANDLER_VIOLATION` for recorded handler
-faults.
+`E_SERVICE_VERSION_INVALID`), `E_HANDLER_VIOLATION` for recorded handler
+faults, and `E_NOT_IMPLEMENTED` for the deferred host namespaces (see
+[Host parity freeze](#host-parity-freeze)).
 
 ## Conformance fixtures
 
@@ -372,6 +422,11 @@ snapshot, and an ordered step list:
   ]
 }
 ```
+
+Cases covering deferred namespaces carry the `pending-host` tag and assert
+`E_NOT_IMPLEMENTED` (`runtime`) for every `services.*`/`env.*` call instead of
+accepted-contract success (see [Host parity freeze](#host-parity-freeze));
+`tests/conformance.test.ts` enforces this agreement.
 
 ### Step vocabulary
 

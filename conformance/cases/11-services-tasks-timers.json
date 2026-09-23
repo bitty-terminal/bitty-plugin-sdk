@@ -1,8 +1,8 @@
 {
-  "name": "service resolution/liveness and host-owned tasks and timers",
-  "description": "Declared services resolve only against live providers and fail closed when gone; tasks and timers are generation-owned and run on the virtual clock; cancellation of spent handles returns false.",
+  "name": "deferred services fail closed while host-owned tasks and timers run",
+  "description": "bitty #1303 (CTX-0707) defers bitty.services: provide and get stay present but fail closed with typed E_NOT_IMPLEMENTED (runtime) before version, optionality, or declaration checks run, so no provider ever resolves and no service call is reachable. The manifest [services.provided] declaration stays valid accepted-contract metadata. Tasks and timers are WIRED: they are generation-owned, run on the virtual clock, and cancellation of spent handles returns false.",
   "manifest": "manifests/full.toml",
-  "tags": ["services", "tasks", "timers", "lifecycle"],
+  "tags": ["services", "tasks", "timers", "lifecycle", "pending-host"],
   "steps": [
     { "op": "begin-activation" },
     {
@@ -11,6 +11,9 @@
       "args": {
         "iface": "conformance.greet",
         "impl": { "greet": { "template": "hello {name}" } }
+      },
+      "expect": {
+        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
       }
     },
     {
@@ -35,48 +38,16 @@
         "iface": "conformance.greet",
         "opts": { "version": ">=1.0.0" }
       },
-      "capture": "svc"
+      "expect": {
+        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
+      }
     },
     {
       "op": "call",
       "surface": "services.get",
       "args": { "iface": "conformance.greet" },
       "expect": {
-        "denial": { "code": "E_SERVICE_VERSION_INVALID", "class": "validation" }
-      }
-    },
-    {
-      "op": "call",
-      "surface": "services.get",
-      "args": { "iface": "conformance.greet", "opts": { "optional": true } },
-      "expect": {
-        "denial": { "code": "E_SERVICE_VERSION_INVALID", "class": "validation" }
-      }
-    },
-    {
-      "op": "call-service",
-      "service": "svc",
-      "method": "greet",
-      "args": { "name": "ada" },
-      "expect": { "result": "hello ada" }
-    },
-    { "op": "remove-service", "interface": "conformance.greet" },
-    {
-      "op": "call-service",
-      "service": "svc",
-      "method": "greet",
-      "args": { "name": "ada" },
-      "expect": { "denial": { "code": "E_SERVICE_GONE", "class": "runtime" } }
-    },
-    {
-      "op": "call",
-      "surface": "services.get",
-      "args": {
-        "iface": "conformance.greet",
-        "opts": { "version": ">=1.0.0" }
-      },
-      "expect": {
-        "denial": { "code": "E_SERVICE_RESOLUTION", "class": "resolution" }
+        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
       }
     },
     {
@@ -86,7 +57,9 @@
         "iface": "conformance.greet",
         "opts": { "version": ">=1.0.0", "optional": true }
       },
-      "expect": { "result": null }
+      "expect": {
+        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
+      }
     },
     { "op": "drain-tasks" },
     { "op": "expect-capture", "capture": "task-runs", "value": 1 },

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Freeze the SDK generation pipeline on the bitty v1 Lua surface (CTX-0053, issue 107): pin per-namespace host parity from bitty PR 1303 in
+  `surface/bitty-plugin-api-v1.json` (`hostParity`) and `src/host-surface.ts`
+  (`NAMESPACE_HOST_PARITY`), generate typed `E_NOT_IMPLEMENTED` stubs for the
+  deferred `services`/`env` namespaces, gate the mock host behind the same
+  verdicts, assert `E_NOT_IMPLEMENTED` in the conformance fixtures, and own
+  regen-sync via `just host-parity-check` (part of `just check`) with the
+  procedure documented in `docs/lua-defs.md`.
+
 - Isolate settings reads and command/service call boundaries with deep copies:
   `settings.get` returns a deep copy to prevent caller mutation of internal
   settings state, `dispatchCommand` delivers a deep copy of arguments to `run`

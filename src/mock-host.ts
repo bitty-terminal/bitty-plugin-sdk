@@ -4,7 +4,8 @@
  * Models the accepted `bitty` host bridge for plugin and SDK conformance
  * testing: capability gates (deny-by-default), the activation/registration
  * window, generation-owned handles, the closed v1 event set with bounded
- * immutable payloads, bounded command/store/snapshot data, services, and
+ * immutable payloads, bounded command/store/snapshot data, deferred
+ * namespaces that fail closed with E_NOT_IMPLEMENTED (bitty #1303), and
  * host-owned tasks and timers on a virtual clock. It is a test double, not a
  * host: it performs no I/O, spawns no process, opens no network, and reads no
  * secret. Behavior is derived from ADR 0009 and the accepted Plugin API v1 Lua
@@ -18,6 +19,7 @@ import {
   type HostDiagnostic,
 } from "./host-diagnostics.js";
 import {
+  DEFERRED_NAMESPACES,
   ENV_CAPABILITY_PREFIX,
   ENV_KEY_PATTERN,
   ENV_MAX_VALUE_BYTES,
@@ -1133,6 +1135,28 @@ export class MockHost {
     this.services.delete(iface);
   }
 
+  /**
+   * Fail closed for an accepted v1 namespace the host has not wired yet.
+   *
+   * bitty #1303 (CTX-0707) wires keymaps/tasks as bridge captures but defers
+   * services and env: both spellings stay present and callable so the gap is
+   * observable, and every call fails with typed E_NOT_IMPLEMENTED (runtime)
+   * before activation, capability, or argument checks run. The accepted
+   * full-contract implementation below stays in place so a future host-wiring
+   * task can re-enable it by removing the namespace from
+   * DEFERRED_NAMESPACES; until then the mock is never more permissive than
+   * the host.
+   */
+  private assertNamespaceWired(namespace: string, item: string): void {
+    if (DEFERRED_NAMESPACES.has(namespace)) {
+      fail(
+        "runtime",
+        HOST_CODES.NOT_IMPLEMENTED,
+        `${item} is not implemented by this host`,
+      );
+    }
+  }
+
   private assertAlive(): void {
     if (this.state === "created" || this.state === "disposed") {
       fail(
@@ -1237,6 +1261,7 @@ export class MockHost {
   }
 
   private envGet(name: unknown): string | null {
+    this.assertNamespaceWired("env", "bitty.env.get");
     this.assertAlive();
     if (this.grantedEnvCapabilities().length === 0) {
       fail(
@@ -1260,6 +1285,7 @@ export class MockHost {
   }
 
   private envHas(name: unknown): boolean {
+    this.assertNamespaceWired("env", "bitty.env.has");
     this.assertAlive();
     if (this.grantedEnvCapabilities().length === 0) {
       fail(
@@ -1672,6 +1698,7 @@ export class MockHost {
     iface: string,
     impl: Record<string, ServiceMethod>,
   ): number {
+    this.assertNamespaceWired("services", "bitty.services.provide");
     this.assertRegistrationOpen("bitty.services.provide");
     if (
       typeof iface !== "string" ||
@@ -1715,6 +1742,7 @@ export class MockHost {
     iface: string,
     opts: ServiceGetOptions,
   ): ResolvedService | undefined {
+    this.assertNamespaceWired("services", "bitty.services.get");
     this.assertAlive();
     if (!isPlainObject(opts)) {
       fail(

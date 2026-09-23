@@ -6,7 +6,11 @@ shape and validation-claim accuracy). The definitions in `lua/bitty.d.lua` are
 generated from the machine-readable surface table
 `surface/bitty-plugin-api-v1.json`; the drift check in
 `scripts/generate-lua-defs.ts` runs as part of `just check`. No other LuaLS
-artifact exists for Plugin API v1.
+artifact exists for Plugin API v1. The definitions are frozen on the host-parity
+verdicts of bitty PR #1303 by SDK task `CTX-0053`: WIRED namespaces generate
+full bindings while DEFERRED namespaces (`services`, `env`) generate typed
+`E_NOT_IMPLEMENTED` stubs (see
+[Host parity and regen-sync](#host-parity-and-regen-sync)).
 
 ## Contract sources
 
@@ -34,6 +38,7 @@ artifact exists for Plugin API v1.
 | `surface/bitty-plugin-api-v1.json` | Machine-readable surface table: types, functions, events, exclusions |
 | `scripts/generate-lua-defs.ts`     | Generator and deterministic drift check                              |
 | `scripts/check-lua-luals.ts`       | LuaLS conformance check (positive and negative fixtures)             |
+| `scripts/check-host-parity.ts`     | Host-parity agreement check (surface, model, defs, mock, fixtures)   |
 | `lua/examples/minimal-init.lua`    | Conformance example checked by the LuaLS run                         |
 | `tests/lua-defs.test.ts`           | Surface, generation, exclusion, and drift tests                      |
 
@@ -118,6 +123,13 @@ within v1; the tasks and timers functions were resolved as v1 additions by
 ADR 0009. They are carried here alongside L1 rather than as separate levels,
 and no Level 3 or Level 4 element is present.
 
+Namespaces the host has not wired yet (`services`, `env`; bitty #1303) are
+DEFERRED: the surface table records them in the `hostParity` namespace map,
+their functions list exactly `E_NOT_IMPLEMENTED`, and the generator renders
+each as a typed stub (`Host status: deferred ...`) instead of a full binding.
+The spellings stay declared, so the freeze is never silent; the stub fails
+closed on the host, so the SDK is never more permissive.
+
 The `ui.overlay` gate is conditional: the surface table records it as a
 structured `conditionalCapabilities` entry on `ui.mount`
 (`ui.overlay` when the slot is `overlay`) and the generated definition renders
@@ -149,10 +161,38 @@ author time.
 ## Validation
 
 ```sh
-just check              # includes lua-defs-check: definitions match the surface table
+just check              # includes lua-defs-check and host-parity-check
 just lua-defs-write     # regenerate lua/bitty.d.lua after a reviewed surface change
 just lua-defs-luals     # LuaLS conformance; skips with exit 0 when the binary is absent
+just host-parity-check  # surface/model/defs/mock/fixture parity agreement
 ```
+
+## Host parity and regen-sync
+
+The surface table pins the bitty host revision it was frozen against
+(`hostParity`: repository `bitty`, the #1303 merge commit, PR 1303) and one
+verdict per namespace: every namespace is `wired` except `services` and `env`,
+which are `deferred`. `process.spawn` is v1-OUT and stays excluded.
+
+The SDK owns regen-sync for these artifacts. Run this trigger whenever a
+bitty host change flips a namespace verdict or an accepted contract revision
+moves:
+
+1. Update `surface/bitty-plugin-api-v1.json`: the `hostParity` pin (commit,
+   PR, per-namespace verdicts) and, for a contract revision, the `sources`
+   entries. A namespace flipping to `deferred` lists exactly
+   `E_NOT_IMPLEMENTED` in every function `errors`; a namespace flipping to
+   `wired` restores its accepted codes.
+2. Mirror the verdicts in `src/host-surface.ts` (`HOST_PARITY_SOURCE`,
+   `NAMESPACE_HOST_PARITY`); the mock host derives its deferred gate from
+   `DEFERRED_NAMESPACES`, and `src/index.ts` re-exports the model.
+3. Run `just lua-defs-write` to regenerate `lua/bitty.d.lua`.
+4. Run `just check`: `just lua-defs-check` fails on drift and
+   `just host-parity-check` fails when the surface table, wiring model,
+   generated definitions, mock behavior, or fixtures disagree.
+
+`api_version` stays `1.0.0` until a `bitty-docs` revision moves it; host-only
+wiring changes never bump it.
 
 `just lua-defs-luals` runs `lua-language-server --check` twice: the generated
 definitions plus `lua/examples/minimal-init.lua` must diagnose cleanly, and
@@ -161,6 +201,10 @@ identifiers, the excluded `raw` scope literal, and wrong-shape `services.get`
 calls (missing `opts`, and `opts` without `version`). `bun test` also runs the
 same conformance check when `lua-language-server` is on `PATH` (or
 `LUA_LANGUAGE_SERVER` is set) and skips it otherwise.
+
+`bitty.process.spawn` stays excluded: bitty #1303 rules it v1-OUT (a
+consent-gated extra outside the v1 API guarantee), so no freeze vector asserts
+it as v1 surface.
 
 CI does not run LuaLS conformance. The Quality gates workflow installs no
 `lua-language-server`, so `just lua-defs-luals` skips there with exit 0 and

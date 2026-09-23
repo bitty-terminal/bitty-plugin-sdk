@@ -26,7 +26,9 @@ import {
 import {
   CAPABILITY_GATED_SURFACE,
   EVENT_KINDS,
+  HOST_PARITY_SOURCE,
   MOCK_LIMITS,
+  NAMESPACE_HOST_PARITY,
   PLUGIN_API_VERSION,
   SNAPSHOT_SCOPE_ONLY,
   V1_SURFACE_FUNCTIONS,
@@ -104,9 +106,31 @@ describe("conformance fixtures", () => {
       "services",
       "tasks",
       "timers",
+      "pending-host",
     ]) {
       expect(tags.has(required)).toBe(true);
     }
+  });
+
+  test("pending-host fixtures assert E_NOT_IMPLEMENTED for deferred calls", () => {
+    let deferredCalls = 0;
+    for (const conformanceCase of readCases()) {
+      for (const step of conformanceCase.steps) {
+        if (
+          step.op === "call" &&
+          typeof step.surface === "string" &&
+          (step.surface.startsWith("services.") ||
+            step.surface.startsWith("env."))
+        ) {
+          deferredCalls += 1;
+          const expected = step.expect as
+            { denial?: { code?: string; class?: string } } | undefined;
+          expect(expected?.denial?.code).toBe("E_NOT_IMPLEMENTED");
+          expect(expected?.denial?.class).toBe("runtime");
+        }
+      }
+    }
+    expect(deferredCalls).toBeGreaterThan(0);
   });
 
   test("oversized fixture manifests are rejected before being read", async () => {
@@ -330,8 +354,15 @@ describe("accepted surface agreement", () => {
     ) as {
       module: string;
       api_version: string;
+      hostParity: {
+        repository: string;
+        commit: string;
+        pr: number;
+        namespaces: Record<string, string>;
+      };
       functions: Array<{
         path: string;
+        errors: string[];
         capabilities: string[];
         conditionalCapabilities?: Array<{ capability: string; when: string }>;
       }>;
@@ -384,6 +415,26 @@ describe("accepted surface agreement", () => {
         .map((gate) => gate.capability)
         .sort();
       expect(surfaceConditional).toEqual(modeledConditional);
+    }
+
+    const parity = surface.hostParity;
+    expect(parity.repository).toBe(HOST_PARITY_SOURCE.repository);
+    expect(parity.commit).toBe(HOST_PARITY_SOURCE.commit);
+    expect(parity.pr).toBe(HOST_PARITY_SOURCE.pr);
+    expect(new Map(Object.entries(parity.namespaces))).toEqual(
+      new Map(
+        NAMESPACE_HOST_PARITY.map(
+          (entry) => [entry.namespace, entry.status] as const,
+        ),
+      ),
+    );
+    for (const fn of surface.functions) {
+      const status = parity.namespaces[fn.path.split(".")[0] ?? ""];
+      if (status === "deferred") {
+        expect(fn.errors).toEqual(["E_NOT_IMPLEMENTED"]);
+      } else {
+        expect(fn.errors).not.toContain("E_NOT_IMPLEMENTED");
+      }
     }
 
     const excludedRaw = surface.excludedArgumentLiterals.find(

@@ -260,3 +260,69 @@ export const EVENT_PAYLOAD_FIELDS: Readonly<
 export function eventKindSpec(kind: string): EventKindSpec | undefined {
   return EVENT_KINDS.find((entry) => entry.kind === kind);
 }
+
+/** Host wiring status of one v1 namespace. */
+export type HostParityStatus = "wired" | "deferred";
+
+/** One per-namespace parity verdict. */
+export interface NamespaceHostParity {
+  readonly namespace: string;
+  readonly status: HostParityStatus;
+}
+
+/**
+ * Host revision the parity verdicts below are frozen against.
+ *
+ * bitty #1303 (CTX-0707) wires `keymaps.suggest` and `tasks.spawn`/`cancel`
+ * as bridge captures and defers `services.get`/`provide` and `env.get`/`has`
+ * with typed `E_NOT_IMPLEMENTED`. It also rules `process.spawn` v1-OUT, which
+ * the surface table keeps in `exclusions`. Mirrors
+ * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
+ * fails when the two drift apart.
+ */
+export const HOST_PARITY_SOURCE = {
+  repository: "bitty",
+  commit: "c01f538addc5edadc813351e3060a5642dbd40b9",
+  pr: 1303,
+} as const;
+
+/**
+ * Per-namespace parity verdicts, frozen on the accepted v1 surface.
+ *
+ * `wired` namespaces generate full bindings; `deferred` namespaces stay
+ * present but fail closed with `E_NOT_IMPLEMENTED` until a host follow-up
+ * wires their backend. Every v1 function prefix appears exactly once.
+ */
+export const NAMESPACE_HOST_PARITY: readonly NamespaceHostParity[] = [
+  { namespace: "commands", status: "wired" },
+  { namespace: "events", status: "wired" },
+  { namespace: "keymaps", status: "wired" },
+  { namespace: "settings", status: "wired" },
+  { namespace: "store", status: "wired" },
+  { namespace: "notify", status: "wired" },
+  { namespace: "env", status: "deferred" },
+  { namespace: "services", status: "deferred" },
+  { namespace: "ui", status: "wired" },
+  { namespace: "terminal", status: "wired" },
+  { namespace: "tasks", status: "wired" },
+  { namespace: "timers", status: "wired" },
+];
+
+/**
+ * Namespaces whose calls fail closed with `E_NOT_IMPLEMENTED`, derived from
+ * {@link NAMESPACE_HOST_PARITY} so the mock host and the generator share one
+ * source and can never disagree about which namespaces are deferred.
+ */
+export const DEFERRED_NAMESPACES: ReadonlySet<string> = new Set(
+  NAMESPACE_HOST_PARITY.filter((entry) => entry.status === "deferred").map(
+    (entry) => entry.namespace,
+  ),
+);
+
+/** Look up one namespace wiring status. */
+export function namespaceHostParity(
+  namespace: string,
+): HostParityStatus | undefined {
+  return NAMESPACE_HOST_PARITY.find((entry) => entry.namespace === namespace)
+    ?.status;
+}

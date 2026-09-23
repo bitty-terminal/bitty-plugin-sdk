@@ -221,7 +221,8 @@ local BittyEnvNamespace = {}
 --- (1..64); keys outside the allowlist return nil, indistinguishable from an unset variable.
 --- Available only when the namespace is declared.
 --- Capabilities: env:<KEY>.
---- Errors: E_ENV_KEY_INVALID, E_ENV_VALUE_TOO_LARGE, E_CAPABILITY_DENIED.
+--- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
+--- Errors: E_NOT_IMPLEMENTED.
 ---@param name string
 ---@return string|nil
 function BittyEnvNamespace.get(name) end
@@ -229,7 +230,8 @@ function BittyEnvNamespace.get(name) end
 --- Reports presence without exposing the value beyond the trace surface. Available only when the
 --- namespace is declared.
 --- Capabilities: env:<KEY>.
---- Errors: E_ENV_KEY_INVALID, E_CAPABILITY_DENIED.
+--- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
+--- Errors: E_NOT_IMPLEMENTED.
 ---@param name string
 ---@return boolean
 function BittyEnvNamespace.has(name) end
@@ -251,7 +253,8 @@ local BittyServicesNamespace = {}
 --- Resolves a provider before activation; a missing provider fails closed with E_SERVICE_RESOLUTION
 --- unless opts.optional is true, and provider disappearance makes in-flight calls fail closed with
 --- E_SERVICE_GONE.
---- Errors: E_SERVICE_RESOLUTION, E_SERVICE_GONE.
+--- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
+--- Errors: E_NOT_IMPLEMENTED.
 ---@param iface string
 ---@param opts BittyServiceGetOpts
 ---@return BittyService|nil
@@ -260,6 +263,8 @@ function BittyServicesNamespace.get(iface, opts) end
 --- Provides an interface implementation during activation; the interface, version, and bounded
 --- schemas must already be declared in the manifest [services.provided] table form, and arguments
 --- and results are schema-validated by the host.
+--- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
+--- Errors: E_NOT_IMPLEMENTED.
 ---@param iface string
 ---@param impl BittyService
 ---@return BittyServiceHandle
