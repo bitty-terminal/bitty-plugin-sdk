@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Re-wire `services.get`/`provide` to the host backend for 0.0.21 (issue
+  #115): bitty #1391 (CTX-0767, LUA-OQ-8) landed the accepted v1
+  consumer/provider contract, so the `services` parity verdict flips
+  DEFERRED -> WIRED. The pin moves to bitty `main` `b867393` (verdict set
+  provenance stays #1303); the accepted-contract source pins advance to
+  ADR-0009 `140f5de` and the Lua-surface RFC `9891949`. The surface table
+  lists the wired error sets (`get`: `E_DEF_INVALID`,
+  `E_SERVICE_VERSION_INVALID`, `E_SERVICE_RESOLUTION`; `provide`:
+  `E_DEF_INVALID`, `E_SERVICE_UNDECLARED`), `lua/bitty.d.lua` is regenerated
+  (no more `E_NOT_IMPLEMENTED` stubs for services), the mock's
+  full-contract `servicesProvide`/`servicesGet` implementation goes live
+  behind the verdict flip, and conformance case 11 now proves
+  provide/get/call plus `E_SERVICE_UNDECLARED`/`E_SERVICE_RESOLUTION`/
+  `E_SERVICE_GONE` fail-closed behavior. `env` stays DEFERRED (grant-gated);
+  the re-verification found no new Lua functions since the freeze. Template
+  follow-up required (filed separately): the frozen pipeline's `services`
+  verdict flips, so the template's pending-host flags and drift rule need a
+  companion update.
+
 - Unblock #82 with the missing Layer-2 `[tools.git]` activation corpus and
   conformance coverage (CTX-0054): expose the accepted declaration as
   `ManifestModel.toolsGit`, inject activation presence through

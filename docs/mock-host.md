@@ -38,10 +38,14 @@ conformance tests can run deterministically on Bun only.
   table.
 - Reference host evidence (read-only): `bitty` `1ea2f66`
   `crates/bitty-plugin-host/src/{event,capability,host,manifest}.rs`.
-- Host parity evidence (read-only): `bitty` #1303 (`c01f538`, CTX-0707) wires
-  `keymaps.suggest` and `tasks.spawn`/`cancel` as bridge captures and defers
-  `services.get`/`provide` and `env.get`/`has` with typed `E_NOT_IMPLEMENTED`
-  (`runtime` class), and rules `process.spawn` v1-OUT. The SDK freeze in
+- Host parity evidence (read-only): `bitty` #1391 (`b867393`, CTX-0767,
+  LUA-OQ-8) wires `services.get`/`provide` to the host backend (the verdict
+  set otherwise still comes from #1303, CTX-0707: `keymaps`/`tasks` WIRED,
+  `env` DEFERRED with typed `E_NOT_IMPLEMENTED` (`runtime` class),
+  `process.spawn` v1-OUT). Re-verified against bitty `main` `b867393` for
+  0.0.21: no new Lua functions were added since the freeze (only a shared
+  env-key predicate and the grant gate), so only the `services` verdict
+  moved. The SDK freeze in
   `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
   (`NAMESPACE_HOST_PARITY`), and `just host-parity-check` pins these verdicts
   (see [Host parity freeze](#host-parity-freeze)).
@@ -104,10 +108,9 @@ and behave fully.
 ## Static schema enforcement
 
 The service paragraphs below describe the accepted-contract implementation,
-which stays in the mock behind the deferral gate so a future host-wiring task
-can re-enable it; every `services.*` call currently fails with
-`E_NOT_IMPLEMENTED` before schema checks run (bitty #1303, see
-[Host parity freeze](#host-parity-freeze)). The command-schema paragraphs are
+which is WIRED since bitty #1391: `provide` registers manifest-declared
+implementations during activation and `get` resolves pinned providers with
+typed `E_SERVICE_*` failures. The command-schema paragraphs are
 WIRED and behave as written.
 
 The mock enforces ADR 0009 LUA-OQ-3 and LUA-OQ-8 within its existing bounded
@@ -142,20 +145,20 @@ in `tests/mock-host.test.ts`.
 
 ## Surface model
 
-| Namespace  | Modeled behavior                                                                                                                                           |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch                                                       |
-| `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                        |
-| `keymaps`  | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target |
-| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                       |
-| `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                          |
-| `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                 |
-| `env`      | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires      |
-| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; generation-owned block handles   |
-| `terminal` | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                    |
-| `services` | DEFERRED (bitty #1303): present; `provide`/`get` fail `E_NOT_IMPLEMENTED`; declarations stay valid manifest metadata; full behavior returns when wired     |
-| `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                             |
-| `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                             |
+| Namespace  | Modeled behavior                                                                                                                                                                                                                                                                                          |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch                                                                                                                                                                                                      |
+| `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                                                                                                                                                                       |
+| `keymaps`  | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target                                                                                                                                                |
+| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                                                                                                                                                                      |
+| `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                         |
+| `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                |
+| `env`      | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                     |
+| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; generation-owned block handles                                                                                                                                                  |
+| `terminal` | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                                                                                                                                                                   |
+| `services` | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears |
+| `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                                                                                                                                                                            |
+| `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                                                                                                                                                                            |
 
 Capability gates follow the accepted mapping: `bitty.notify.show` requires
 `platform.notify`, `bitty.ui.mount`/`bitty.ui.update` require `ui.rich`
@@ -253,8 +256,9 @@ verdict regardless of traversal order or where it was first validated.
 `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
 (`NAMESPACE_HOST_PARITY`), the generated `lua/bitty.d.lua` annotations, the
 mock host, and the conformance fixtures are frozen on the bitty #1303
-(CTX-0707) verdicts: `keymaps` and `tasks` are WIRED; `services` and `env` are
-DEFERRED; `process.spawn` is v1-OUT and stays in the surface-table
+(CTX-0707) verdict set as re-wired by bitty #1391 (CTX-0767): `keymaps`,
+`tasks`, and `services` are WIRED; `env` is DEFERRED; `process.spawn` is
+v1-OUT and stays in the surface-table
 `exclusions`. WIRED namespaces generate full bindings; DEFERRED namespaces
 stay present but generate typed `E_NOT_IMPLEMENTED` stubs, so the freeze is
 never silent and never more permissive than the host.
@@ -391,22 +395,22 @@ The mock host throws `HostError` carrying
 `{ class, code, message, path? }`. Codes fixed by accepted contracts are
 exported as `ACCEPTED_HOST_CODES`:
 
-| Code                     | Class        | Source                                            |
-| ------------------------ | ------------ | ------------------------------------------------- |
-| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009                                          |
-| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006                                          |
-| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                          |
-| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                          |
-| `E_STORE_QUOTA`          | `budget`     | ADR 0009                                          |
-| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                          |
-| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                          |
-| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                          |
-| `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                          |
-| `E_TOOL_ABSENT`          | `resolution` | Layer-2 `[tools.git]` (mock-owned until accepted) |
-| `E_TOOL_MISMATCH`        | `validation` | Layer-2 `[tools.git]` (mock-owned until accepted) |
-| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009                               |
-| `E_NOT_IMPLEMENTED`      | `runtime`    | bitty #1303 (mock-owned until accepted)           |
-| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009                               |
+| Code                     | Class        | Source                                                            |
+| ------------------------ | ------------ | ----------------------------------------------------------------- |
+| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009                                                          |
+| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006                                                          |
+| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                                          |
+| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                                          |
+| `E_STORE_QUOTA`          | `budget`     | ADR 0009                                                          |
+| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                                          |
+| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                                          |
+| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                                          |
+| `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                                          |
+| `E_TOOL_ABSENT`          | `resolution` | Layer-2 `[tools.git]` (mock-owned until accepted)                 |
+| `E_TOOL_MISMATCH`        | `validation` | Layer-2 `[tools.git]` (mock-owned until accepted)                 |
+| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009                                               |
+| `E_NOT_IMPLEMENTED`      | `runtime`    | deferred `env` only since bitty #1391 (mock-owned until accepted) |
+| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009                                               |
 
 Behaviors the accepted corpus requires but does not yet spell with a stable
 code use `MOCK_HOST_CODES` (documented test-tool codes, never a replacement

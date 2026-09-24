@@ -4,8 +4,9 @@
  * Models the accepted `bitty` host bridge for plugin and SDK conformance
  * testing: capability gates (deny-by-default), the activation/registration
  * window, generation-owned handles, the closed v1 event set with bounded
- * immutable payloads, bounded command/store/snapshot data, deferred
- * namespaces that fail closed with E_NOT_IMPLEMENTED (bitty #1303), and
+ * immutable payloads, bounded command/store/snapshot data, the deferred `env`
+ * namespace that fails closed with E_NOT_IMPLEMENTED, wired `services`
+ * provide/get/resolve/call semantics (bitty #1391), and
  * host-owned tasks and timers on a virtual clock. It is a test double, not a
  * host: it performs no I/O, spawns no process, opens no network, and reads no
  * secret. Behavior is derived from ADR 0009 and the accepted Plugin API v1 Lua
@@ -1181,14 +1182,13 @@ export class MockHost {
   /**
    * Fail closed for an accepted v1 namespace the host has not wired yet.
    *
-   * bitty #1303 (CTX-0707) wires keymaps/tasks as bridge captures but defers
-   * services and env: both spellings stay present and callable so the gap is
+   * Only `env` remains deferred (bitty #1303 froze the verdict set; bitty
+   * #1391 wired `services.get`/`provide` to the host backend, so the
+   * full-contract `servicesProvide`/`servicesGet` implementation below is
+   * live). Deferred spellings stay present and callable so the gap is
    * observable, and every call fails with typed E_NOT_IMPLEMENTED (runtime)
-   * before activation, capability, or argument checks run. The accepted
-   * full-contract implementation below stays in place so a future host-wiring
-   * task can re-enable it by removing the namespace from
-   * DEFERRED_NAMESPACES; until then the mock is never more permissive than
-   * the host.
+   * before activation, capability, or argument checks run; the mock is never
+   * more permissive than the host.
    */
   private assertNamespaceWired(namespace: string, item: string): void {
     if (DEFERRED_NAMESPACES.has(namespace)) {

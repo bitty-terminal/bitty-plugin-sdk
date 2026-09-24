@@ -16,9 +16,10 @@ The case format, step vocabulary, diagnostics, and coverage are documented in
 design: an absent grant means no authority, and a grant for an undeclared
 capability is ignored.
 
-Cases for namespaces the host has not wired yet (`services`/`env`, see bitty
-PR #1303) carry the `pending-host` tag and assert `E_NOT_IMPLEMENTED`
+Cases for namespaces the host has not wired yet (`env`, see bitty
+PR #1303; `services` was re-wired by bitty PR #1391) carry the `pending-host`
+tag and assert `E_NOT_IMPLEMENTED`
 (`runtime`) instead of accepted-contract success, so the fixtures agree with
 the host and the mock is never more permissive.
-`tests/conformance.test.ts` enforces this for every `services.*`/`env.*`
-call step.
+`tests/conformance.test.ts` enforces this for every `env.*`
+call step and forbids `E_NOT_IMPLEMENTED` expectations on `services.*` steps.

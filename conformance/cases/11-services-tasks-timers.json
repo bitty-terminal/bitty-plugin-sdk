@@ -1,8 +1,8 @@
 {
-  "name": "deferred services fail closed while host-owned tasks and timers run",
-  "description": "bitty #1303 (CTX-0707) defers bitty.services: provide and get stay present but fail closed with typed E_NOT_IMPLEMENTED (runtime) before version, optionality, or declaration checks run, so no provider ever resolves and no service call is reachable. The manifest [services.provided] declaration stays valid accepted-contract metadata. Tasks and timers are WIRED: they are generation-owned, run on the virtual clock, and cancellation of spent handles returns false.",
+  "name": "wired services provide/get/call while host-owned tasks and timers run",
+  "description": "bitty #1391 (CTX-0767, LUA-OQ-8) wires bitty.services: provide registers a manifest-declared implementation during activation (undeclared interfaces fail closed with E_SERVICE_UNDECLARED), get resolves a pinned provider after activation (missing providers and unsatisfied versions fail closed with E_SERVICE_RESOLUTION, optional:true yields nil), resolved methods run with schema-validated arguments, and provider removal makes in-flight calls fail closed with E_SERVICE_GONE. Tasks and timers are WIRED: they are generation-owned, run on the virtual clock, and cancellation of spent handles returns false.",
   "manifest": "manifests/full.toml",
-  "tags": ["services", "tasks", "timers", "lifecycle", "pending-host"],
+  "tags": ["services", "tasks", "timers", "lifecycle"],
   "steps": [
     { "op": "begin-activation" },
     {
@@ -12,8 +12,17 @@
         "iface": "conformance.greet",
         "impl": { "greet": { "template": "hello {name}" } }
       },
+      "capture": "greet-handle"
+    },
+    {
+      "op": "call",
+      "surface": "services.provide",
+      "args": {
+        "iface": "undeclared.iface",
+        "impl": { "ping": { "template": "pong" } }
+      },
       "expect": {
-        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
+        "denial": { "code": "E_SERVICE_UNDECLARED", "class": "validation" }
       }
     },
     {
@@ -38,27 +47,54 @@
         "iface": "conformance.greet",
         "opts": { "version": ">=1.0.0" }
       },
-      "expect": {
-        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
-      }
+      "capture": "greet-svc"
     },
     {
-      "op": "call",
-      "surface": "services.get",
-      "args": { "iface": "conformance.greet" },
-      "expect": {
-        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
-      }
+      "op": "call-service",
+      "service": "greet-svc",
+      "method": "greet",
+      "args": { "name": "Ada" },
+      "expect": { "result": "hello Ada" }
     },
     {
       "op": "call",
       "surface": "services.get",
       "args": {
         "iface": "conformance.greet",
-        "opts": { "version": ">=1.0.0", "optional": true }
+        "opts": { "version": ">=9.9.9" }
       },
       "expect": {
-        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
+        "denial": { "code": "E_SERVICE_RESOLUTION", "class": "resolution" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "services.get",
+      "args": {
+        "iface": "missing.iface",
+        "opts": { "version": ">=1.0.0" }
+      },
+      "expect": {
+        "denial": { "code": "E_SERVICE_RESOLUTION", "class": "resolution" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "services.get",
+      "args": {
+        "iface": "missing.iface",
+        "opts": { "version": ">=1.0.0", "optional": true }
+      },
+      "expect": { "result": null }
+    },
+    { "op": "remove-service", "interface": "conformance.greet" },
+    {
+      "op": "call-service",
+      "service": "greet-svc",
+      "method": "greet",
+      "args": { "name": "Ada" },
+      "expect": {
+        "denial": { "code": "E_SERVICE_GONE", "class": "runtime" }
       }
     },
     { "op": "drain-tasks" },

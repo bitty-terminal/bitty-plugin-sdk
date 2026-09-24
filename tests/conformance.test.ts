@@ -112,25 +112,40 @@ describe("conformance fixtures", () => {
     }
   });
 
-  test("pending-host fixtures assert E_NOT_IMPLEMENTED for deferred calls", () => {
-    let deferredCalls = 0;
+  test("deferred env fixtures assert E_NOT_IMPLEMENTED; wired services never do", () => {
+    let envCalls = 0;
+    let servicesCalls = 0;
     for (const conformanceCase of readCases()) {
       for (const step of conformanceCase.steps) {
         if (
           step.op === "call" &&
           typeof step.surface === "string" &&
-          (step.surface.startsWith("services.") ||
-            step.surface.startsWith("env."))
+          step.surface.startsWith("env.")
         ) {
-          deferredCalls += 1;
+          envCalls += 1;
           const expected = step.expect as
             { denial?: { code?: string; class?: string } } | undefined;
           expect(expected?.denial?.code).toBe("E_NOT_IMPLEMENTED");
           expect(expected?.denial?.class).toBe("runtime");
         }
+        if (
+          step.op === "call" &&
+          typeof step.surface === "string" &&
+          step.surface.startsWith("services.")
+        ) {
+          servicesCalls += 1;
+          const expected = step.expect as
+            | {
+                denial?: { code?: string; class?: string };
+                result?: unknown;
+              }
+            | undefined;
+          expect(expected?.denial?.code ?? null).not.toBe("E_NOT_IMPLEMENTED");
+        }
       }
     }
-    expect(deferredCalls).toBeGreaterThan(0);
+    expect(envCalls).toBeGreaterThan(0);
+    expect(servicesCalls).toBeGreaterThan(0);
   });
 
   test("oversized fixture manifests are rejected before being read", async () => {

@@ -129,40 +129,44 @@ describe("surface table", () => {
     }
   });
 
-  test("pins host parity with wired keymaps/tasks and deferred services/env", () => {
+  test("pins host parity with wired keymaps/tasks/services and deferred env", () => {
     expect(surface.hostParity.repository).toBe("bitty");
     expect(surface.hostParity.commit).toMatch(/^[0-9a-f]{40}$/);
-    expect(surface.hostParity.pr).toBe(1303);
+    expect(surface.hostParity.pr).toBe(1391);
     const namespaces = surface.hostParity.namespaces;
     expect(namespaces.keymaps).toBe("wired");
     expect(namespaces.tasks).toBe("wired");
-    expect(namespaces.services).toBe("deferred");
+    expect(namespaces.services).toBe("wired");
     expect(namespaces.env).toBe("deferred");
     expect(Object.keys(namespaces)).toHaveLength(12);
   });
 
   test("deferred functions carry exactly E_NOT_IMPLEMENTED and render the stub annotation", () => {
-    for (const path of [
-      "services.get",
-      "services.provide",
-      "env.get",
-      "env.has",
-    ]) {
+    for (const path of ["env.get", "env.has"]) {
       const fn = surface.functions.find((entry) => entry.path === path);
       expect(fn?.errors).toEqual(["E_NOT_IMPLEMENTED"]);
     }
     for (const fn of surface.functions) {
-      if (
-        !["services.get", "services.provide", "env.get", "env.has"].includes(
-          fn.path,
-        )
-      ) {
+      if (!["env.get", "env.has"].includes(fn.path)) {
         expect(fn.errors).not.toContain("E_NOT_IMPLEMENTED");
       }
     }
     expect(defs).toContain(
       "Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.",
     );
+  });
+
+  test("wired services carry the host-backend error sets", () => {
+    const get = surface.functions.find((fn) => fn.path === "services.get");
+    expect(get?.errors).toEqual([
+      "E_DEF_INVALID",
+      "E_SERVICE_VERSION_INVALID",
+      "E_SERVICE_RESOLUTION",
+    ]);
+    const provide = surface.functions.find(
+      (fn) => fn.path === "services.provide",
+    );
+    expect(provide?.errors).toEqual(["E_DEF_INVALID", "E_SERVICE_UNDECLARED"]);
   });
 
   test("records the overlay conditional capability on ui.mount only", () => {

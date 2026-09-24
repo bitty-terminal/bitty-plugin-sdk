@@ -252,8 +252,8 @@ describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
   });
 });
 
-describe("host parity freeze (bitty #1303)", () => {
-  test("deferred namespaces stay present but fail with E_NOT_IMPLEMENTED", () => {
+describe("host parity (bitty #1303 freeze, #1391 services re-wire)", () => {
+  test("deferred env fails with E_NOT_IMPLEMENTED; wired services resolve", () => {
     const host = makeHost();
     activate(host);
     expect(host.bitty.services).toBeDefined();
@@ -263,12 +263,6 @@ describe("host parity freeze (bitty #1303)", () => {
     expect(typeof host.bitty.env?.get).toBe("function");
     expect(typeof host.bitty.env?.has).toBe("function");
     for (const call of [
-      () =>
-        host.bitty.services.provide("conformance.greet", {
-          hello: () => null,
-        }),
-      () =>
-        host.bitty.services.get("conformance.greet", { version: ">=1.0.0" }),
       () => host.bitty.env?.get("FIXTURE_KEY"),
       () => host.bitty.env?.has("FIXTURE_KEY"),
     ]) {
@@ -276,9 +270,19 @@ describe("host parity freeze (bitty #1303)", () => {
       expect(diagnostic.code).toBe(HOST_CODES.NOT_IMPLEMENTED);
       expect(diagnostic.class).toBe("runtime");
     }
+    // No provider registered: wired resolution fails closed, not deferred.
+    expect(
+      denial(() =>
+        host.bitty.services.get("conformance.greet", { version: ">=1.0.0" }),
+      ),
+    ).toMatchObject({
+      class: "resolution",
+      code: HOST_CODES.SERVICE_RESOLUTION,
+    });
+    host.endActivation();
   });
 
-  test("deferred stubs ignore declarations, shapes, grants, and lifecycle state", () => {
+  test("deferred env ignores grants, shapes, and lifecycle; wired services enforce declaration and version", () => {
     const host = makeHost();
     host.grant("env:FIXTURE_KEY");
     host.beginActivation();
@@ -287,27 +291,36 @@ describe("host parity freeze (bitty #1303)", () => {
         host.bitty.services.provide("anything.undeclared", {
           hello: () => null,
         }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      ),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.SERVICE_UNDECLARED,
+    });
     const get = host.bitty.services.get as unknown as (
       iface: string,
       opts?: unknown,
     ) => unknown;
-    expect(denial(() => get("anything")).code).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    expect(denial(() => get("anything")).code).toBe(
+      HOST_CODES.SERVICE_VERSION_INVALID,
+    );
     expect(denial(() => host.bitty.env?.get("lowercase")).code).toBe(
       HOST_CODES.NOT_IMPLEMENTED,
     );
     host.endActivation();
     host.suspend();
     expect(
-      denial(() => host.bitty.services.get("anything", { version: ">=1.0.0" }))
-        .code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      denial(() => host.bitty.services.get("anything", { version: ">=1.0.0" })),
+    ).toMatchObject({
+      class: "resolution",
+      code: HOST_CODES.SERVICE_RESOLUTION,
+    });
     host.dispose();
     expect(
-      denial(() => host.bitty.services.get("anything", { version: ">=1.0.0" }))
-        .code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      denial(() => host.bitty.services.get("anything", { version: ">=1.0.0" })),
+    ).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.GENERATION_DISPOSED,
+    });
   });
 
   test("wired keymaps and tasks keep full bindings", () => {
@@ -802,68 +815,75 @@ describe("suspended dispatch", () => {
     expect(host.isGranted("platform.notify")).toBe(false);
   });
 
-  test("deferred services fail with E_NOT_IMPLEMENTED while suspended and after reload", () => {
+  test("wired services park resolution while suspended and re-provide after reload", () => {
     const host = makeHost(
       `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
     );
     host.beginActivation();
-    expect(
-      denial(() =>
-        host.bitty.services.provide("conformance.greet", {
-          hello: () => 1,
-        }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    const handle = host.bitty.services.provide("conformance.greet", {
+      hello: () => 1,
+    });
+    expect(handle).toBeGreaterThan(0);
     host.endActivation();
+    expect(
+      typeof host.bitty.services.get("conformance.greet", { version: "^1.0" })
+        ?.hello,
+    ).toBe("function");
     host.suspend();
     expect(
       denial(() =>
         host.bitty.services.get("conformance.greet", { version: "^1.0" }),
       ),
     ).toMatchObject({
-      class: "runtime",
-      code: HOST_CODES.NOT_IMPLEMENTED,
+      class: "resolution",
+      code: HOST_CODES.SERVICE_RESOLUTION,
     });
     expect(
-      denial(() =>
-        host.bitty.services.get("conformance.greet", {
-          version: "^1.0",
-          optional: true,
-        }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      host.bitty.services.get("conformance.greet", {
+        version: "^1.0",
+        optional: true,
+      }),
+    ).toBeUndefined();
     host.dispose();
     host.beginActivation();
-    expect(
-      denial(() =>
-        host.bitty.services.provide("conformance.greet", {
-          hello: () => "new",
-        }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    const reloaded = host.bitty.services.provide("conformance.greet", {
+      hello: () => "new",
+    });
+    expect(reloaded).toBeGreaterThan(0);
     host.endActivation();
+    expect(
+      typeof host.bitty.services.get("conformance.greet", { version: "^1.0" })
+        ?.hello,
+    ).toBe("function");
   });
 
   test.each([false, true])(
-    "deferred service resolution fails with E_NOT_IMPLEMENTED for optional=%s",
+    "suspended wired resolution fails closed for optional=%s",
     (optional) => {
       const host = makeHost(
         `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
       );
       host.beginActivation();
+      host.bitty.services.provide("conformance.greet", { hello: () => 1 });
       host.endActivation();
       host.suspend();
       for (const iface of ["conformance.absent", "conformance.greet"]) {
-        expect(
-          denial(() =>
+        if (optional) {
+          expect(
             host.bitty.services.get(iface, { version: "^1.0", optional }),
-          ).code,
-        ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+          ).toBeUndefined();
+        } else {
+          expect(
+            denial(() =>
+              host.bitty.services.get(iface, { version: "^1.0", optional }),
+            ).code,
+          ).toBe(HOST_CODES.SERVICE_RESOLUTION);
+        }
       }
     },
   );
 
-  test("deferred service provision fails before any provider runs", () => {
+  test("undeclared provision fails before any provider runs", () => {
     const host = makeHost(
       `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`,
     );
@@ -871,11 +891,11 @@ describe("suspended dispatch", () => {
     let calls = 0;
     expect(
       denial(() =>
-        host.bitty.services.provide("conformance.greet", {
+        host.bitty.services.provide("conformance.absent", {
           hello: () => ++calls,
         }),
       ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    ).toBe(HOST_CODES.SERVICE_UNDECLARED);
     expect(calls).toBe(0);
     host.endActivation();
   });
@@ -1250,29 +1270,41 @@ describe("static schema enforcement", () => {
     ).toBe(HOST_CODES.RESULT_INVALID);
   });
 
-  test("deferred services fail with E_NOT_IMPLEMENTED across suspend, dispose, and removal", () => {
+  test("wired services park on suspend/dispose and die on removal", () => {
     for (const action of ["suspend", "dispose", "removeService"] as const) {
       const host = makeHost(serviceManifest);
       activate(host);
-      expect(
-        denial(() =>
-          host.bitty.services.provide("conformance.greet", {
-            hello: () => 1,
-          }),
-        ).code,
-      ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      const handle = host.bitty.services.provide("conformance.greet", {
+        hello: () => 1,
+      });
+      expect(handle).toBeGreaterThan(0);
       host.endActivation();
       if (action === "removeService") host.removeService("conformance.greet");
       else host[action]();
-      expect(
-        denial(() =>
-          host.bitty.services.get("conformance.greet", { version: "^1.0" }),
-        ).code,
-      ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      if (action === "dispose") {
+        expect(
+          denial(() =>
+            host.bitty.services.get("conformance.greet", {
+              version: "^1.0",
+            }),
+          ),
+        ).toMatchObject({
+          class: "runtime",
+          code: HOST_CODES.GENERATION_DISPOSED,
+        });
+      } else {
+        expect(
+          denial(() =>
+            host.bitty.services.get("conformance.greet", {
+              version: "^1.0",
+            }),
+          ).code,
+        ).toBe(HOST_CODES.SERVICE_RESOLUTION);
+      }
     }
   });
 
-  test("deferred service provision fails before schema validation", () => {
+  test("wired provision validates impl shape before schema validation", () => {
     const host = makeHost(serviceManifest);
     let calls = 0;
     activate(host);
@@ -1280,10 +1312,10 @@ describe("static schema enforcement", () => {
       denial(() =>
         host.bitty.services.provide("conformance.greet", {
           hello: () => ++calls,
-          invalid: () => "wrong",
-        }),
+          invalid: "not-a-function",
+        } as never),
       ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    ).toBe(HOST_CODES.DEF_INVALID);
     expect(calls).toBe(0);
     host.endActivation();
   });
@@ -1299,60 +1331,84 @@ describe("static schema enforcement", () => {
     ).toThrow("manifest rejected: services.schema");
   });
 
-  test("deferred resolution ignores validating-consumer configuration", () => {
+  test("validating consumers require table-form providers", () => {
     const source = `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`;
     const host = new MockHost({
       manifestSource: source,
       schemaValidatingServices: ["conformance.greet"],
     });
     activate(host);
-    expect(
-      denial(() =>
-        host.bitty.services.provide("conformance.greet", {
-          hello: () => 1,
-        }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    // String-form provider: provide succeeds, but a schema-validating
+    // consumer cannot resolve it.
+    const handle = host.bitty.services.provide("conformance.greet", {
+      hello: () => 1,
+    });
+    expect(handle).toBeGreaterThan(0);
     expect(
       denial(() =>
         host.bitty.services.get("conformance.greet", { version: "^1.0" }),
       ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    ).toBe(HOST_CODES.SERVICE_RESOLUTION);
     expect(
-      denial(() =>
-        host.bitty.services.get("conformance.greet", {
-          version: "^1.0",
-          optional: true,
-        }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      host.bitty.services.get("conformance.greet", {
+        version: "^1.0",
+        optional: true,
+      }),
+    ).toBeUndefined();
+    host.endActivation();
+    // Non-validating consumer resolves the same string-form provider.
     const legacy = makeHost(source);
     activate(legacy);
+    const legacyHandle = legacy.bitty.services.provide("conformance.greet", {
+      hello: () => "legacy",
+    });
+    expect(legacyHandle).toBeGreaterThan(0);
+    legacy.endActivation();
     expect(
-      denial(() =>
-        legacy.bitty.services.provide("conformance.greet", {
-          hello: () => "legacy",
-        }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      typeof legacy.bitty.services.get("conformance.greet", {
+        version: "^1.0",
+      })?.hello,
+    ).toBe("function");
   });
 
-  test("deferred provision fails for table providers including schema omissions", () => {
-    for (const source of [
+  test("table-form providers resolve for validating consumers with schema-checked calls", () => {
+    const sources = [
       serviceManifest,
       serviceManifest.replace(/, args_schema = .* } }\n/, " }\n"),
-    ]) {
+    ];
+    for (const [index, source] of sources.entries()) {
       const host = new MockHost({
         manifestSource: source,
         schemaValidatingServices: ["conformance.greet"],
       });
       activate(host);
-      expect(
-        denial(() =>
-          host.bitty.services.provide("conformance.greet", { hello: () => 1 }),
-        ).code,
-      ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+      const handle = host.bitty.services.provide("conformance.greet", {
+        hello: () => 1,
+      });
+      expect(handle).toBeGreaterThan(0);
       host.endActivation();
+      // Version-only table form still carries a (possibly empty) schema
+      // record, so validating consumers resolve it; only string-form
+      // providers are unresolvable (covered above).
+      const resolved = host.bitty.services.get("conformance.greet", {
+        version: "^1.0",
+      });
+      if (typeof resolved?.hello !== "function") {
+        throw new Error(
+          "validating consumer should resolve table-form provider",
+        );
+      }
+      const hello = resolved.hello as (args: unknown) => unknown;
+      expect(hello({ value: "hi" })).toBe(1);
+      if (index === 0) {
+        // Declared args_schema is enforced on calls...
+        expect(denial(() => hello({ value: "way-too-long" })).code).toBe(
+          HOST_CODES.ARGS_INVALID,
+        );
+      } else {
+        // ...while the schema-omission variant validates nothing.
+        expect(hello({ value: "way-too-long" })).toBe(1);
+      }
     }
   });
 });
@@ -1838,42 +1894,39 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     ).toBe(HOST_CODES.SNAPSHOT_TOO_LARGE);
   });
 
-  test("deferred services fail with E_NOT_IMPLEMENTED before version checks", () => {
+  test("wired services validate version requirements before resolving", () => {
     const manifest = `${MANIFEST}
 [services.provided]
 "conformance.greet" = "1.0.0"
 `;
     const host = makeHost(manifest);
     activate(host);
-    expect(
-      denial(() =>
-        host.bitty.services.provide("conformance.greet", {
-          hello: (args) => `hello ${(args as { name: string }).name}`,
-        }),
-      ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    const handle = host.bitty.services.provide("conformance.greet", {
+      hello: (args) => `hello ${(args as { name: string }).name}`,
+    });
+    expect(handle).toBeGreaterThan(0);
     host.endActivation();
     const get = host.bitty.services.get as unknown as (
       iface: string,
       opts?: unknown,
     ) => unknown;
-    for (const opts of [
-      { version: ">=1.0.0" },
-      undefined,
-      {},
-      { optional: true },
-      { version: ">=1.0.0", optional: true },
-    ]) {
+    expect(get("conformance.greet", { version: ">=1.0.0" })).toBeDefined();
+    for (const opts of [undefined, {}, { optional: true }]) {
+      // The mock requires an explicit version requirement even for optional
+      // resolution (stricter than the host, never more permissive).
       expect(denial(() => get("conformance.greet", opts)).code).toBe(
-        HOST_CODES.NOT_IMPLEMENTED,
+        HOST_CODES.SERVICE_VERSION_INVALID,
       );
     }
+    expect(
+      denial(() => get("conformance.greet", { version: ">=9.9.9" })).code,
+    ).toBe(HOST_CODES.SERVICE_RESOLUTION);
     host.removeService("conformance.greet");
     expect(
       denial(() =>
         host.bitty.services.get("conformance.greet", { version: ">=1.0.0" }),
       ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    ).toBe(HOST_CODES.SERVICE_RESOLUTION);
   });
 
   test.each([0, 10])(
@@ -2287,7 +2340,7 @@ describe("isolation across settings and call boundaries", () => {
     expect(result.metrics.count).toBe(999);
   });
 
-  test("deferred service provision runs no provider code", () => {
+  test("invalid provision shape runs no provider code", () => {
     const source = `${MANIFEST}\n[services.provided]\n"conformance.greet" = "1.0.0"\n`;
     const host = makeHost(source);
     activate(host);
@@ -2296,9 +2349,10 @@ describe("isolation across settings and call boundaries", () => {
       denial(() =>
         host.bitty.services.provide("conformance.greet", {
           greet: () => ++calls,
-        }),
+          broken: 42,
+        } as never),
       ).code,
-    ).toBe(HOST_CODES.NOT_IMPLEMENTED);
+    ).toBe(HOST_CODES.DEF_INVALID);
     expect(calls).toBe(0);
     host.endActivation();
   });
