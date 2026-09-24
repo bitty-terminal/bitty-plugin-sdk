@@ -3,10 +3,10 @@
 # applicable; keep both identical when bumping. All tool invocations go
 # through bun/bunx.
 
-markdownlint-cli2-version := "0.23.1"
+markdownlint-cli2-version := "0.23.2"
 prettier-version := "3.9.6"
 commitlint-version := "21.2.2"
-lefthook-version := "2.1.10"
+lefthook-version := "2.1.14"
 
 default: check
 
