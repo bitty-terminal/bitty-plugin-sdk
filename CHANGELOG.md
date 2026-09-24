@@ -24,6 +24,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   follow-up required (filed separately): the frozen pipeline's `services`
   verdict flips, so the template's pending-host flags and drift rule need a
   companion update.
+- Align the toolchain pins with the template and workspace policy (issue
+  #116): `lefthook` 2.1.10 -> 2.1.14 and `markdownlint-cli2` 0.23.1 -> 0.23.2
+  (the template's deliberate CTX-0011 advance wins over the workspace-policy
+  floor); mirror `lefthook`, `markdownlint-cli2`, and `prettier` (3.9.6) in
+  `devDependencies` so the justfile and `package.json` carry identical pins;
+  switch the CI just installer from `extractions/setup-just` to the
+  SHA-pinned `taiki-e/install-action` (parent- and template-canonical).
+  CodeQL action SHAs already agree with the template at `b96794f`; open
+  dependabot bumps (carryctx 0.11.6, commitlint 21.2.3, codeql-action 4.38.1)
+  rebase on top of this decision at merge time.
 
 - Unblock #82 with the missing Layer-2 `[tools.git]` activation corpus and
   conformance coverage (CTX-0054): expose the accepted declaration as
