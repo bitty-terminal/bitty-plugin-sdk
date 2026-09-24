@@ -5,9 +5,9 @@
   "output": "lua/bitty.d.lua",
   "hostParity": {
     "repository": "bitty",
-    "commit": "c01f538addc5edadc813351e3060a5642dbd40b9",
-    "pr": 1303,
-    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide and env.get/has are DEFERRED and fail closed with typed E_NOT_IMPLEMENTED; process.spawn is v1-OUT (see exclusions).",
+    "commit": "b8673937b6825ae4e7f1c35f4adc152ffd171f87",
+    "pr": 1391,
+    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions).",
     "namespaces": {
       "commands": "wired",
       "events": "wired",
@@ -16,7 +16,7 @@
       "store": "wired",
       "notify": "wired",
       "env": "deferred",
-      "services": "deferred",
+      "services": "wired",
       "ui": "wired",
       "terminal": "wired",
       "tasks": "wired",
@@ -28,13 +28,13 @@
       "repository": "bitty-docs",
       "path": "docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md",
       "status": "accepted",
-      "revision": "e94d86ef6bcf4865a84119828756952e50f10266"
+      "revision": "140f5debbc5bf7de749176c61ff6a3c549cf286e"
     },
     {
       "repository": "bitty-docs",
       "path": "docs/specifications/plugin-api-v1-lua-surface-rfc.md",
       "status": "accepted",
-      "revision": "e94d86ef6bcf4865a84119828756952e50f10266"
+      "revision": "9891949ca20b245375ece9a9015d0f42458fd2b1"
     }
   ],
   "types": [
@@ -876,7 +876,11 @@
       "path": "services.get",
       "level": "L1",
       "capabilities": [],
-      "errors": ["E_NOT_IMPLEMENTED"],
+      "errors": [
+        "E_DEF_INVALID",
+        "E_SERVICE_VERSION_INVALID",
+        "E_SERVICE_RESOLUTION"
+      ],
       "doc": "Resolves a provider before activation; a missing provider fails closed with E_SERVICE_RESOLUTION unless opts.optional is true, and provider disappearance makes in-flight calls fail closed with E_SERVICE_GONE.",
       "params": [
         { "name": "iface", "type": "string" },
@@ -888,7 +892,7 @@
       "path": "services.provide",
       "level": "L1",
       "capabilities": [],
-      "errors": ["E_NOT_IMPLEMENTED"],
+      "errors": ["E_DEF_INVALID", "E_SERVICE_UNDECLARED"],
       "doc": "Provides an interface implementation during activation; the interface, version, and bounded schemas must already be declared in the manifest [services.provided] table form, and arguments and results are schema-validated by the host.",
       "params": [
         { "name": "iface", "type": "string" },

@@ -202,9 +202,10 @@ describe("runnable minimal example", () => {
     () => {
       const transcript = recordExampleTranscript(LUA as string);
       const ops = transcript.map((entry) => entry.op);
-      // bitty.services.get/provide stay commented out in the example: the
-      // namespace is DEFERRED on the current host (bitty #1303) and every
-      // call fails closed with E_NOT_IMPLEMENTED.
+      // bitty.services.get/provide are WIRED on the current host (bitty
+      // #1391): the example provides and resolves live, while bitty.env
+      // stays DEFERRED (bitty #1303) and every env call fails closed with
+      // E_NOT_IMPLEMENTED.
       for (const op of [
         "commands.register",
         "events.subscribe",
@@ -221,8 +222,8 @@ describe("runnable minimal example", () => {
       ]) {
         expect(ops).toContain(op);
       }
-      expect(ops).not.toContain("services.get");
-      expect(ops).not.toContain("services.provide");
+      expect(ops).toContain("services.get");
+      expect(ops).toContain("services.provide");
       const host = new MockHost({
         manifestSource: readFileSync(COMPANION_MANIFEST_PATH, "utf8"),
       });

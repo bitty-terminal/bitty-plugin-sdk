@@ -106,7 +106,8 @@ UI surface only plus the closed v1 event set. Every surface exclusion is
 enforced textually against the generated file by `tests/lua-defs.test.ts`; the
 LuaLS negative fixture samples excluded names, the excluded `raw` scope
 literal, and wrong-shape `services.get` calls. Namespaces the host has not
-wired yet (`services`, `env`; bitty #1303) are generated as typed
+wired yet (`env`; bitty #1303, still deferred after the #1391 services
+re-wire) are generated as typed
 `E_NOT_IMPLEMENTED` stubs: still declared, never silent. LuaLS conformance runs
 locally only: CI has no `lua-language-server`, so that check skips there.
 

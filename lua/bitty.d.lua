@@ -253,8 +253,7 @@ local BittyServicesNamespace = {}
 --- Resolves a provider before activation; a missing provider fails closed with E_SERVICE_RESOLUTION
 --- unless opts.optional is true, and provider disappearance makes in-flight calls fail closed with
 --- E_SERVICE_GONE.
---- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
---- Errors: E_NOT_IMPLEMENTED.
+--- Errors: E_DEF_INVALID, E_SERVICE_VERSION_INVALID, E_SERVICE_RESOLUTION.
 ---@param iface string
 ---@param opts BittyServiceGetOpts
 ---@return BittyService|nil
@@ -263,8 +262,7 @@ function BittyServicesNamespace.get(iface, opts) end
 --- Provides an interface implementation during activation; the interface, version, and bounded
 --- schemas must already be declared in the manifest [services.provided] table form, and arguments
 --- and results are schema-validated by the host.
---- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
---- Errors: E_NOT_IMPLEMENTED.
+--- Errors: E_DEF_INVALID, E_SERVICE_UNDECLARED.
 ---@param iface string
 ---@param impl BittyService
 ---@return BittyServiceHandle

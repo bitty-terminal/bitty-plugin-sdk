@@ -7,8 +7,9 @@ generated from the machine-readable surface table
 `surface/bitty-plugin-api-v1.json`; the drift check in
 `scripts/generate-lua-defs.ts` runs as part of `just check`. No other LuaLS
 artifact exists for Plugin API v1. The definitions are frozen on the host-parity
-verdicts of bitty PR #1303 by SDK task `CTX-0053`: WIRED namespaces generate
-full bindings while DEFERRED namespaces (`services`, `env`) generate typed
+verdicts of bitty PR #1303 (SDK task `CTX-0053`) as re-wired by bitty PR #1391
+(SDK issue #115): WIRED namespaces generate
+full bindings while the DEFERRED `env` namespace generates typed
 `E_NOT_IMPLEMENTED` stubs (see
 [Host parity and regen-sync](#host-parity-and-regen-sync)).
 
@@ -123,7 +124,8 @@ within v1; the tasks and timers functions were resolved as v1 additions by
 ADR 0009. They are carried here alongside L1 rather than as separate levels,
 and no Level 3 or Level 4 element is present.
 
-Namespaces the host has not wired yet (`services`, `env`; bitty #1303) are
+Namespaces the host has not wired yet (`env`; bitty #1303, still deferred
+after the #1391 services re-wire) are
 DEFERRED: the surface table records them in the `hostParity` namespace map,
 their functions list exactly `E_NOT_IMPLEMENTED`, and the generator renders
 each as a typed stub (`Host status: deferred ...`) instead of a full binding.
@@ -170,9 +172,10 @@ just host-parity-check  # surface/model/defs/mock/fixture parity agreement
 ## Host parity and regen-sync
 
 The surface table pins the bitty host revision it was frozen against
-(`hostParity`: repository `bitty`, the #1303 merge commit, PR 1303) and one
-verdict per namespace: every namespace is `wired` except `services` and `env`,
-which are `deferred`. `process.spawn` is v1-OUT and stays excluded.
+(`hostParity`: repository `bitty`, the #1391 merge commit, PR 1391; verdict
+set provenance #1303) and one
+verdict per namespace: every namespace is `wired` except `env`,
+which is `deferred`. `process.spawn` is v1-OUT and stays excluded.
 
 The SDK owns regen-sync for these artifacts. Run this trigger whenever a
 bitty host change flips a namespace verdict or an accepted contract revision

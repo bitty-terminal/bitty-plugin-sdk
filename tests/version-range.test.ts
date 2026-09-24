@@ -197,10 +197,9 @@ describe("caret range semantics", () => {
 });
 
 describe("mock host uses the shared grammar", () => {
-  // bitty #1303 defers `services`: `provide`/`get` fail closed with
-  // E_NOT_IMPLEMENTED before version checks run, so runtime agreement with
-  // the linter is asserted through `versionSatisfies` directly — the same
-  // function the mock resolver calls behind the deferral gate.
+  // bitty #1391 wires `services`: `provide` registers during activation and
+  // `get` resolves through the same `versionSatisfies` the linter shares, so
+  // runtime agreement with the linter is asserted through the live resolver.
   const MANIFEST = `
 [plugin]
 id = "conformance.range"
@@ -223,7 +222,7 @@ description = "Zero-major version-range fixture."
 "conformance.greet" = "0.9.9"
 `;
 
-  function deferredCode(run: () => unknown): string {
+  function denialCode(run: () => unknown): string {
     try {
       run();
     } catch (error) {
@@ -236,13 +235,10 @@ description = "Zero-major version-range fixture."
   test("shorthand ranges the linter accepts satisfy at runtime", () => {
     const host = new MockHost({ manifestSource: MANIFEST });
     host.beginActivation();
-    expect(
-      deferredCode(() =>
-        host.bitty.services.provide("conformance.greet", {
-          greet: () => "ok",
-        }),
-      ),
-    ).toBe("E_NOT_IMPLEMENTED");
+    const handle = host.bitty.services.provide("conformance.greet", {
+      greet: () => "ok",
+    });
+    expect(handle).toBeGreaterThan(0);
     host.endActivation();
     for (const range of ["^1.0", ">=1.2", ">=1", "~1.2", ">=1.0,<2.0"]) {
       expect(
@@ -253,12 +249,13 @@ description = "Zero-major version-range fixture."
         versionSatisfies("1.2.3", range),
         `resolver should accept ${range}`,
       ).toBe(true);
+      const resolved = host.bitty.services.get("conformance.greet", {
+        version: range,
+      });
       expect(
-        deferredCode(() =>
-          host.bitty.services.get("conformance.greet", { version: range }),
-        ),
-        `deferred services should fail closed for ${range}`,
-      ).toBe("E_NOT_IMPLEMENTED");
+        typeof resolved?.greet,
+        `wired services should resolve for ${range}`,
+      ).toBe("function");
     }
   });
 
@@ -267,19 +264,23 @@ description = "Zero-major version-range fixture."
     expect(versionSatisfies("0.9.9", "^0.1")).toBe(false);
     const host = new MockHost({ manifestSource: ZERO_MAJOR_MANIFEST });
     host.beginActivation();
+    host.bitty.services.provide("conformance.greet", { greet: () => "ok" });
     host.endActivation();
-    for (const range of ["^0.9", "^0.1"]) {
-      expect(
-        deferredCode(() =>
-          host.bitty.services.get("conformance.greet", { version: range }),
-        ),
-      ).toBe("E_NOT_IMPLEMENTED");
-    }
+    expect(
+      typeof host.bitty.services.get("conformance.greet", { version: "^0.9" })
+        ?.greet,
+    ).toBe("function");
+    expect(
+      denialCode(() =>
+        host.bitty.services.get("conformance.greet", { version: "^0.1" }),
+      ),
+    ).toBe("E_SERVICE_RESOLUTION");
   });
 
   test("ranges the linter rejects never satisfy at runtime", () => {
     const host = new MockHost({ manifestSource: MANIFEST });
     host.beginActivation();
+    host.bitty.services.provide("conformance.greet", { greet: () => "ok" });
     host.endActivation();
     for (const range of [
       "1.2.3 4.5.6",
@@ -296,10 +297,10 @@ description = "Zero-major version-range fixture."
         `resolver should reject ${range}`,
       ).toBeUndefined();
       expect(
-        deferredCode(() =>
+        denialCode(() =>
           host.bitty.services.get("conformance.greet", { version: range }),
         ),
-      ).toBe("E_NOT_IMPLEMENTED");
+      ).toBe("E_SERVICE_VERSION_INVALID");
     }
   });
 });

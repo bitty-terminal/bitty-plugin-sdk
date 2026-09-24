@@ -273,17 +273,21 @@ export interface NamespaceHostParity {
 /**
  * Host revision the parity verdicts below are frozen against.
  *
- * bitty #1303 (CTX-0707) wires `keymaps.suggest` and `tasks.spawn`/`cancel`
- * as bridge captures and defers `services.get`/`provide` and `env.get`/`has`
- * with typed `E_NOT_IMPLEMENTED`. It also rules `process.spawn` v1-OUT, which
- * the surface table keeps in `exclusions`. Mirrors
+ * The verdict SET comes from bitty #1303 (CTX-0707): `keymaps.suggest` and
+ * `tasks.spawn`/`cancel` as bridge captures, `process.spawn` v1-OUT. Bitty
+ * #1391 (CTX-0767, LUA-OQ-8) then wired `services.get`/`provide` to the host
+ * backend (shape checks, manifest-gated provide capture, deterministic
+ * resolution with typed `E_SERVICE_*` failures); `env.get`/`has` stay
+ * grant-gated and deny with the backend-absent code until an
+ * `env.read:<KEY>` grant exists. `commit` is the last re-verified bitty
+ * `main`; `pr` is the change that last moved a verdict. Mirrors
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
  * fails when the two drift apart.
  */
 export const HOST_PARITY_SOURCE = {
   repository: "bitty",
-  commit: "c01f538addc5edadc813351e3060a5642dbd40b9",
-  pr: 1303,
+  commit: "b8673937b6825ae4e7f1c35f4adc152ffd171f87",
+  pr: 1391,
 } as const;
 
 /**
@@ -301,7 +305,7 @@ export const NAMESPACE_HOST_PARITY: readonly NamespaceHostParity[] = [
   { namespace: "store", status: "wired" },
   { namespace: "notify", status: "wired" },
   { namespace: "env", status: "deferred" },
-  { namespace: "services", status: "deferred" },
+  { namespace: "services", status: "wired" },
   { namespace: "ui", status: "wired" },
   { namespace: "terminal", status: "wired" },
   { namespace: "tasks", status: "wired" },

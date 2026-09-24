@@ -3,7 +3,7 @@
 -- against the SDK mock host by tests/example.test.ts using the companion
 -- manifest lua/examples/minimal-init.bitty-plugin.toml. It is not a complete
 -- plugin and makes no host-behavior claims beyond what the current host
--- wires: deferred namespaces stay commented out (see below).
+-- wires: only the DEFERRED `env` namespace stays commented out (see below).
 --
 -- The host assembles the qualified name from the manifest plugin id, so the
 -- registration carries only the short segment; [lazy].commands reserves the
@@ -44,21 +44,21 @@ print(seen)
 bitty.settings.set("theme", "dark")
 print(bitty.settings.get("theme"))
 
--- bitty.services.get/provide and bitty.env are DEFERRED on the current host
--- (bitty #1303): the spellings stay declared in bitty.d.lua so this file
--- type-checks, but every call fails closed with E_NOT_IMPLEMENTED (runtime)
--- until the host backends land. The companion manifest may still reserve
--- [services.provided] entries as accepted-contract metadata; live calls stay
--- commented out so the runnable example agrees with the host.
--- local service = bitty.services.get("example.greeter", { version = ">=1.0.0", optional = true })
--- if service ~= nil then
---   print(service.hello)
--- end
--- bitty.services.provide("example.greeter", {
---   hello = function()
---     return "hi"
---   end,
--- })
+-- bitty.services.get/provide are WIRED on the current host (bitty #1391):
+-- provide registers the manifest-declared implementation and get resolves
+-- it back. bitty.env stays DEFERRED (bitty #1303): the spelling stays
+-- declared in bitty.d.lua so this file type-checks, but every call fails
+-- closed with E_NOT_IMPLEMENTED (runtime) until the host backend lands, so
+-- env calls stay commented out below.
+bitty.services.provide("example.greeter", {
+  hello = function()
+    return "hi"
+  end,
+})
+local service = bitty.services.get("example.greeter", { version = ">=1.0.0" })
+if service ~= nil then
+  print("greeter resolved")
+end
 -- if bitty.env then
 --   print(bitty.env.has("EDITOR"), bitty.env.get("EDITOR"))
 -- end

@@ -122,30 +122,34 @@ export function main(): number {
   );
   try {
     const host = new MockHost({ manifestSource: fullManifest });
-    for (const [label, run] of [
-      [
-        "services.provide",
-        () =>
-          host.bitty.services.provide("conformance.greet", {
-            hello: () => null,
-          }),
-      ],
-      [
-        "services.get",
-        () =>
-          host.bitty.services.get("conformance.greet", {
-            version: ">=1.0.0",
-          }),
-      ],
-    ] as const) {
-      const denial = denialOf(run);
-      if (denial.code !== "E_NOT_IMPLEMENTED" || denial.class !== "runtime") {
-        problems.push(
-          `mock ${label}: got ${denial.class}/${denial.code}, want runtime/E_NOT_IMPLEMENTED`,
-        );
-      }
-    }
     host.beginActivation();
+    const provided = host.bitty.services.provide("conformance.greet", {
+      hello: () => null,
+    });
+    if (typeof provided !== "number" || provided <= 0) {
+      problems.push(
+        "mock services.provide: WIRED namespace must issue a handle",
+      );
+    }
+    const resolved = host.bitty.services.get("conformance.greet", {
+      version: ">=1.0.0",
+    });
+    if (typeof resolved?.hello !== "function") {
+      problems.push(
+        "mock services.get: WIRED namespace must resolve a provider",
+      );
+    }
+    const missing = denialOf(() =>
+      host.bitty.services.get("conformance.absent", { version: ">=1.0.0" }),
+    );
+    if (
+      missing.code !== "E_SERVICE_RESOLUTION" ||
+      missing.class !== "resolution"
+    ) {
+      problems.push(
+        `mock services.get: got ${missing.class}/${missing.code}, want resolution/E_SERVICE_RESOLUTION`,
+      );
+    }
     const task = host.bitty.tasks.spawn(() => null);
     if (typeof task !== "number" || task <= 0) {
       problems.push(
