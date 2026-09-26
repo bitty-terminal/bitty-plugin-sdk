@@ -63,6 +63,18 @@ type TomlTable = Record<string, unknown>;
 const CONTROL_OR_WHITESPACE = /[\p{Cc}\p{White_Space}]/u;
 const PLUGIN_ID_SEGMENT = /^[a-z][a-z0-9_-]*$/;
 const SERVICE_IFACE_SEGMENT = /^[a-z][a-z0-9_-]*$/;
+
+/**
+ * Escape control characters (C0/C1) and other problematic characters for safe
+ * diagnostic output per security corpus secret-minimization requirement.
+ * This prevents raw control codes from affecting terminal rendering in text or JSON output.
+ */
+function escapeForDiagnostic(raw: string): string {
+  return raw.replace(/[\x00-\x1F\x7F-\x9F]/g, (ch) => {
+    const code = ch.charCodeAt(0);
+    return `\\x${code.toString(16).padStart(2, "0")}`;
+  });
+}
 const SEMVER_2 =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
@@ -102,7 +114,8 @@ function exceedsMaxDepth(value: unknown, depth: number): boolean {
 }
 
 function quote(raw: string): string {
-  return raw.length > 80 ? `'${raw.slice(0, 77)}...'` : `'${raw}'`;
+  const escaped = escapeForDiagnostic(raw);
+  return escaped.length > 80 ? `'${escaped.slice(0, 77)}...'` : `'${escaped}'`;
 }
 
 interface FlatEntry {
@@ -479,17 +492,70 @@ function validateDependencies(
         ),
       );
     }
-    if (typeof entry.value !== "string") {
-      diagnostics.push(
-        error("manifest.type", entry.path, "expected a version range string"),
-      );
-    } else {
+
+    // Accept string form (version requirement only) or inline-table form
+    // { version = "...", prerelease = <boolean> } per Plugin Platform RFC
+    if (typeof entry.value === "string") {
       const rangeProblem = versionReqProblem(entry.value);
       if (rangeProblem !== undefined) {
         diagnostics.push(
           error("dependencies.version.invalid", entry.path, rangeProblem),
         );
       }
+    } else if (isTable(entry.value)) {
+      checkUnknownKeys(
+        entry.value,
+        new Set(["version", "prerelease"]),
+        entry.path,
+        diagnostics,
+      );
+      const version = entry.value.version;
+      if (version === undefined) {
+        diagnostics.push(
+          error(
+            "manifest.type",
+            `${entry.path}.version`,
+            "expected a version requirement string (required in table form)",
+          ),
+        );
+      } else if (typeof version !== "string") {
+        diagnostics.push(
+          error(
+            "manifest.type",
+            `${entry.path}.version`,
+            "expected a version requirement string",
+          ),
+        );
+      } else {
+        const rangeProblem = versionReqProblem(version);
+        if (rangeProblem !== undefined) {
+          diagnostics.push(
+            error(
+              "dependencies.version.invalid",
+              `${entry.path}.version`,
+              rangeProblem,
+            ),
+          );
+        }
+      }
+      const prerelease = entry.value.prerelease;
+      if (prerelease !== undefined && typeof prerelease !== "boolean") {
+        diagnostics.push(
+          error(
+            "manifest.type",
+            `${entry.path}.prerelease`,
+            "expected a boolean",
+          ),
+        );
+      }
+    } else {
+      diagnostics.push(
+        error(
+          "manifest.type",
+          entry.path,
+          "expected a version range string or a table with version/prerelease",
+        ),
+      );
     }
   }
 }

@@ -9,30 +9,23 @@
  * makes the linter's verdict and the resolver's verdict the same decision for
  * any input.
  *
- * Accepted grammar (the mock host's comparator model, not a general SemVer
- * range library):
+ * Accepted grammar aligned with the canonical resolver (Package Follow-up RFC):
  *
- *   range    = clause ("," clause)*
+ *   range    = clause ("," clause)*  [at most 16 clauses]
  *   clause   = [operator] [SP] version
- *   operator = "=" | "==" | ">=" | "<=" | ">" | "<" | "^" | "~"  (default "=")
- *   version  = MAJOR ["." MINOR ["." PATCH]]   (missing parts default to 0)
+ *   operator = "=" | "==" | ">=" | "<=" | ">" | "<" | "^" | "~"  (default "=", `==` normalizes to `=`)
+ *   version  = MAJOR ["." MINOR ["." PATCH]]
  *
- * Every clause is trimmed, so whitespace is allowed around operators and
- * commas but not inside an operator or a version, and a missing operator means
- * exact equality. Missing segments are shorthand for zero (`^1.0` is
- * `^1.0.0`; `>=2.30` is `>=2.30.0`). Prerelease and build segments (`-rc.1`,
- * `+build`) are not part of the comparator model and are rejected here; the
- * concrete `plugin.version` field is a separate SemVer 2 check in
- * `src/manifest.ts`. The byte bound is part of the grammar so the resolver
- * rejects an over-long range exactly like the linter does.
+ * Missing MINOR/PATCH default to 0 (e.g., `^1.0` means `^1.0.0`).
+ * Leading zeros are forbidden.
+ * Prerelease and build segments (`-rc.1`, `+build`) are not part of the
+ * comparator model and are rejected in ranges; the concrete `plugin.version`
+ * field is a separate SemVer 2 check in `src/manifest.ts`.
  *
  * Evaluation mirrors the reference host resolver's `expand_caret` /
  * `expand_tilde` (`bitty/crates/bitty-package` `requirement.rs`): `^1.2.3`
  * means `>=1.2.3 <2.0.0`, `^0.2.3` means `>=0.2.3 <0.3.0`, `^0.0.3` means
- * `=0.0.3`, and `~1.2.3` means `>=1.2.3 <1.3.0`. Structural acceptance stays
- * this module's linter contract and intentionally differs from the resolver's
- * stricter grammar only in the documented, ecosystem-compatible directions
- * (`docs/manifest.md` "Known gaps and open questions").
+ * `=0.0.3`, and `~1.2.3` means `>=1.2.3 <1.3.0`.
  */
 
 import { MAX_VERSION_REQ_LEN } from "./schema.js";
@@ -42,10 +35,15 @@ export interface ParsedVersion {
   readonly major: number;
   readonly minor: number;
   readonly patch: number;
+  readonly prerelease?: string;
+  readonly build?: string;
 }
 
 /** Accepted comparator operators; `==` normalizes to `=`. */
 export type VersionRangeOperator = "=" | ">=" | "<=" | ">" | "<" | "^" | "~";
+
+/** Maximum comparator clauses per canonical resolver contract. */
+const MAX_CLAUSES = 16;
 
 /** One parsed comparator clause. */
 export interface VersionRangeClause {
@@ -60,7 +58,8 @@ export type VersionRangeParse =
 
 const COMPARATOR =
   /^(>=|<=|==|=|>|<|\^|~)?[ \t]*(\d+)(?:\.(\d+))?(?:\.(\d+))?$/;
-const CONCRETE_VERSION = /^(\d+)\.(\d+)\.(\d+)$/;
+const CONCRETE_VERSION =
+  /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+([0-9A-Za-z.-]+))?$/;
 
 /** UTF-8 byte length, matching the reference host's `str::len()` bounds. */
 function byteLength(value: string): number {
@@ -72,14 +71,31 @@ function quote(raw: string): string {
 }
 
 function buildVersion(
-  major: string | undefined,
+  major: string,
   minor: string | undefined,
   patch: string | undefined,
+  prerelease?: string,
+  build?: string,
 ): ParsedVersion {
+  const majorNum = major;
+  const minorNum = minor ?? "0";
+  const patchNum = patch ?? "0";
+
+  // Reject leading zeros per canonical grammar
+  if (
+    (majorNum.length > 1 && majorNum[0] === "0") ||
+    (minorNum.length > 1 && minorNum[0] === "0") ||
+    (patchNum.length > 1 && patchNum[0] === "0")
+  ) {
+    throw new Error("leading zeros forbidden");
+  }
+
   return {
-    major: Number(major ?? "0"),
-    minor: Number(minor ?? "0"),
-    patch: Number(patch ?? "0"),
+    major: Number(majorNum),
+    minor: Number(minorNum),
+    patch: Number(patchNum),
+    ...(prerelease && { prerelease }),
+    ...(build && { build }),
   };
 }
 
@@ -101,8 +117,15 @@ export function parseVersionRange(raw: string): VersionRangeParse {
       problem: `too long (${bytes} > ${MAX_VERSION_REQ_LEN})`,
     };
   }
+  const parts = raw.split(",");
+  if (parts.length > MAX_CLAUSES) {
+    return {
+      ok: false,
+      problem: `too many clauses (${parts.length} > ${MAX_CLAUSES})`,
+    };
+  }
   const clauses: VersionRangeClause[] = [];
-  for (const entry of raw.split(",")) {
+  for (const entry of parts) {
     const clause = entry.trim();
     const match = COMPARATOR.exec(clause);
     if (match === null) {
@@ -112,11 +135,20 @@ export function parseVersionRange(raw: string): VersionRangeParse {
       };
     }
     const rawOperator = match[1] ?? "=";
-    clauses.push({
-      operator:
-        rawOperator === "==" ? "=" : (rawOperator as VersionRangeOperator),
-      version: buildVersion(match[2], match[3], match[4]),
-    });
+    // Normalize `==` to `=` for compatibility
+    const operator =
+      rawOperator === "==" ? "=" : (rawOperator as VersionRangeOperator);
+    try {
+      clauses.push({
+        operator,
+        version: buildVersion(match[2]!, match[3], match[4]),
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        problem: `clause ${quote(clause)}: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
   }
   return { ok: true, clauses };
 }
@@ -133,24 +165,37 @@ export function versionRangeProblem(raw: string): string | undefined {
 }
 
 /**
- * Parse one concrete `MAJOR.MINOR.PATCH` version.
+ * Parse one concrete `MAJOR.MINOR.PATCH[-prerelease][+build]` version.
  *
- * Concrete versions stay strict three-segment numeric to match the previous
- * resolver behavior; the manifest's `plugin.version` SemVer 2 check remains
- * separate.
+ * Concrete versions require strict three-segment numeric with optional
+ * prerelease and build metadata per SemVer 2.
  */
 export function parseConcreteVersion(raw: string): ParsedVersion | undefined {
   const match = CONCRETE_VERSION.exec(raw);
   if (match === null) {
     return undefined;
   }
-  return buildVersion(match[1], match[2], match[3]);
+  try {
+    return buildVersion(match[1]!, match[2]!, match[3]!, match[4], match[5]);
+  } catch {
+    return undefined;
+  }
 }
 
 function compareVersions(left: ParsedVersion, right: ParsedVersion): number {
   if (left.major !== right.major) return left.major < right.major ? -1 : 1;
   if (left.minor !== right.minor) return left.minor < right.minor ? -1 : 1;
   if (left.patch !== right.patch) return left.patch < right.patch ? -1 : 1;
+
+  // Prerelease comparison per SemVer: version with prerelease < version without
+  if (left.prerelease && !right.prerelease) return -1;
+  if (!left.prerelease && right.prerelease) return 1;
+  if (left.prerelease && right.prerelease) {
+    if (left.prerelease < right.prerelease) return -1;
+    if (left.prerelease > right.prerelease) return 1;
+  }
+
+  // Build metadata is ignored for precedence per SemVer
   return 0;
 }
 
