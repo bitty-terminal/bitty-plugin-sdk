@@ -116,9 +116,10 @@ function BittyCommandsNamespace.register(def) end
 ---@field sequence integer Monotonic delivery sequence.
 ---@field payload BittyEventPayload Immutable payload copy, never a live core object.
 
---- Observation and lifecycle return values are ignored; interception handlers return false to veto
---- and anything else to approve.
----@alias BittyEventHandler fun(event: BittyEvent): boolean|nil
+--- Observation and lifecycle return values are ignored; interception handlers return the literal
+--- false to veto and any other value (including nil) to approve, so the shared handler result
+--- domain is any.
+---@alias BittyEventHandler fun(event: BittyEvent): any
 
 --- Event subscription surface (L1). Subscriptions must match manifest-declared event types.
 ---@class BittyEventsNamespace

@@ -1840,10 +1840,18 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
       denial(() =>
         host.bitty.ui.mount("top", {
           kind: "Text",
-          text: "x".repeat(MOCK_LIMITS.SNAPSHOT_MAX_BYTES),
+          text: "x".repeat(MOCK_LIMITS.UI_MAX_TEXT_BYTES + 1),
         }),
       ).code,
     ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+    // A component at exactly the text cap is accepted (the host's semantic
+    // text budget runs before the generous marshalling byte cap).
+    expect(
+      typeof host.bitty.ui.mount("top", {
+        kind: "Text",
+        text: "x".repeat(MOCK_LIMITS.UI_MAX_TEXT_BYTES),
+      }),
+    ).toBe("number");
     expect(
       denial(() => host.bitty.ui.mount("nowhere", { kind: "Text", text: "x" }))
         .code,
@@ -2620,5 +2628,485 @@ describe("tools.git activation (Layer-2 CTX-0425)", () => {
     const host = new MockHost({ manifestSource: MANIFEST });
     host.beginActivation();
     expect(host.currentState).toBe("activating");
+  });
+});
+
+describe("mock boundary hardening (SDK-006..SDK-012)", () => {
+  test("schema-less dispatch normalizes bridge values (SDK-006)", () => {
+    const host = makeHost();
+    host.beginActivation();
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      run: (args) => args,
+    });
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => undefined,
+    });
+    host.endActivation();
+
+    // Cyclic args are rejected even with no args_schema.
+    const cyclicArgs: Record<string, unknown> = {};
+    cyclicArgs["self"] = cyclicArgs;
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", cyclicArgs))
+        .code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+
+    // Non-plain prototypes are rejected.
+    expect(
+      denial(() =>
+        host.dispatchCommand("conformance.basic:echo", { d: new Date() }),
+      ).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+    expect(
+      denial(() =>
+        host.dispatchCommand("conformance.basic:echo", { m: new Map() }),
+      ).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+
+    // Non-data scalar args are rejected.
+    expect(
+      denial(() =>
+        host.dispatchCommand("conformance.basic:echo", { fn: () => null }),
+      ).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", { big: 10n }))
+        .code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+    expect(
+      denial(() =>
+        host.dispatchCommand("conformance.basic:echo", {
+          n: Number.POSITIVE_INFINITY,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+
+    // Over-deep args are rejected independently of a schema.
+    const deep: Record<string, unknown> = {};
+    let cursor = deep;
+    for (let i = 0; i < MOCK_LIMITS.BRIDGE_MAX_DEPTH + 1; i += 1) {
+      const next: Record<string, unknown> = {};
+      cursor["child"] = next;
+      cursor = next;
+    }
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", deep)).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+
+    // Over-byte args are rejected independently of a schema.
+    expect(
+      denial(() =>
+        host.dispatchCommand("conformance.basic:echo", {
+          blob: "x".repeat(MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES + 1),
+        }),
+      ).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+
+    // Over-node args are rejected independently of a schema.
+    const wide = {
+      items: Array.from({ length: MOCK_LIMITS.BRIDGE_MAX_NODES + 1 }, () => 0),
+    };
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", wide)).code,
+    ).toBe(HOST_CODES.ARGS_INVALID);
+
+    // A Lua `nil` return marshals to `undefined` and is a valid empty result.
+    expect(host.dispatchCommand("conformance.basic:hello", {})).toBeUndefined();
+  });
+
+  test("a huge string arg is byte-bounded during the scan, not serialized (SDK-006)", () => {
+    const host = makeHost();
+    host.beginActivation();
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      run: (args) => args,
+    });
+    host.endActivation();
+    // A single 32 MiB string leaf passes the node/depth caps; the byte counter
+    // rejects it with the typed bridge bound before `JSON.stringify` runs.
+    const diagnostic = denial(() =>
+      host.dispatchCommand("conformance.basic:echo", {
+        blob: "x".repeat(32 * 1024 * 1024),
+      }),
+    );
+    expect(diagnostic.code).toBe(HOST_CODES.ARGS_INVALID);
+    expect(diagnostic.message).toBe(
+      `args: value exceeds ${MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES} bytes`,
+    );
+  });
+
+  test("schema-less command results cross the same bounded bridge (SDK-006)", () => {
+    const host = makeHost();
+    host.beginActivation();
+    let result: unknown = { ok: true };
+    host.bitty.commands.register({
+      id: "echo",
+      title: "Echo",
+      run: () => result,
+    });
+    host.endActivation();
+    expect(host.dispatchCommand("conformance.basic:echo", {})).toEqual({
+      ok: true,
+    });
+
+    result = { d: new Date() };
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", {})).code,
+    ).toBe(HOST_CODES.RESULT_INVALID);
+
+    const cyclicResult: Record<string, unknown> = {};
+    cyclicResult["self"] = cyclicResult;
+    result = cyclicResult;
+    expect(
+      denial(() => host.dispatchCommand("conformance.basic:echo", {})).code,
+    ).toBe(HOST_CODES.RESULT_INVALID);
+  });
+
+  test("reentrant disposal is idempotent and never double-delivers (SDK-007)", () => {
+    const host = makeHost();
+    activate(host);
+    const received: string[] = [];
+    let reentered = false;
+    host.bitty.events.subscribe("plugin.disposed", () => {
+      received.push("disposed");
+      if (!reentered) {
+        reentered = true;
+        host.dispose();
+      }
+    });
+    host.endActivation();
+    host.dispose();
+    expect(received).toEqual(["disposed"]);
+    expect(host.currentState).toBe("disposed");
+    expect(host.handlerViolations).toHaveLength(0);
+
+    // The event is still observed before generation invalidation: the
+    // handler can read the store during disposal.
+    const reloaded = makeHost();
+    activate(reloaded);
+    reloaded.bitty.store.set("seen", 1);
+    const observed: unknown[] = [];
+    reloaded.bitty.events.subscribe("plugin.disposed", () => {
+      observed.push(reloaded.bitty.store.get("seen"));
+      reloaded.dispose();
+    });
+    reloaded.endActivation();
+    reloaded.dispose();
+    expect(observed).toEqual([1]);
+  });
+
+  test("task draining stops at a generation boundary (SDK-008)", () => {
+    const host = makeHost();
+    activate(host);
+    const calls: string[] = [];
+    host.bitty.tasks.spawn(() => {
+      calls.push("old-first");
+      host.suspend();
+      host.dispose();
+      host.beginActivation();
+      host.bitty.tasks.spawn(() => calls.push("new-generation"));
+      host.endActivation();
+    });
+    host.bitty.tasks.spawn(() => calls.push("old-second"));
+    host.endActivation();
+    host.drainTasks();
+    // The old-generation drain must not run the newly queued task.
+    expect(calls).toEqual(["old-first"]);
+    // The new generation's own drain runs it once.
+    host.drainTasks();
+    expect(calls).toEqual(["old-first", "new-generation"]);
+  });
+
+  test("command callback faults enter the error boundary and record a violation (SDK-009)", () => {
+    const host = makeHost();
+    activate(host);
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => {
+        throw new Error("command exploded");
+      },
+    });
+    const received: string[] = [];
+    host.bitty.events.subscribe("handler.violation", (event) => {
+      received.push(event.kind);
+    });
+    host.endActivation();
+    const diagnostic = denial(() =>
+      host.dispatchCommand("conformance.basic:hello", {}),
+    );
+    expect(diagnostic.class).toBe("runtime");
+    expect(diagnostic.code).toBe(HOST_CODES.COMMAND_CALLBACK_FAILED);
+    expect(diagnostic.message).toContain("command exploded");
+    expect(host.handlerViolations).toHaveLength(1);
+    expect(host.handlerViolations[0]?.code).toBe(HOST_CODES.HANDLER_VIOLATION);
+    // The violation is delivered through the shared `recordViolation` path.
+    expect(received).toEqual(["handler.violation"]);
+  });
+
+  test("identity event fields are nonnegative safe integers while exit_code stays signed (SDK-010)", () => {
+    const host = makeHost();
+    activate(host);
+    host.endActivation();
+
+    // Accepted signed status: a negative exit_code is valid.
+    expect(
+      host.publish("process.exited", {
+        terminal_id: 1,
+        runtime_id: 2,
+        exit_code: -9,
+      }),
+    ).toEqual({ delivered: 0, vetoed: false });
+    expect(
+      host.publish("process.exited", {
+        terminal_id: 1,
+        runtime_id: 2,
+        exit_code: 0,
+      }),
+    ).toEqual({ delivered: 0, vetoed: false });
+    // The accepted status is `i32` (`bitty-runtime` `registry.rs`): both
+    // bounds are accepted...
+    for (const exitCode of [
+      MOCK_LIMITS.EXIT_CODE_MIN,
+      MOCK_LIMITS.EXIT_CODE_MAX,
+    ]) {
+      expect(
+        host.publish("process.exited", {
+          terminal_id: 1,
+          runtime_id: 2,
+          exit_code: exitCode,
+        }),
+      ).toEqual({ delivered: 0, vetoed: false });
+    }
+    // ...values outside the signed 32-bit range are rejected.
+    for (const exitCode of [
+      MOCK_LIMITS.EXIT_CODE_MIN - 1,
+      MOCK_LIMITS.EXIT_CODE_MAX + 1,
+      1.5,
+    ]) {
+      expect(
+        denial(() =>
+          host.publish("process.exited", {
+            terminal_id: 1,
+            runtime_id: 2,
+            exit_code: exitCode,
+          }),
+        ).code,
+      ).toBe(HOST_CODES.EVENT_PAYLOAD_INVALID);
+    }
+
+    for (const bad of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(
+        denial(() =>
+          host.publish("terminal.opened", {
+            terminal_id: bad,
+            runtime_id: 1,
+            generation: 1,
+          }),
+        ).code,
+      ).toBe(HOST_CODES.EVENT_PAYLOAD_INVALID);
+      expect(
+        denial(() =>
+          host.publish("terminal.opened", {
+            terminal_id: 1,
+            runtime_id: bad,
+            generation: 1,
+          }),
+        ).code,
+      ).toBe(HOST_CODES.EVENT_PAYLOAD_INVALID);
+    }
+    // Zero and the max safe integer are accepted identities.
+    expect(
+      host.publish("terminal.opened", {
+        terminal_id: 0,
+        runtime_id: Number.MAX_SAFE_INTEGER,
+        generation: 1,
+      }),
+    ).toEqual({ delivered: 0, vetoed: false });
+
+    host.grant("terminal.semantic-read");
+    for (const bad of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(
+        denial(() => host.bitty.terminal.snapshot({ terminal_id: bad })).code,
+      ).toBe(HOST_CODES.DEF_INVALID);
+    }
+    expect(host.bitty.terminal.snapshot({ terminal_id: 0 })).toBeInstanceOf(
+      Object,
+    );
+  });
+
+  test("UI node budget rejects 2049 nodes and accepts 2048 (SDK-011)", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    const children = (count: number): Record<string, unknown>[] =>
+      Array.from({ length: count }, () => ({ kind: "Text", text: "" }));
+    // 2048 nodes total: the Row wrapper plus 2047 leaves.
+    expect(
+      typeof host.bitty.ui.mount("top", {
+        kind: "Row",
+        children: children(MOCK_LIMITS.UI_MAX_NODES - 1),
+      }),
+    ).toBe("number");
+    // 2049 nodes: Row plus 2048 leaves.
+    expect(
+      denial(() =>
+        host.bitty.ui.mount("top", {
+          kind: "Row",
+          children: children(MOCK_LIMITS.UI_MAX_NODES),
+        }),
+      ).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+  });
+
+  test("a single 65-child / ~2000-node scene is one block, not 64 (SDK-011)", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    // A 65-child Row plus nested Text leaves totals under UI_MAX_NODES and is
+    // a single mounted block: the draft wrongly counted one block per node.
+    const children: Record<string, unknown>[] = [];
+    for (let i = 0; i < 65; i += 1) {
+      const grandchildren = Array.from({ length: 30 }, () => ({
+        kind: "Text",
+        text: "x",
+      }));
+      children.push({ kind: "Column", children: grandchildren });
+    }
+    const scene = { kind: "Row", children };
+    const nodes = 1 + 65 * (1 + 30);
+    expect(nodes).toBeGreaterThan(2000);
+    expect(nodes).toBeLessThanOrEqual(MOCK_LIMITS.UI_MAX_NODES);
+    // The whole scene is one mounted block and is accepted.
+    expect(typeof host.bitty.ui.mount("top", scene as never)).toBe("number");
+  });
+
+  test("UI block budget is per generation: 64 accepted, 65 rejected (SDK-011)", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    for (let i = 0; i < MOCK_LIMITS.UI_MAX_BLOCKS; i += 1) {
+      expect(
+        typeof host.bitty.ui.mount("top", { kind: "Text", text: "x" }),
+      ).toBe("number");
+    }
+    const diagnostic = denial(() =>
+      host.bitty.ui.mount("top", { kind: "Text", text: "x" }),
+    );
+    expect(diagnostic.class).toBe("budget");
+    expect(diagnostic.code).toBe(HOST_CODES.UI_BLOCK_BUDGET);
+
+    // A fresh generation resets the per-generation block budget (consent is
+    // per generation, so re-authorize after reloading).
+    host.endActivation();
+    host.dispose();
+    activate(host);
+    host.grant("ui.rich");
+    expect(typeof host.bitty.ui.mount("top", { kind: "Text", text: "x" })).toBe(
+      "number",
+    );
+  });
+
+  test("UI aggregate text budget accounts updates as a delta (SDK-011)", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    const chunk = 200 * 1024;
+    let last = 0;
+    for (let i = 0; i < 10; i += 1) {
+      last = host.bitty.ui.mount("top", {
+        kind: "Text",
+        text: "x".repeat(chunk),
+      });
+    }
+    // 2,000 KiB retained; another 200 KiB mount would cross the 2 MiB cap.
+    expect(
+      denial(() =>
+        host.bitty.ui.mount("top", { kind: "Text", text: "x".repeat(chunk) }),
+      ).code,
+    ).toBe(HOST_CODES.UI_BLOCK_BUDGET);
+
+    // Shrinking the block releases aggregate budget.
+    expect(host.bitty.ui.update(last, { kind: "Text", text: "x" })).toBe(true);
+    const remaining = MOCK_LIMITS.UI_MAX_AGGREGATED_TEXT_BYTES - 9 * chunk;
+    // Growing it one byte past the released budget is rejected...
+    expect(
+      denial(() =>
+        host.bitty.ui.update(last, {
+          kind: "Text",
+          text: "x".repeat(remaining + 1),
+        }),
+      ).code,
+    ).toBe(HOST_CODES.UI_BLOCK_BUDGET);
+    // ...and the last good block is retained: the exactly-at-cap value works.
+    expect(
+      host.bitty.ui.update(last, {
+        kind: "Text",
+        text: "x".repeat(remaining),
+      }),
+    ).toBe(true);
+  });
+
+  test("command metadata byte/type bounds (SDK-012)", () => {
+    const accepting = makeHost();
+    activate(accepting);
+    // Exactly 128-byte title and 1024-byte description are accepted.
+    expect(
+      typeof accepting.bitty.commands.register({
+        id: "hello",
+        title: "x".repeat(MOCK_LIMITS.COMMAND_TITLE_MAX_BYTES),
+        description: "d".repeat(MOCK_LIMITS.COMMAND_DESCRIPTION_MAX_BYTES),
+        run: () => null,
+      }),
+    ).toBe("number");
+    // Multibyte content is measured in UTF-8 bytes, not code units.
+    expect(
+      typeof accepting.bitty.commands.register({
+        id: "echo",
+        title: "\u00e9".repeat(64),
+        run: () => null,
+      }),
+    ).toBe("number");
+    accepting.endActivation();
+
+    const rejecting = makeHost();
+    activate(rejecting);
+    expect(
+      denial(() =>
+        rejecting.bitty.commands.register({
+          id: "hello",
+          title: "x".repeat(MOCK_LIMITS.COMMAND_TITLE_MAX_BYTES + 1),
+          run: () => null,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.DEF_INVALID);
+    expect(
+      denial(() =>
+        rejecting.bitty.commands.register({
+          id: "echo",
+          title: "t",
+          description: "d".repeat(
+            MOCK_LIMITS.COMMAND_DESCRIPTION_MAX_BYTES + 1,
+          ),
+          run: () => null,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.DEF_INVALID);
+    expect(
+      denial(() =>
+        rejecting.bitty.commands.register({
+          id: "echo",
+          title: "t",
+          description: 5 as never,
+          run: () => null,
+        }),
+      ).code,
+    ).toBe(HOST_CODES.DEF_INVALID);
+    rejecting.endActivation();
   });
 });

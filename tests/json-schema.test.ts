@@ -444,4 +444,170 @@ describe("json-schema validation", () => {
       );
     });
   });
+
+  describe("fail-closed hostile schema values (SDK-005)", () => {
+    test("cyclic schemas fail typed instead of throwing a native TypeError", () => {
+      const cyclic: Record<string, unknown> = { type: "object" };
+      cyclic["properties"] = { self: cyclic };
+      expect(schemaProblem(cyclic)).toBe(
+        "$: schema contains a cyclic reference",
+      );
+
+      const cyclicItems: Record<string, unknown> = {
+        type: "array",
+        items: {},
+      };
+      (cyclicItems["items"] as Record<string, unknown>)["properties"] = {
+        loop: cyclicItems["items"],
+      };
+      expect(schemaProblem(cyclicItems)).toBe(
+        "$: schema contains a cyclic reference",
+      );
+    });
+
+    test("cyclic enum and default values are rejected", () => {
+      const cyclicEnumValue: Record<string, unknown> = {};
+      cyclicEnumValue["self"] = cyclicEnumValue;
+      expect(schemaProblem({ type: "string", enum: [cyclicEnumValue] })).toBe(
+        "$: schema contains a cyclic reference",
+      );
+
+      const cyclicDefault: Record<string, unknown> = {};
+      cyclicDefault["self"] = cyclicDefault;
+      expect(
+        schemaProblem({
+          type: "object",
+          additionalProperties: false,
+          default: cyclicDefault,
+        }),
+      ).toBe("$: schema contains a cyclic reference");
+    });
+
+    test("prototype-plain objects only: Date, Map, and Set are rejected", () => {
+      expect(
+        schemaProblem({
+          type: "object",
+          additionalProperties: false,
+          default: new Date(),
+        }),
+      ).toBe("$.default: value contains a non-plain object");
+      expect(schemaProblem({ enum: [new Map()] })).toBe(
+        "$.enum[0]: value contains a non-plain object",
+      );
+      expect(schemaProblem({ type: "object", default: new Set() })).toBe(
+        "$.default: value contains a non-plain object",
+      );
+    });
+
+    test("an empty type union is rejected", () => {
+      expect(schemaProblem({ type: [] })).toBe(
+        "$.type: type union must not be empty",
+      );
+    });
+
+    test("enum members must be bounded JSON data", () => {
+      expect(schemaProblem({ enum: [Number.NaN] })).toBe(
+        "$.enum[0]: value contains a non-finite number",
+      );
+      expect(schemaProblem({ enum: [undefined] })).toBe(
+        "$.enum[0]: value is not JSON-compatible data",
+      );
+      expect(schemaProblem({ enum: [10n] })).toBe(
+        "$.enum[0]: value is not JSON-compatible data",
+      );
+      expect(schemaProblem({ enum: [() => null] })).toBe(
+        "$.enum[0]: value is not JSON-compatible data",
+      );
+      expect(schemaProblem({ enum: [{ nested: new Date() }] })).toBe(
+        "$.enum[0]: value contains a non-plain object",
+      );
+    });
+
+    test("default values must be bounded JSON data", () => {
+      expect(
+        schemaProblem({
+          type: "object",
+          additionalProperties: false,
+          default: { nested: [Number.POSITIVE_INFINITY] },
+        }),
+      ).toBe("$.default: value contains a non-finite number");
+    });
+
+    test("acyclic shared enum subtrees are not mistaken for cycles", () => {
+      const shared: Record<string, unknown> = { kind: "Text" };
+      expect(
+        schemaProblem({ type: "string", enum: [shared, shared] }),
+      ).toBeUndefined();
+    });
+
+    test("over-deep schemas are rejected before serialization", () => {
+      let schema: Record<string, unknown> = { type: "string" };
+      for (let level = 0; level <= 16; level += 1) {
+        schema = {
+          type: "object",
+          additionalProperties: false,
+          properties: { child: schema },
+        };
+      }
+      expect(schemaProblem(schema)).toBe("$: schema depth exceeds 16");
+    });
+
+    test("a schema at the semantic depth limit is still accepted", () => {
+      // 15 object wrappers over a scalar leaf: semantic depth 16.
+      let schema: Record<string, unknown> = { type: "string" };
+      for (let level = 0; level < 15; level += 1) {
+        schema = {
+          type: "object",
+          additionalProperties: false,
+          properties: { child: schema },
+        };
+      }
+      expect(schemaProblem(schema)).toBeUndefined();
+    });
+
+    test("a deep cyclic chain is bounded instead of overflowing the stack", () => {
+      const root: Record<string, unknown> = {
+        type: "object",
+        additionalProperties: false,
+      };
+      let cursor = root;
+      for (let level = 0; level < 40; level += 1) {
+        const next: Record<string, unknown> = {
+          type: "object",
+          additionalProperties: false,
+        };
+        cursor["properties"] = { child: next };
+        cursor = next;
+      }
+      // Close the chain back to the root, far past the generic scan ceiling.
+      cursor["properties"] = { loop: root };
+      expect(schemaProblem(root)).toBe("$: schema depth exceeds 16");
+    });
+
+    test("a huge string enum member is byte-bounded without serialization", () => {
+      // A single member over the schema byte cap would be serialized by the
+      // old unbounded path; the scan rejects it first with the typed bound.
+      expect(
+        schemaProblem({ type: "string", enum: ["x".repeat(64 * 1024)] }),
+      ).toBe("$: schema exceeds 16384 bytes");
+      // 1200 members of ~512 KiB each would be ~600 MiB if serialized; the
+      // byte cap is exceeded during the scan, before any `JSON.stringify`.
+      const member = "x".repeat(512 * 1024);
+      const enumMembers = Array.from({ length: 1200 }, () => member);
+      expect(schemaProblem({ type: "string", enum: enumMembers })).toBe(
+        "$: schema exceeds 16384 bytes",
+      );
+    });
+
+    test("a huge string default is byte-bounded without serialization", () => {
+      const huge = "x".repeat(64 * 1024 * 1024);
+      expect(
+        schemaProblem({
+          type: "object",
+          additionalProperties: false,
+          default: huge,
+        }),
+      ).toBe("$: schema exceeds 16384 bytes");
+    });
+  });
 });

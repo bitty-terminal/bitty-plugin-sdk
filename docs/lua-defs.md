@@ -96,6 +96,11 @@ Semantics the annotations carry:
   closed event-name set, and the accepted snapshot attribute vocabulary.
 - Handles are generation-owned integers; all handles from a disposed
   generation fail closed.
+- `BittyEventHandler` returns `any`: observation and lifecycle return values
+  are ignored, and interception handlers veto only with the literal `false`
+  and approve with any other value (including `nil`), so a boolean-only result
+  would reject valid callbacks statically. The `subscribe` doc comment keeps
+  the veto/approve semantics.
 - Annotations list the capability gate and the accepted error codes for each
   function where the accepted corpus names them.
 

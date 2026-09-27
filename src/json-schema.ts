@@ -10,6 +10,12 @@
  * so the mock host is never more permissive than the accepted contract.
  */
 
+import {
+  isPlainObject,
+  jsonBytes,
+  scanStructure,
+  utf8Bytes,
+} from "./bounded-value.js";
 import { MOCK_LIMITS } from "./host-surface.js";
 
 /** JSON-compatible value. */
@@ -68,16 +74,42 @@ const UNSUPPORTED_KEYWORDS: ReadonlySet<string> = new Set([
   "prefixItems",
 ]);
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+/**
+ * Generic depth ceiling for one whole schema table.
+ *
+ * One semantic schema level (a `properties`/`items` edge) expands to at most
+ * two generic JSON levels (the keyword wrapper plus the child table), so the
+ * accepted semantic depth of {@link MOCK_LIMITS.COMMAND_SCHEMA_MAX_DEPTH} maps
+ * to roughly twice that plus the root. The small constant margin keeps the
+ * bound independent of the exact keyword shape; callers still enforce the
+ * semantic depth separately.
+ */
+const SCHEMA_DATA_MAX_DEPTH = 2 * MOCK_LIMITS.COMMAND_SCHEMA_MAX_DEPTH + 4;
 
-function utf8Bytes(value: string): number {
-  return Buffer.byteLength(value, "utf8");
-}
-
-function jsonBytes(value: unknown): number {
-  return utf8Bytes(JSON.stringify(value) ?? "");
+/**
+ * Validate one bounded JSON-compatible datum embedded in a schema (`enum`
+ * member or `default` value). Returns `undefined` when the value is accepted.
+ *
+ * The scan counts bytes under the schema byte cap, so a huge string member is
+ * rejected here instead of being serialized.
+ */
+function schemaValueProblem(value: unknown, path: string): string | undefined {
+  const scan = scanStructure(
+    value,
+    SCHEMA_DATA_MAX_DEPTH,
+    MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES,
+    MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES,
+  );
+  if (scan.cycle) return `${path}: value contains a cyclic reference`;
+  if (scan.problem !== undefined) return `${path}: ${scan.problem}`;
+  if (
+    scan.depth > SCHEMA_DATA_MAX_DEPTH ||
+    scan.nodes > MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES ||
+    scan.bytes > MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES
+  ) {
+    return `${path}: value exceeds ${MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES} bytes`;
+  }
+  return undefined;
 }
 
 /** Structural depth of the schema tree (scalar leaves are depth 0). */
@@ -107,13 +139,55 @@ export function schemaProblem(schema: unknown, path = "$"): string | undefined {
   if (!isPlainObject(schema)) {
     return `${path}: schema must be a table`;
   }
+  // Cycle, depth, node, and byte bounds are enforced by one bounded scan before
+  // any serialization: a cyclic schema or one whose byte count (counting every
+  // string leaf and object key) already exceeds the cap fails with a bounded
+  // problem instead of a native `JSON.stringify` throw or an OOM. Non-plain,
+  // non-finite, and unsupported leaves are reported by
+  // `schemaNodeProblem`/`schemaValueProblem` with their precise keyword paths.
+  const scan = scanStructure(
+    schema,
+    SCHEMA_DATA_MAX_DEPTH,
+    MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES,
+    MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES,
+  );
+  if (scan.cycle) {
+    return `${path}: schema contains a cyclic reference`;
+  }
+  // The bounded scan stops at `SCHEMA_DATA_MAX_DEPTH`; any chain that long is
+  // necessarily over the accepted semantic depth, and `schemaDepth` /
+  // `schemaNodeProblem` would recurse without bound (or overflow) on a long
+  // cyclic chain, so reject it here instead.
+  if (scan.depth > SCHEMA_DATA_MAX_DEPTH) {
+    return `${path}: schema depth exceeds ${MOCK_LIMITS.COMMAND_SCHEMA_MAX_DEPTH}`;
+  }
+  if (
+    scan.nodes > MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES ||
+    scan.bytes > MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES
+  ) {
+    return `${path}: schema exceeds ${MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES} bytes`;
+  }
   if (schemaDepth(schema) > MOCK_LIMITS.COMMAND_SCHEMA_MAX_DEPTH) {
     return `${path}: schema depth exceeds ${MOCK_LIMITS.COMMAND_SCHEMA_MAX_DEPTH}`;
   }
-  if (jsonBytes(schema) > MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES) {
+  // Structural validation runs before the exact byte measurement: a hostile
+  // leaf (`bigint`, `undefined`, non-plain object) is rejected with its keyword
+  // path instead of reaching a `JSON.stringify` throw.
+  const structural = schemaNodeProblem(schema, path);
+  if (structural !== undefined) return structural;
+  // Any non-data value left outside the typed keyword checks (for example a
+  // numeric `title`) is still rejected with the bounded scan problem before
+  // the exact byte measurement can throw.
+  if (scan.problem !== undefined) {
+    return `${path}: ${scan.problem}`;
+  }
+  if (
+    jsonBytes(schema, MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES) >
+    MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES
+  ) {
     return `${path}: schema exceeds ${MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES} bytes`;
   }
-  return schemaNodeProblem(schema, path);
+  return undefined;
 }
 
 function schemaNodeProblem(
@@ -138,6 +212,9 @@ function schemaNodeProblem(
         : type === undefined
           ? []
           : [""];
+  if (type !== undefined && types.length === 0) {
+    return `${path}.type: type union must not be empty`;
+  }
   for (const entry of types) {
     if (!JSON_TYPES.has(entry)) {
       return `${path}.type: unsupported type ${JSON.stringify(entry)}`;
@@ -199,8 +276,22 @@ function schemaNodeProblem(
     return `${path}.minimum: cannot exceed maximum`;
   }
 
-  if (schema.enum !== undefined && !Array.isArray(schema.enum)) {
-    return `${path}.enum: expected an array`;
+  if (schema.enum !== undefined) {
+    if (!Array.isArray(schema.enum)) {
+      return `${path}.enum: expected an array`;
+    }
+    for (let index = 0; index < schema.enum.length; index += 1) {
+      const problem = schemaValueProblem(
+        schema.enum[index],
+        `${path}.enum[${index}]`,
+      );
+      if (problem !== undefined) return problem;
+    }
+  }
+
+  if (schema.default !== undefined) {
+    const problem = schemaValueProblem(schema.default, `${path}.default`);
+    if (problem !== undefined) return problem;
   }
 
   const properties = schema.properties;

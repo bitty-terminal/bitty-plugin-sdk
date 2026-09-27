@@ -105,9 +105,11 @@ usage.
 UI surface only plus the closed v1 event set. Every surface exclusion is
 enforced textually against the generated file by `tests/lua-defs.test.ts`; the
 LuaLS negative fixture samples excluded names, the excluded `raw` scope
-literal, and wrong-shape `services.get` calls. Namespaces the host has not
-wired yet (`env`; bitty #1303, still deferred after the #1391 services
-re-wire) are generated as typed
+literal, and wrong-shape `services.get` calls. The handler alias returns `any`
+because observation/lifecycle returns are ignored and only the literal `false`
+vetoes, so `false`, `nil`, and non-boolean returns all type-check. The one
+namespace the host has not wired yet (`env`; bitty #1303, still deferred after
+the #1391 services re-wire) is generated as typed
 `E_NOT_IMPLEMENTED` stubs: still declared, never silent. LuaLS conformance runs
 locally only: CI has no `lua-language-server`, so that check skips there.
 
@@ -122,9 +124,9 @@ The Plugin API v1 mock host models the accepted `bitty` host bridge for
 conformance testing: deny-by-default capability gates with the typed
 `E_CAPABILITY_DENIED` denial, the activation-only registration window,
 generation-owned handles, the closed v1 event set, bounded command/store/UI/
-snapshot data, deferred services/env (`E_NOT_IMPLEMENTED`), and tasks/timers
-on a virtual clock. It performs no I/O, spawns no process, and opens no
-network.
+snapshot data, wired services, the deferred `env` (`E_NOT_IMPLEMENTED`), and
+tasks/timers on a virtual clock. It performs no I/O, spawns no process, and
+opens no network.
 
 ```sh
 just conformance                    # run the declarative fixture suite
