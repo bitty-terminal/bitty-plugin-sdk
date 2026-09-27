@@ -20,8 +20,8 @@
         "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
       }
     },
-    { "op": "grant", "capability": "env:FIXTURE_KEY_ONE" },
-    { "op": "grant", "capability": "env:BITTY_*" },
+    { "op": "grant", "capability": "env.read:FIXTURE_KEY_ONE" },
+    { "op": "grant", "capability": "env.read:BITTY_*" },
     {
       "op": "call",
       "surface": "env.get",

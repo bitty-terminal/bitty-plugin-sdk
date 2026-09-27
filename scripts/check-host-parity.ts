@@ -166,7 +166,7 @@ export function main(): number {
     if (envHost.bitty.env === undefined) {
       problems.push("mock bitty.env: must stay present when declared");
     } else {
-      envHost.grant("env:FIXTURE_KEY_ONE");
+      envHost.grant("env.read:FIXTURE_KEY_ONE");
       envHost.beginActivation();
       for (const [label, run] of [
         ["env.get", () => envHost.bitty.env?.get("FIXTURE_KEY_ONE")],

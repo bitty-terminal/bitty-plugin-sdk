@@ -212,15 +212,15 @@ local BittyNotifyNamespace = {}
 function BittyNotifyNamespace.show(payload) end
 
 --- Environment read surface (L1) accepted by ADR 0006. This sub-table is absent unless the manifest
---- declares an env:<KEY> capability; when declared but not granted its functions fail closed with
---- E_CAPABILITY_DENIED and never enumerate keys.
+--- declares an env.read:<KEY> capability; when declared but not granted its functions fail closed
+--- with E_CAPABILITY_DENIED and never enumerate keys.
 ---@class BittyEnvNamespace
 local BittyEnvNamespace = {}
 
 --- Reads a desensitized environment value for a bounded ASCII key matching ^[A-Z_][A-Z0-9_]*$
 --- (1..64); keys outside the allowlist return nil, indistinguishable from an unset variable.
 --- Available only when the namespace is declared.
---- Capabilities: env:<KEY>.
+--- Capabilities: env.read:<KEY>.
 --- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
 --- Errors: E_NOT_IMPLEMENTED.
 ---@param name string
@@ -229,7 +229,7 @@ function BittyEnvNamespace.get(name) end
 
 --- Reports presence without exposing the value beyond the trace surface. Available only when the
 --- namespace is declared.
---- Capabilities: env:<KEY>.
+--- Capabilities: env.read:<KEY>.
 --- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
 --- Errors: E_NOT_IMPLEMENTED.
 ---@param name string

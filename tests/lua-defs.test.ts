@@ -108,8 +108,8 @@ describe("surface table", () => {
       surface.functions.map((fn) => [fn.path, [...fn.capabilities].sort()]),
     );
     expect(gates.get("notify.show")).toEqual(["platform.notify"]);
-    expect(gates.get("env.get")).toEqual(["env:<KEY>"]);
-    expect(gates.get("env.has")).toEqual(["env:<KEY>"]);
+    expect(gates.get("env.get")).toEqual(["env.read:<KEY>"]);
+    expect(gates.get("env.has")).toEqual(["env.read:<KEY>"]);
     expect(gates.get("ui.mount")).toEqual(["ui.rich"]);
     expect(gates.get("ui.update")).toEqual(["ui.rich"]);
     expect(gates.get("terminal.snapshot")).toEqual(["terminal.semantic-read"]);

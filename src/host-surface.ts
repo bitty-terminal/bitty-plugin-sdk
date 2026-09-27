@@ -93,8 +93,8 @@ export const CAPABILITY_GATED_SURFACE: readonly CapabilityGate[] = [
   { surface: "bitty.ui.update", capability: "ui.rich" },
   { surface: "bitty.ui.mount:overlay", capability: "ui.overlay" },
   { surface: "bitty.terminal.snapshot", capability: "terminal.semantic-read" },
-  { surface: "bitty.env.get", capability: "env:<KEY>" },
-  { surface: "bitty.env.has", capability: "env:<KEY>" },
+  { surface: "bitty.env.get", capability: "env.read:<KEY>" },
+  { surface: "bitty.env.has", capability: "env.read:<KEY>" },
 ];
 
 /**
@@ -126,8 +126,8 @@ export const V1_SURFACE_FUNCTIONS: readonly string[] = [
 /** The only snapshot scope accepted in v1 (`scope = "raw"` is excluded). */
 export const SNAPSHOT_SCOPE_ONLY = "semantic";
 
-/** The `bitty.env` capability family prefix (ADR 0006). */
-export const ENV_CAPABILITY_PREFIX = "env:";
+/** The `bitty.env` capability family prefix (accepted manifest spec, section 1). */
+export const ENV_CAPABILITY_PREFIX = "env.read:";
 
 /** Closed set of accepted UI slots. */
 export const UI_SLOTS: readonly string[] = [

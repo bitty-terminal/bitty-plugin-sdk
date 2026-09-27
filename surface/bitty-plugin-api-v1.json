@@ -416,7 +416,7 @@
       "name": "BittyEnvNamespace",
       "kind": "class",
       "optional": true,
-      "doc": "Environment read surface (L1) accepted by ADR 0006. This sub-table is absent unless the manifest declares an env:<KEY> capability; when declared but not granted its functions fail closed with E_CAPABILITY_DENIED and never enumerate keys."
+      "doc": "Environment read surface (L1) accepted by ADR 0006. This sub-table is absent unless the manifest declares an env.read:<KEY> capability; when declared but not granted its functions fail closed with E_CAPABILITY_DENIED and never enumerate keys."
     },
     {
       "name": "BittyServiceGetOpts",
@@ -857,7 +857,7 @@
     {
       "path": "env.get",
       "level": "L1",
-      "capabilities": ["env:<KEY>"],
+      "capabilities": ["env.read:<KEY>"],
       "errors": ["E_NOT_IMPLEMENTED"],
       "doc": "Reads a desensitized environment value for a bounded ASCII key matching ^[A-Z_][A-Z0-9_]*$ (1..64); keys outside the allowlist return nil, indistinguishable from an unset variable. Available only when the namespace is declared.",
       "params": [{ "name": "name", "type": "string" }],
@@ -866,7 +866,7 @@
     {
       "path": "env.has",
       "level": "L1",
-      "capabilities": ["env:<KEY>"],
+      "capabilities": ["env.read:<KEY>"],
       "errors": ["E_NOT_IMPLEMENTED"],
       "doc": "Reports presence without exposing the value beyond the trace surface. Available only when the namespace is declared.",
       "params": [{ "name": "name", "type": "string" }],
