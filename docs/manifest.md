@@ -301,7 +301,7 @@ validation instead of being ignored. Parameterized heads must carry a
 | `panel`     | `panel.provider`, `panel.create`, `panel.focus`, `panel.overlay`                                              |
 | `browser`   | `browser.embed`, `browser.navigation`, `browser.file-url`, `browser.storage`                                  |
 | `agent`     | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`                                 |
-| `env`       | `env:KEY`, `env:BITTY_*`                                                                                      |
+| `env`       | `env.read:KEY`, `env.read:PREFIX_*`                                                                           |
 | `mcp`       | `mcp.invoke:TOOL`                                                                                             |
 | `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                        |
 
@@ -331,22 +331,24 @@ Least-privilege guidance (RFC capability rule 3):
 
 - No `[capabilities]` table means no authority; add one capability at a time
   only when the plugin actually needs it.
-- Prefer the narrowest declaration: an exact `env:KEY` over `env:BITTY_*`, a
-  specific filesystem path pattern over a broad home-directory glob, and a
-  concrete `process.spawn` / `network.connect` / `mcp.invoke` parameter over a
-  general one.
+- Prefer the narrowest declaration: an exact `env.read:KEY` over
+  `env.read:PREFIX_*`, a specific filesystem path pattern over a broad
+  home-directory glob, and a concrete `process.spawn` / `network.connect` /
+  `mcp.invoke` parameter over a general one.
 - High-risk heads are presented distinctly at consent time; prefer a
   presentation-only capability (`ui.rich`, `platform.notify`) or a read-only
   surface (`fs.read`, `runtime.inspect`) when it suffices.
 
-The `env` family carries the ADR 0006 form: an exact key (`env:EDITOR`, keys
-matching `^[A-Z_][A-Z0-9_]*$`, at most 64 bytes) or the single accepted suffix
-pattern `env:BITTY_*` for the narrow `BITTY_` namespace. The colon requires a
-quoted TOML key (`"env:EDITOR" = true`). An `env` entry without a parameter, a
-lowercase or overlong key, or any other wildcard form is rejected. Declaring
-`env:<KEY>` makes `bitty.env` present in the plugin VM; without a grant its
-functions fail closed (ADR 0009 LUA-OQ-2), and the SDK mock host models that
-behavior (see [`docs/mock-host.md`](mock-host.md)).
+The `env` family carries the accepted `env.read:<KEY>` form (manifest
+specification, section 1): an exact key (`env.read:EDITOR`, keys matching
+`^[A-Z_][A-Z0-9_]*$`, at most 64 bytes) or a bounded uppercase prefix wildcard
+`env.read:PREFIX_*` (for example `env.read:BITTY_*`). The allow-all
+`env.read:*` and the obsolete short `env:KEY` form are rejected. The colon
+requires a quoted TOML key (`"env.read:EDITOR" = true`). An `env.read` entry
+without a parameter, a lowercase or overlong key, or any other wildcard form is
+rejected. Declaring `env.read:<KEY>` makes `bitty.env` present in the plugin VM;
+without a grant its functions fail closed (ADR 0009 LUA-OQ-2), and the SDK mock
+host models that behavior (see [`docs/mock-host.md`](mock-host.md)).
 
 ## CLI usage
 
@@ -471,9 +473,10 @@ cannot drift from the validator.
   - Neither direction changes `^`/`~`/comparator **matching**; the caret
     runtime semantics now agree with the resolver (see [Version
     ranges](#version-ranges) and `tests/version-range.test.ts`).
-- The `env` family accepts exactly the `env:BITTY_*` suffix pattern from
-  ADR 0006 and no other wildcard; a broader `env:BITTY_<PREFIX>_*` form would
-  be a reviewed additive change, not an implicit widening.
+- The `env` family accepts the `env.read:<KEY>` exact form and the bounded
+  uppercase `env.read:PREFIX_*` suffix wildcard from the accepted manifest
+  specification (section 1); the allow-all `env.read:*` and the short
+  `env:<KEY>` form are rejected, so no implicit widening exists.
 - ADR 0009 table-form `[services.provided]` entries are accepted and validated
   by the linter (`services.schema`), and the manifest model exposes their static
   schemas. The [mock host](mock-host.md#static-schema-enforcement) enforces

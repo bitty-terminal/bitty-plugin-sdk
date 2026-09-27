@@ -84,7 +84,7 @@ Semantics the annotations carry:
 
 - `bitty` and its sub-tables are read-only; `bitty.api_version` is `1.0.0`.
   Registration calls are valid only while `init.lua` executes.
-- `bitty.env` is absent unless the manifest declares an `env:<KEY>`
+- `bitty.env` is absent unless the manifest declares an `env.read:<KEY>`
   capability, so the field is optional (`env?`); the other namespaces are
   always present and ungranted functions fail closed with typed denials.
 - `bitty.services.get` requires `opts` and `opts.version`: the accepted
@@ -112,7 +112,7 @@ The surface table covers L1 Control and the minimal L2 UI surface only:
 | `settings` | `get`, `set`       | L1    | none                                         |
 | `store`    | `get`, `set`       | L1    | none (quota-bounded)                         |
 | `notify`   | `show`             | L1    | `platform.notify`                            |
-| `env`      | `get`, `has`       | L1    | `env:<KEY>` (namespace optional)             |
+| `env`      | `get`, `has`       | L1    | `env.read:<KEY>` (namespace optional)        |
 | `services` | `get`, `provide`   | L1    | none                                         |
 | `ui`       | `mount`, `update`  | L2    | `ui.rich`; `ui.overlay` for the overlay slot |
 | `terminal` | `snapshot`         | L2    | `terminal.semantic-read`                     |

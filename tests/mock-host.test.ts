@@ -47,7 +47,7 @@ platform.notify = true
 ui.rich = true
 ui.overlay = true
 terminal.semantic-read = true
-"env:FIXTURE_KEY" = true
+"env.read:FIXTURE_KEY" = true
 
 [lazy]
 commands = [
@@ -198,7 +198,9 @@ describe("deny-by-default capabilities", () => {
 
 describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
   test("bitty.env is absent unless the manifest declares an env capability", () => {
-    const host = makeHost(MANIFEST.replace('"env:FIXTURE_KEY" = true\n', ""));
+    const host = makeHost(
+      MANIFEST.replace('"env.read:FIXTURE_KEY" = true\n', ""),
+    );
     expect(host.bitty.env).toBeUndefined();
   });
 
@@ -214,7 +216,7 @@ describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
       expect(ungranted.code).toBe(HOST_CODES.NOT_IMPLEMENTED);
       expect(ungranted.class).toBe("runtime");
     }
-    host.grant("env:FIXTURE_KEY");
+    host.grant("env.read:FIXTURE_KEY");
     for (const call of [
       () => host.bitty.env?.get("FIXTURE_KEY"),
       () => host.bitty.env?.has("FIXTURE_KEY"),
@@ -228,7 +230,7 @@ describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
       FIXTURE_KEY: "fixture",
       OTHER_KEY: "other",
     });
-    host.grant("env:FIXTURE_KEY");
+    host.grant("env.read:FIXTURE_KEY");
     activate(host);
     expect(denial(() => host.bitty.env?.get("FIXTURE_KEY")).code).toBe(
       HOST_CODES.NOT_IMPLEMENTED,
@@ -240,7 +242,7 @@ describe("env carve-out (ADR 0006 / ADR 0009 LUA-OQ-2)", () => {
 
   test("deferred env wins before key validation with E_NOT_IMPLEMENTED", () => {
     const host = makeHost(undefined, { FIXTURE_KEY: "x".repeat(5000) });
-    host.grant("env:FIXTURE_KEY");
+    host.grant("env.read:FIXTURE_KEY");
     activate(host);
     expect(denial(() => host.bitty.env?.get("lowercase")).code).toBe(
       HOST_CODES.NOT_IMPLEMENTED,
@@ -284,7 +286,7 @@ describe("host parity (bitty #1303 freeze, #1391 services re-wire)", () => {
 
   test("deferred env ignores grants, shapes, and lifecycle; wired services enforce declaration and version", () => {
     const host = makeHost();
-    host.grant("env:FIXTURE_KEY");
+    host.grant("env.read:FIXTURE_KEY");
     host.beginActivation();
     expect(
       denial(() =>

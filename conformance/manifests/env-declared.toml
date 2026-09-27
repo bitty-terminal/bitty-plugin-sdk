@@ -9,8 +9,8 @@ license = "MIT"
 plugin-api = "^1.0"
 
 [capabilities]
-"env:FIXTURE_KEY_ONE" = true
-"env:BITTY_*" = true
+"env.read:FIXTURE_KEY_ONE" = true
+"env.read:BITTY_*" = true
 
 [lazy]
 events = ["terminal.bell"]

@@ -1281,7 +1281,11 @@ export class MockHost {
   private envAllowed(key: string): boolean {
     for (const capability of this.grantedEnvCapabilities()) {
       const parameter = capability.slice(ENV_CAPABILITY_PREFIX.length);
-      if (parameter === "BITTY_*" && key.startsWith("BITTY_")) return true;
+      if (parameter.endsWith("_*")) {
+        const prefix = parameter.slice(0, -1);
+        if (key.startsWith(prefix)) return true;
+        continue;
+      }
       if (parameter === key) return true;
     }
     return false;
@@ -1310,7 +1314,7 @@ export class MockHost {
       fail(
         "runtime",
         HOST_CODES.CAPABILITY_DENIED,
-        "bitty.env requires a granted env:<KEY> capability",
+        "bitty.env requires a granted env.read:<KEY> capability",
       );
     }
     const key = this.envKey(name);
@@ -1334,7 +1338,7 @@ export class MockHost {
       fail(
         "runtime",
         HOST_CODES.CAPABILITY_DENIED,
-        "bitty.env requires a granted env:<KEY> capability",
+        "bitty.env requires a granted env.read:<KEY> capability",
       );
     }
     const key = this.envKey(name);

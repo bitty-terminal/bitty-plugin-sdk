@@ -43,6 +43,7 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "ui.protocol-register",
   "clipboard.read",
   "clipboard.write",
+  "env.read",
   "fs.read",
   "fs.write",
   "process.spawn",
@@ -82,6 +83,7 @@ export const PARAM_REQUIRED_HEADS: ReadonlySet<string> = new Set([
   "network.connect",
   "mcp.invoke",
   "agent.memory",
+  "env.read",
 ]);
 
 /**
@@ -116,14 +118,18 @@ export const HIGH_RISK_HEADS: ReadonlySet<string> = new Set([
   "mcp.invoke",
 ]);
 
-/** Maximum `env:<KEY>` parameter length in bytes (ADR 0006 key bound). */
+/** Maximum `env.read:<KEY>` parameter length in bytes (ADR 0006 key bound). */
 export const MAX_ENV_KEY_LEN = 64;
 
-/** Exact environment key grammar accepted after `env:` (ADR 0006). */
+/** Exact environment key grammar accepted after `env.read:` (ADR 0006). */
 export const ENV_KEY_PATTERN = /^[A-Z_][A-Z0-9_]*$/;
 
-/** The single accepted environment suffix-wildcard form (ADR 0006). */
-export const ENV_PATTERN = "BITTY_*";
+/**
+ * Suffix-wildcard grammar accepted after `env.read:` (accepted manifest
+ * specification, section 1): a `PREFIX_*` form whose prefix is a bounded
+ * uppercase key fragment. The bare `env.read:*` allow-all form does not match.
+ */
+export const ENV_PREFIX_WILDCARD_PATTERN = /^[A-Z_][A-Z0-9_]*_\*$/;
 
 const CONTROL_OR_WHITESPACE = /[\p{Cc}\p{White_Space}]/u;
 const SEGMENT = /^[a-z][a-z0-9_-]*$/;
@@ -187,22 +193,36 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
   }
 
   if (head === "env") {
+    diagnostics.push(
+      error(
+        "capabilities.invalid",
+        path,
+        "environment capabilities use 'env.read:<KEY>' or 'env.read:PREFIX_*'; the short 'env:<KEY>' form is not accepted",
+      ),
+    );
+    return diagnostics;
+  }
+
+  if (head === "env.read") {
     if (param === undefined) {
       diagnostics.push(
         error(
           "capabilities.param-required",
           path,
-          `capability 'env' requires ':KEY' or the '${ENV_PATTERN}' pattern`,
+          "capability 'env.read' requires ':KEY' or the 'PREFIX_*' pattern",
         ),
       );
       return diagnostics;
     }
-    if (param !== ENV_PATTERN && !ENV_KEY_PATTERN.test(param)) {
+    if (
+      !ENV_KEY_PATTERN.test(param) &&
+      !ENV_PREFIX_WILDCARD_PATTERN.test(param)
+    ) {
       diagnostics.push(
         error(
           "capabilities.invalid",
           path,
-          `env capability parameter must match ${ENV_KEY_PATTERN.source} or be '${ENV_PATTERN}'`,
+          `env.read parameter must be an exact key matching ${ENV_KEY_PATTERN.source} or a 'PREFIX_*' pattern matching ${ENV_PREFIX_WILDCARD_PATTERN.source}`,
         ),
       );
       return diagnostics;
@@ -212,7 +232,7 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
         error(
           "capabilities.invalid",
           path,
-          `env capability parameter too long (${byteLength(param)} > ${MAX_ENV_KEY_LEN})`,
+          `env.read parameter too long (${byteLength(param)} > ${MAX_ENV_KEY_LEN})`,
         ),
       );
       return diagnostics;
@@ -267,13 +287,11 @@ export function validateCapabilityId(raw: string, path: string): Diagnostic[] {
   }
 
   if (!CLOSED_CAPABILITY_HEADS.includes(head)) {
-    diagnostics.push(
-      error(
-        "capabilities.unknown",
-        path,
-        `unknown capability '${head}' (closed set; forward compatibility requires an explicit RFC)`,
-      ),
-    );
+    const message =
+      head === "layout.provider"
+        ? "layout.provider is not an accepted v1 capability; see Plugin Platform RFC for the closed set"
+        : `unknown capability '${head}' (closed set; forward compatibility requires an explicit RFC)`;
+    diagnostics.push(error("capabilities.unknown", path, message));
     return diagnostics;
   }
   const requiresParam = PARAM_REQUIRED_HEADS.has(head);

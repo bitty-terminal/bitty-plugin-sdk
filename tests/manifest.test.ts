@@ -106,6 +106,27 @@ version = "0.1.0"
     expect(codes(result)).toContain("manifest.unknown-key");
   });
 
+  test("rejected host-only [limits] table is not accepted", () => {
+    const result = lint("\n[limits]\nmemory_mb = 128\n");
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.unknown-key");
+  });
+
+  test("rejected host-only [[network.egress]] table is not accepted", () => {
+    const result = lint('\n[[network.egress]]\nhost = "example.invalid"\n');
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.unknown-key");
+  });
+
+  test("rejected host-only [services.required] table is not accepted", () => {
+    const result = lint(`
+[services.required]
+"xuepoo.bar" = "1.0.0"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.unknown-key");
+  });
+
   test("unknown [plugin] key is rejected", () => {
     const result = lintManifestSource(`
 [plugin]
@@ -522,43 +543,88 @@ fs.read = true
     expect(codes(result)).toContain("capabilities.param-forbidden");
   });
 
-  test("env capability accepts an exact key and the BITTY_* pattern", () => {
+  test("env capability accepts an exact key and a prefix wildcard", () => {
     const result = lint(`
 [capabilities]
-"env:EDITOR" = true
-"env:BITTY_*" = true
+"env.read:EDITOR" = true
+"env.read:BITTY_*" = true
 `);
     expect(result.valid).toBe(true);
     expect(result.diagnostics).toEqual([]);
   });
 
+  test("env capability rejects the obsolete short env:<KEY> form", () => {
+    const result = lint(`
+[capabilities]
+"env:EDITOR" = true
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("capabilities.invalid");
+  });
+
   test("env capability requires a key parameter", () => {
+    const result = lint(`
+[capabilities]
+env.read = true
+`);
+    expect(codes(result)).toContain("capabilities.param-required");
+  });
+
+  test("env capability rejects a missing parameter on the env head", () => {
     const result = lint(`
 [capabilities]
 env = true
 `);
-    expect(codes(result)).toContain("capabilities.param-required");
+    expect(codes(result)).toContain("capabilities.invalid");
   });
 
   test("env capability rejects non-uppercase and overlong keys", () => {
     const lowercase = lint(`
 [capabilities]
-"env:editor" = true
+"env.read:editor" = true
 `);
     expect(codes(lowercase)).toContain("capabilities.invalid");
     const overlong = lint(`
 [capabilities]
-"env:${"A".repeat(65)}" = true
+"env.read:${"A".repeat(65)}" = true
 `);
     expect(codes(overlong)).toContain("capabilities.invalid");
   });
 
-  test("env capability accepts only the BITTY_* suffix wildcard", () => {
+  test("env capability accepts any bounded uppercase prefix wildcard", () => {
     const result = lint(`
 [capabilities]
-"env:FOO_*" = true
+"env.read:FOO_*" = true
 `);
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("env capability rejects the allow-all env.read:* wildcard", () => {
+    const result = lint(`
+[capabilities]
+"env.read:*" = true
+`);
+    expect(result.valid).toBe(false);
     expect(codes(result)).toContain("capabilities.invalid");
+  });
+
+  test("env capability rejects the nonexistent env.deny denial form", () => {
+    const result = lint(`
+[capabilities]
+"env.deny:SECRET" = true
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("capabilities.unknown");
+  });
+
+  test("layout.provider is rejected as a non-v1 experimental capability", () => {
+    const result = lint(`
+[capabilities]
+layout.provider = true
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("capabilities.unknown");
   });
 
   test("high-risk capability is valid but warned", () => {
