@@ -190,8 +190,35 @@ export const MOCK_LIMITS = {
   COMMAND_SCHEMA_MAX_DEPTH: 16,
   COMMAND_ID_MAX_BYTES: 64,
   UI_MAX_DEPTH: 16,
+  // UI node/text/block budgets mirror `bitty-lua` `ui.rs` (`UI_MAX_NODES`,
+  // `UI_MAX_TEXT_BYTES`, `UI_MAX_BLOCKS`, `UI_MAX_AGGREGATED_TEXT_BYTES`).
+  // Node and text bounds are per mounted component (`SCN-1`/`SCN-3`); block
+  // and aggregated-text bounds are per plugin generation (`SCN-5`/`SCN-4`).
+  UI_MAX_NODES: 2048,
+  UI_MAX_TEXT_BYTES: 256 * 1024,
+  UI_MAX_BLOCKS: 64,
+  UI_MAX_AGGREGATED_TEXT_BYTES: 2 * 1024 * 1024,
+  // Marshalling byte ceiling for one raw component value before shape
+  // validation, mirroring `bitty-lua` `ui.rs` `UI_MARSHAL_LIMITS.max_bytes`
+  // (`UI_MAX_TEXT_BYTES + 64 KiB`). The semantic node/text budgets above are
+  // the exact `SCN-1`/`SCN-3` numbers the host enforces on the parsed node.
+  UI_MARSHAL_MAX_BYTES: 256 * 1024 + 64 * 1024,
   TIMER_MAX_DELAY_MS: 24 * 60 * 60 * 1000,
   CHORD_MAX_BYTES: 64,
+  // Command metadata byte ceilings mirror `bitty-lua` `host.rs`
+  // (`REGISTRATION_MAX_TITLE_BYTES`/`REGISTRATION_MAX_DESCRIPTION_BYTES`).
+  COMMAND_TITLE_MAX_BYTES: 128,
+  COMMAND_DESCRIPTION_MAX_BYTES: 1024,
+  // Accepted signed `exit_code` range: `bitty-runtime` `registry.rs`
+  // (`TerminalExited` `exited: Option<Option<i32>>`), so the status value is a
+  // signed 32-bit integer.
+  EXIT_CODE_MIN: -2147483648,
+  EXIT_CODE_MAX: 2147483647,
+  // Bridge marshalling bounds mirror `bitty-lua` `host.rs`
+  // (`DEFAULT_MAX_DEPTH`/`DEFAULT_MAX_NODES`/`DEFAULT_MAX_VALUE_BYTES`).
+  BRIDGE_MAX_DEPTH: 8,
+  BRIDGE_MAX_NODES: 1024,
+  BRIDGE_MAX_VALUE_BYTES: 8 * 1024,
 } as const;
 
 /** Command id grammar from the accepted surface. */

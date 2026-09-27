@@ -99,11 +99,11 @@ Timers run on a virtual clock: `advanceTimers(ms)` fires due one-shot timers in
 due order. Tasks are drained cooperatively with `drainTasks()`. No test ever
 waits on wall-clock time.
 
-Namespaces the host has not wired yet (`services`, `env`; see
-[Host parity freeze](#host-parity-freeze)) stay present on `host.bitty` but
-every call fails closed with `E_NOT_IMPLEMENTED` (`runtime` class) before
-activation, capability, or argument checks run. Keymaps and tasks are WIRED
-and behave fully.
+The `env` namespace the host has not wired yet (bitty #1303; see
+[Host parity freeze](#host-parity-freeze)) stays present only when declared,
+but every call fails closed with `E_NOT_IMPLEMENTED` (`runtime` class) before
+activation, capability, or argument checks run. `keymaps`, `tasks`, and
+`services` are WIRED and behave fully.
 
 ## Static schema enforcement
 
@@ -120,7 +120,29 @@ ignores object-key order and the order of `required`, `enum`, and union `type`
 sets; arrays inside literal values such as `default` remain ordered. A mismatch
 fails registration with `E_SCHEMA_INVALID` (`validation`) before the command is
 installed. String-form reservations still allow runtime-only schemas. The
-registered definition is copied so later caller mutation cannot change it.
+registered definition is copied so later caller mutation cannot change it. The
+subset is validated fail-closed before serialization: one bounded scan counts
+depth, nodes, and UTF-8 bytes (every string leaf and object key) and
+short-circuits at the schema byte cap, so a cyclic schema or a schema carrying
+a non-plain object, a non-finite number, `bigint`, `undefined`, a function, or
+an over-cap value fails with a bounded problem instead of a native `TypeError`
+or an unbounded `JSON.stringify`. An empty type union is rejected, every `enum`
+member and `default` value must be bounded JSON data, and a shared (acyclic)
+subtree is not mistaken for a cycle. `JSON.stringify` runs only after the scan
+proves the value is under the cap.
+
+Schema-less command dispatch is not exempt from the bridge: `dispatchCommand`
+runs the same bounded bridge-value conversion on the args and on the result
+that the real host applies regardless of any optional schema, rejecting
+cycles, non-plain prototypes, non-finite numbers, and non-data values, and
+enforcing the bridge depth / node / byte ceilings. The byte ceiling is counted
+during the scan, so a single huge string leaf is rejected before serialization.
+A command that returns no
+value marshals to Lua `nil`, so a JS `undefined` result is accepted as the
+empty result. A command callback that throws enters the same error boundary as
+task, timer, and event callbacks: the fault is recorded in
+`host.handlerViolations` (delivering `handler.violation`) and surfaced as
+`E_COMMAND_CALLBACK_FAILED` (`runtime`), never as a raw JS error.
 
 For table-form `[services.provided]`, every method validates supplied arguments
 against `args_schema` before entering the callback (`E_ARGS_INVALID`) and its
@@ -147,14 +169,14 @@ in `tests/mock-host.test.ts`.
 
 | Namespace  | Modeled behavior                                                                                                                                                                                                                                                                                          |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch                                                                                                                                                                                                      |
+| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch; 128-byte title / 1024-byte description bounds                                                                                                                                                       |
 | `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                                                                                                                                                                       |
 | `keymaps`  | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target                                                                                                                                                |
 | `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                                                                                                                                                                      |
 | `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                         |
 | `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                |
 | `env`      | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                     |
-| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; generation-owned block handles                                                                                                                                                  |
+| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                  |
 | `terminal` | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                                                                                                                                                                   |
 | `services` | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears |
 | `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                                                                                                                                                                            |
@@ -270,9 +292,10 @@ never silent and never more permissive than the host.
   accepted ADR 0006 contract. The current host bridge always presents the
   deferred tables (it knows no manifest); the mock carve-out is stricter and
   therefore fail-closed, never more permissive.
-- The accepted full-contract `services`/`env` implementation stays in the mock
-  behind the gate so a future host-wiring task can re-enable it by flipping
-  the namespace to `wired`; until then fixtures assert `E_NOT_IMPLEMENTED`.
+- `services` is WIRED since bitty #1391: the full-contract
+  `provide`/`get`/resolve/call implementation is live. Only `env` stays behind
+  the deferred gate; its fixtures assert `E_NOT_IMPLEMENTED` until the host
+  backend lands.
 - Regen-sync (SDK-owned): when a bitty host change flips a namespace or an
   accepted contract revision moves, update the surface-table `hostParity` pin
   (and `sources` revisions), run `just lua-defs-write`, and run `just check`
@@ -288,14 +311,14 @@ never silent and never more permissive than the host.
 | `activating` | Registration window open (`init.lua` execution in the real host)              |
 | `active`     | Registration closed; `plugin.activated` delivered at the transition           |
 | `suspended`  | Registration closed; `plugin.suspended` delivered; ordinary dispatch detached |
+| `disposing`  | Transient terminal state during `plugin.disposed` delivery; reentrancy-safe   |
 | `disposed`   | Subscriptions/registrations/handles cleared; calls fail closed                |
 
 - Registration calls (`commands.register`, `events.subscribe`,
   `keymaps.suggest`, `ui.mount`, `tasks.spawn`,
   `timers.create`) are valid only while `activating`; later attempts fail with
-  `E_REGISTRATION_CLOSED` (`validation`). `services.provide` is DEFERRED (see
-  [Host parity freeze](#host-parity-freeze)): it fails with
-  `E_NOT_IMPLEMENTED` in every lifecycle state, before the window check runs.
+  `E_REGISTRATION_CLOSED` (`validation`). `services.provide` is WIRED (bitty
+  #1391) and validates the manifest declaration before the window check runs.
 - New UI mounts in every slot must occur between `beginActivation()` and
   `endActivation()`, matching the accepted
   [activation entry point contract](https://github.com/bitty-terminal/bitty-plugins-docs/blob/main/specifications/plugin-api-v1-lua-surface-rfc.md#activation-entry-point-lua-oq-12).
@@ -313,6 +336,17 @@ never silent and never more permissive than the host.
   callbacks, capability denial/revocation, and disposal/reload; conformance
   case `05-lifecycle-registration.json` separately exercises active/suspended
   late-mount denial and an active live-block update.
+- UI resource budgets mirror the host: each component is limited to 2048 nodes
+  and 256 KiB of text; a generation retains at most 64 blocks and 2 MiB of
+  aggregated text across all slots. The checks run in host order: shape, then
+  the exact `SCN-1`/`SCN-3` node and text budgets on the parsed node, and
+  finally the raw marshalling byte cap (`UI_MAX_TEXT_BYTES + 64 KiB`, matching
+  `bitty-lua` `ui.rs` `UI_MARSHAL_LIMITS.max_bytes`). `ui.mount` and
+  `ui.update` reject before
+  mutating any block (retaining the last good component), and updates account
+  the aggregate as a delta so shrinking one block releases budget for another.
+  Component shape/node/text failures use `E_UI_COMPONENT_INVALID`; the
+  per-generation block and aggregate-text caps use `E_UI_BLOCK_BUDGET`.
 - Tasks and timers are generation-owned and created only during the activation
   window (ADR 0009 LUA-OQ-12). After `endActivation()`, `tasks.spawn` and
   `timers.create` fail with `E_REGISTRATION_CLOSED`; a new generation's
@@ -349,9 +383,19 @@ never silent and never more permissive than the host.
   invalid in every later generation. Snapshotted timer and event batches also
   stop delivering disposed-generation callbacks when suspension cleanup calls
   `dispose()`, even if cleanup then activates a new generation.
-- `dispose()` delivers `plugin.disposed` before invalidation. Handles from a
-  disposed generation are invalid: `ui.update` and the cancel calls return
-  `false` rather than touching new-generation resources.
+- `dispose()` delivers `plugin.disposed` before invalidation. It first enters a
+  private terminal `disposing` state and only then publishes the lifecycle
+  event, so a lifecycle handler that calls `dispose()` again is idempotent: the
+  event is delivered exactly once and the transition always reaches `disposed`.
+  Ordinary dispatch is detached in `disposing`, keeping lifecycle callbacks as
+  cleanup observers that read the store and grants but cannot run commands.
+  Handles from a disposed generation are invalid: `ui.update` and the cancel
+  calls return `false` rather than touching new-generation resources.
+- `drainTasks()` snapshots the eligible task records, rechecks identity,
+  cancellation, generation, and state before each callback, and stops as soon
+  as the generation changes. A callback that disposes and reloads therefore
+  never runs a newly queued generation-N+1 task inside the old drain; the timer
+  path snapshots and rechecks the same way.
 - The store is scoped by plugin ID, not generation. Values written in
   generation N are readable in generation N+1 after
   `dispose()` + `beginActivation()`; settings behave the same within one mock
@@ -373,21 +417,31 @@ compatibility (ADR 0009 LUA-OQ-10); kinds that declare no payload fields
 deep-frozen payload copy. Observation and lifecycle handler return values are
 ignored; interception handlers veto with `false` and approve with anything
 else. A handler that throws is recorded once in `host.handlerViolations` and
-does not stop delivery to later handlers. While suspended, only lifecycle
-deliveries run; observation and interception deliveries are detached
-entirely (see [Lifecycle and generations](#lifecycle-and-generations)).
+does not stop delivery to later handlers. Numeric identity fields
+(`terminal_id`, `runtime_id`, `view_id`, `generation`) must be nonnegative safe
+integers (`u64` within the Lua integer range); `process.exited.exit_code` is
+the accepted signed status value (`i32` in `bitty-runtime` `registry.rs`) and
+may be negative (for example `-9`), so it is checked as a signed 32-bit integer
+rather than a nonnegative identity. While suspended, only lifecycle deliveries
+run; observation and interception deliveries are detached entirely (see
+[Lifecycle and generations](#lifecycle-and-generations)).
 
 ## Bounds
 
-| Bound               | Value             | Source                             |
-| ------------------- | ----------------- | ---------------------------------- |
-| Event payload       | 8 KiB             | `EVENT_MAX_BYTES` (reference host) |
-| Env value           | 4 KiB             | ADR 0006                           |
-| Store value / quota | 8 KiB / 256 KiB   | ADR 0009 LUA-OQ-6                  |
-| Store depth / nodes | 8 / 1024          | ADR 0009 LUA-OQ-6                  |
-| Snapshot            | 256 KiB           | ADR 0009 LUA-OQ-4                  |
-| Command schema      | 16 KiB / depth 16 | ADR 0009 LUA-OQ-3                  |
-| Live tasks / timers | 64 / 32           | ADR 0007 (RC-4)                    |
+| Bound                              | Value                     | Source                                      |
+| ---------------------------------- | ------------------------- | ------------------------------------------- |
+| Event payload                      | 8 KiB                     | `EVENT_MAX_BYTES` (reference host)          |
+| Env value                          | 4 KiB                     | ADR 0006                                    |
+| Store value / quota                | 8 KiB / 256 KiB           | ADR 0009 LUA-OQ-6                           |
+| Store depth / nodes                | 8 / 1024                  | ADR 0009 LUA-OQ-6                           |
+| Snapshot                           | 256 KiB                   | ADR 0009 LUA-OQ-4                           |
+| Command schema                     | 16 KiB / depth 16         | ADR 0009 LUA-OQ-3                           |
+| Command title / description        | 128 / 1024 bytes          | `bitty-lua` `host.rs` (HOST-002)            |
+| Bridge value depth / nodes / bytes | 8 / 1024 / 8 KiB          | `bitty-lua` `host.rs` (bridge contract A.3) |
+| UI nodes / text per component      | 2048 / 256 KiB            | `bitty-lua` `ui.rs` (`SCN-1`/`SCN-3`)       |
+| UI blocks / aggregate text         | 64 / 2 MiB per generation | `bitty-lua` `ui.rs` (`SCN-5`/`SCN-4`)       |
+| `process.exited.exit_code`         | signed `i32`              | `bitty-runtime` `registry.rs`               |
+| Live tasks / timers                | 64 / 32                   | ADR 0007 (RC-4)                             |
 
 ## Diagnostics
 
@@ -419,12 +473,15 @@ for an accepted code): registration and lifecycle state (`E_REGISTRATION_CLOSED`
 activation (`E_TOOL_ABSENT`, `E_TOOL_MISMATCH`), event and command validations
 (`E_EVENT_UNKNOWN`, `E_EVENT_UNDECLARED`, `E_EVENT_PAYLOAD_INVALID`,
 `E_EVENT_PAYLOAD_TOO_LARGE`, `E_COMMAND_ID_INVALID`, `E_COMMAND_UNDECLARED`,
-`E_COMMAND_DUPLICATE`, `E_SCHEMA_INVALID`, `E_ARGS_INVALID`, `E_RESULT_INVALID`),
-keymaps and definitions (`E_KEYMAP_WHEN_UNSUPPORTED`, `E_KEYMAP_CHORD_INVALID`,
+`E_COMMAND_DUPLICATE`, `E_SCHEMA_INVALID`, `E_ARGS_INVALID`, `E_RESULT_INVALID`,
+`E_COMMAND_CALLBACK_FAILED`), keymaps and definitions
+(`E_KEYMAP_WHEN_UNSUPPORTED`, `E_KEYMAP_CHORD_INVALID`,
 `E_KEYMAP_COMMAND_UNKNOWN`, `E_DEF_INVALID`), store and settings keys
 (`E_STORE_KEY_INVALID`, `E_SETTINGS_KEY_INVALID`), snapshot scope
-(`E_SNAPSHOT_SCOPE_UNSUPPORTED`), UI exclusivity (`E_UI_CLAIM_REQUIRED`),
-services (`E_SERVICE_UNDECLARED`; a missing
+(`E_SNAPSHOT_SCOPE_UNSUPPORTED`), UI exclusivity (`E_UI_CLAIM_REQUIRED`) and the
+per-generation UI block budget (`E_UI_BLOCK_BUDGET`, matching the host's own
+`budget` code for the 64-block and 2 MiB aggregate-text caps), services
+(`E_SERVICE_UNDECLARED`; a missing
 `opts` or `opts.version` fails the accepted required-argument validation with
 `E_SERVICE_VERSION_INVALID`), `E_HANDLER_VIOLATION` for recorded handler
 faults, and `E_NOT_IMPLEMENTED` for the deferred host namespaces (see

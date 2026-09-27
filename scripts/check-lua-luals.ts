@@ -31,6 +31,15 @@ export const NEGATIVE_FIXTURE_PATH = join(
   REPO_ROOT,
   "tests/lua-defs/negative-fixture.lua",
 );
+/**
+ * Positive handler-return fixture: proves the widened `BittyEventHandler`
+ * return domain accepts `false`, `nil`, and a non-false/non-nil value without
+ * a static `assign-type-mismatch`.
+ */
+export const HANDLER_RETURN_FIXTURE_PATH = join(
+  REPO_ROOT,
+  "tests/lua-defs/handler-returns-fixture.lua",
+);
 
 const CHECK_TIMEOUT_MS = 120_000;
 
@@ -131,12 +140,19 @@ export function runConformance(): ConformanceResult {
   try {
     const positive = join(temp, "positive");
     const negative = join(temp, "negative");
+    const handlerReturns = join(temp, "handler-returns");
     mkdirSync(positive, { recursive: true });
     mkdirSync(negative, { recursive: true });
+    mkdirSync(handlerReturns, { recursive: true });
     copyFileSync(OUTPUT_PATH, join(positive, "bitty.d.lua"));
     copyFileSync(EXAMPLE_PATH, join(positive, "minimal-init.lua"));
     copyFileSync(OUTPUT_PATH, join(negative, "bitty.d.lua"));
     copyFileSync(NEGATIVE_FIXTURE_PATH, join(negative, "negative-fixture.lua"));
+    copyFileSync(OUTPUT_PATH, join(handlerReturns, "bitty.d.lua"));
+    copyFileSync(
+      HANDLER_RETURN_FIXTURE_PATH,
+      join(handlerReturns, "handler-returns-fixture.lua"),
+    );
 
     const positiveResult = runLuaLsCheck(binary, positive);
     evidence.push(
@@ -145,6 +161,19 @@ export function runConformance(): ConformanceResult {
     if (positiveResult.status !== 0 || positiveResult.diagnostics.length > 0) {
       problems.push("positive workspace must diagnose cleanly");
       for (const entry of positiveResult.diagnostics) {
+        problems.push(`  ${entry.code}: ${entry.message.split("\n")[0] ?? ""}`);
+      }
+    }
+
+    const handlerResult = runLuaLsCheck(binary, handlerReturns);
+    evidence.push(
+      `handler-returns: exit=${handlerResult.status} diagnostics=${handlerResult.diagnostics.length}`,
+    );
+    if (handlerResult.status !== 0 || handlerResult.diagnostics.length > 0) {
+      problems.push(
+        "handler-return workspace must accept false, nil, and non-false returns",
+      );
+      for (const entry of handlerResult.diagnostics) {
         problems.push(`  ${entry.code}: ${entry.message.split("\n")[0] ?? ""}`);
       }
     }

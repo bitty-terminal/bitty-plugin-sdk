@@ -14,6 +14,12 @@
  */
 
 import {
+  isPlainObject,
+  jsonBytes,
+  scanStructure,
+  utf8Bytes,
+} from "./bounded-value.js";
+import {
   fail,
   HOST_CODES,
   HostError,
@@ -130,7 +136,7 @@ export interface PublishResult {
 }
 
 export type MockHostState =
-  "created" | "activating" | "active" | "suspended" | "disposed";
+  "created" | "activating" | "active" | "suspended" | "disposing" | "disposed";
 
 interface Subscription {
   readonly generation: number;
@@ -142,6 +148,7 @@ interface UiBlock {
   readonly generation: number;
   readonly slot: string;
   component: Record<string, unknown>;
+  textBytes: number;
   version: number;
 }
 
@@ -245,135 +252,6 @@ function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   return Object.freeze(value);
 }
 
-function utf8Bytes(value: string): number {
-  return Buffer.byteLength(value, "utf8");
-}
-
-/**
- * UTF-8 byte length of the JSON encoding of `value`, bounded by `limit`.
- *
- * A shared-reference (DAG) input expands to an exponential serialization when
- * a path is duplicated, so building the string first can hang. Every JSON
- * node costs at least one byte, so when the expanded node count (or depth)
- * already exceeds `limit`, `limit + 1` is returned without serializing. A
- * cyclic input is reported the same way, so callers raise their typed
- * size/validation failure instead of an untyped `JSON.stringify` throw.
- * `scanStructure` counts occurrences under a hard visit cap, so the work is
- * proportional to `limit` regardless of the graph shape. When the encoding
- * fits, `JSON.stringify` runs on a value of at most `limit` nodes and the
- * exact byte count is returned.
- */
-function jsonBytes(value: unknown, limit: number): number {
-  if (Number.isFinite(limit)) {
-    const scan = scanStructure(value, limit, limit);
-    if (
-      scan.cycle ||
-      scan.problem !== undefined ||
-      scan.nodes > limit ||
-      scan.depth > limit
-    ) {
-      return limit + 1;
-    }
-  }
-  return utf8Bytes(JSON.stringify(value) ?? "");
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    (Object.getPrototypeOf(value) === Object.prototype ||
-      Object.getPrototypeOf(value) === null)
-  );
-}
-
-/** Cycle-aware, bounded structural scan of one JSON-compatible candidate. */
-interface StructureScan {
-  readonly cycle: boolean;
-  readonly depth: number;
-  readonly nodes: number;
-  readonly problem?: string;
-}
-
-/**
- * Walk `value` with an explicit stack and an ancestor set.
- *
- * The scans this replaces recursed without a visited set, so a
- * self-referential table overflowed the call stack before the depth or node
- * bound could reject it. This walk keeps an explicit stack, stops descending
- * at `maxDepth`, and reports a cycle as soon as an ancestor repeats, so
- * cyclic input always yields a bounded result instead of an overflow.
- * `depth` and `nodes` are capped at one past their limits; callers compare
- * with `>`.
- */
-function scanStructure(
-  value: unknown,
-  maxDepth: number,
-  maxNodes: number,
-): StructureScan {
-  let nodes = 0;
-  let depth = 0;
-  let cycle = false;
-  let problem: string | undefined;
-  const ancestors = new WeakSet<object>();
-  const stack: Array<{ value: unknown; level: number; exit: boolean }> = [
-    { value, level: 0, exit: false },
-  ];
-  while (stack.length > 0) {
-    const frame = stack.pop() as {
-      value: unknown;
-      level: number;
-      exit: boolean;
-    };
-    if (frame.exit) {
-      ancestors.delete(frame.value as object);
-      continue;
-    }
-    nodes += 1;
-    if (nodes > maxNodes) break;
-    const current = frame.value;
-    if (
-      typeof current === "function" ||
-      typeof current === "symbol" ||
-      typeof current === "bigint" ||
-      current === undefined
-    ) {
-      problem = "value is not JSON-compatible data";
-      break;
-    }
-    if (typeof current === "number" && !Number.isFinite(current)) {
-      problem = "value contains a non-finite number";
-      break;
-    }
-    if (current === null || typeof current !== "object") continue;
-    if (!Array.isArray(current) && !isPlainObject(current)) {
-      problem = "value contains a non-plain object";
-      break;
-    }
-    if (Object.getOwnPropertySymbols(current).length > 0) {
-      problem = "value is not JSON-compatible data";
-      break;
-    }
-    if (ancestors.has(current)) {
-      cycle = true;
-      break;
-    }
-    const containerLevel = frame.level + 1;
-    if (containerLevel > depth) depth = containerLevel;
-    if (containerLevel > maxDepth) break;
-    ancestors.add(current);
-    stack.push({ value: current, level: frame.level, exit: true });
-    const children = Array.isArray(current)
-      ? current
-      : Object.values(current as Record<string, unknown>);
-    for (const child of children) {
-      stack.push({ value: child, level: containerLevel, exit: false });
-    }
-  }
-  return { cycle, depth, nodes, problem };
-}
-
 /**
  * True when `value` reaches itself through plain objects or arrays.
  *
@@ -411,6 +289,132 @@ function containsCycle(value: unknown): boolean {
   return false;
 }
 
+/**
+ * Bounded bridge-value conversion for command args and results.
+ *
+ * Independent of any optional command schema, the bridge marshals every value
+ * across the same discipline as the real host bridge: depth at most
+ * `BRIDGE_MAX_DEPTH`, at most `BRIDGE_MAX_NODES` nodes, at most
+ * `BRIDGE_MAX_VALUE_BYTES` serialized bytes, and only plain JSON data.
+ * Cyclic, non-plain, non-finite, symbol-keyed, and non-data values fail with a
+ * bounded problem description so schema-less dispatch cannot bless a value the
+ * host would reject. `undefined` is reported by `scanStructure` as non-data
+ * here; callers that must tolerate Lua `nil` (a command returning no value)
+ * normalize it before calling this.
+ */
+function bridgeValueProblem(value: unknown, path: string): string | undefined {
+  if (
+    typeof value === "function" ||
+    typeof value === "symbol" ||
+    typeof value === "bigint" ||
+    value === undefined
+  ) {
+    return `${path}: value is not JSON-compatible data`;
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return `${path}: value contains a non-finite number`;
+  }
+  if (value !== null && typeof value === "object") {
+    if (!isPlainObject(value) && !Array.isArray(value)) {
+      return `${path}: value contains a non-plain object`;
+    }
+    const scan = scanStructure(
+      value,
+      MOCK_LIMITS.BRIDGE_MAX_DEPTH,
+      MOCK_LIMITS.BRIDGE_MAX_NODES,
+      MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES,
+    );
+    if (scan.cycle) {
+      return `${path}: value contains a cyclic reference`;
+    }
+    if (scan.problem !== undefined) {
+      return `${path}: ${scan.problem}`;
+    }
+    if (scan.depth > MOCK_LIMITS.BRIDGE_MAX_DEPTH) {
+      return `${path}: value depth exceeds ${MOCK_LIMITS.BRIDGE_MAX_DEPTH}`;
+    }
+    if (scan.nodes > MOCK_LIMITS.BRIDGE_MAX_NODES) {
+      return `${path}: value node count exceeds ${MOCK_LIMITS.BRIDGE_MAX_NODES}`;
+    }
+    // The scan counts string and key bytes, so a huge leaf is rejected here
+    // without serializing. The exact `jsonBytes` below only refines
+    // escape-expansion for values already proven bounded.
+    if (scan.bytes > MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES) {
+      return `${path}: value exceeds ${MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES} bytes`;
+    }
+  }
+  if (
+    jsonBytes(value, MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES) >
+    MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES
+  ) {
+    return `${path}: value exceeds ${MOCK_LIMITS.BRIDGE_MAX_VALUE_BYTES} bytes`;
+  }
+  return undefined;
+}
+
+/**
+ * Nonnegative-safe-integer predicate for registry identity fields.
+ *
+ * Accepted identity fields are Lua integers (u64 within the i64 range), so a
+ * JS handling value must be a nonnegative safe integer. This deliberately does
+ * not apply to status values such as `exit_code`, which stay signed.
+ */
+function isNonnegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+/**
+ * Numeric event payload fields that are signed status values, not identity.
+ *
+ * Identity fields (`terminal_id`, `runtime_id`, `view_id`, `generation`) are
+ * u64 within the Lua integer range and must stay nonnegative. `exit_code` is
+ * the accepted signed `TerminalExited` status and may be negative (for
+ * example `-9` for a signal-killed process).
+ */
+const SIGNED_INTEGER_EVENT_FIELDS: ReadonlySet<string> = new Set(["exit_code"]);
+
+/** Resource totals for one UI component subtree. */
+interface ComponentResourceCounts {
+  readonly nodes: number;
+  readonly textBytes: number;
+}
+
+/**
+ * Count nodes and text bytes in a UI component subtree.
+ *
+ * The walk mirrors the accepted `UiNode` accounting: every node counts once
+ * and each `Text` leaf contributes its UTF-8 byte length. Cycles are rejected
+ * before this runs (via `containsCycle`), so the traversal terminates. A
+ * shared-reference (DAG) subtree expands per reference, so the walk stops as
+ * soon as either budget is exceeded (returning one past the bound); callers
+ * only need the exceed verdict, and this keeps the cost proportional to the
+ * bound rather than to the exponential expansion.
+ */
+function countComponentResources(component: unknown): ComponentResourceCounts {
+  let nodes = 0;
+  let textBytes = 0;
+  const stack: unknown[] = [component];
+  while (stack.length > 0) {
+    if (
+      nodes > MOCK_LIMITS.UI_MAX_NODES ||
+      textBytes > MOCK_LIMITS.UI_MAX_TEXT_BYTES
+    ) {
+      break;
+    }
+    const current = stack.pop();
+    if (!isPlainObject(current)) continue;
+    nodes += 1;
+    if (current.kind === "Text" && typeof current.text === "string") {
+      textBytes += utf8Bytes(current.text);
+    }
+    const children = current.children;
+    if (Array.isArray(children)) {
+      for (const child of children) stack.push(child);
+    }
+  }
+  return { nodes, textBytes };
+}
+
 function storeValueProblem(value: unknown): string | undefined {
   if (
     typeof value === "function" ||
@@ -431,6 +435,7 @@ function storeValueProblem(value: unknown): string | undefined {
       value,
       MOCK_LIMITS.STORE_MAX_DEPTH,
       MOCK_LIMITS.STORE_MAX_NODES,
+      MOCK_LIMITS.STORE_MAX_VALUE_BYTES,
     );
     if (scan.cycle) {
       return "value contains a cyclic reference";
@@ -443,6 +448,9 @@ function storeValueProblem(value: unknown): string | undefined {
     }
     if (scan.problem !== undefined) {
       return scan.problem;
+    }
+    if (scan.bytes > MOCK_LIMITS.STORE_MAX_VALUE_BYTES) {
+      return `value exceeds ${MOCK_LIMITS.STORE_MAX_VALUE_BYTES} bytes`;
     }
   }
   if (
@@ -776,6 +784,7 @@ export class MockHost {
     when: string;
   }> = [];
   private readonly blocks = new Map<number, UiBlock>();
+  private aggregatedTextBytes = 0;
   private readonly tasks = new Map<number, TaskRecord>();
   private readonly timers = new Map<number, TimerRecord>();
   private readonly services = new Map<string, ServiceRecord>();
@@ -975,6 +984,11 @@ export class MockHost {
 
   /** Dispose the current generation: lifecycle event, then invalidation. */
   dispose(): void {
+    // Reentrant disposal (a `plugin.disposed`/`plugin.suspended` handler
+    // calling `dispose()` again) is idempotent: the terminal transition is
+    // published exactly once and never redelivered. A first call from any
+    // other state is still a typed lifecycle failure.
+    if (this.state === "disposing" || this.state === "disposed") return;
     if (this.state !== "active" && this.state !== "suspended") {
       fail(
         "validation",
@@ -982,12 +996,19 @@ export class MockHost {
         `cannot dispose from state '${this.state}'`,
       );
     }
+    // Enter the terminal state before publication so a reentrant handler sees
+    // a non-disposable state and the event is published at most once, while
+    // the accepted event-before-invalidation observation order is preserved:
+    // the lifecycle event is delivered before the generation resources below
+    // are cleared.
+    this.state = "disposing";
     this.publishLifecycle("plugin.disposed");
     this.state = "disposed";
     this.subscriptions = [];
     this.commands.clear();
     this.keymaps.length = 0;
     this.blocks.clear();
+    this.aggregatedTextBytes = 0;
     this.tasks.clear();
     this.timers.clear();
     for (const record of this.services.values()) record.alive = false;
@@ -1027,15 +1048,30 @@ export class MockHost {
     }
     for (const field of EVENT_PAYLOAD_FIELDS[kind] ?? []) {
       const value = payload[field.name];
-      const valid =
-        field.type === "string"
-          ? typeof value === "string"
-          : typeof value === "number" && Number.isInteger(value);
+      let valid: boolean;
+      let expected: string;
+      if (field.type === "string") {
+        valid = typeof value === "string";
+        expected = "a string";
+      } else if (SIGNED_INTEGER_EVENT_FIELDS.has(field.name)) {
+        // `exit_code` is the accepted signed status value (`i32` in
+        // `bitty-runtime` `registry.rs`); identity fields are u64 and must be
+        // nonnegative safe integers instead.
+        valid =
+          typeof value === "number" &&
+          Number.isInteger(value) &&
+          value >= MOCK_LIMITS.EXIT_CODE_MIN &&
+          value <= MOCK_LIMITS.EXIT_CODE_MAX;
+        expected = `a signed 32-bit integer (${MOCK_LIMITS.EXIT_CODE_MIN}..${MOCK_LIMITS.EXIT_CODE_MAX})`;
+      } else {
+        valid = isNonnegativeSafeInteger(value);
+        expected = "a nonnegative safe integer";
+      }
       if (!valid) {
         fail(
           "validation",
           HOST_CODES.EVENT_PAYLOAD_INVALID,
-          `event payload field '${field.name}' must be ${field.type}`,
+          `event payload field '${field.name}' must be ${expected}`,
           `payload.${field.name}`,
         );
       }
@@ -1085,13 +1121,43 @@ export class MockHost {
       );
     }
     const def = record.def;
+    // The bridge marshals every value, schema or not: reject unsupported,
+    // cyclic, non-plain, or over-bound args before the callback runs.
+    const argsProblem = bridgeValueProblem(args, "args");
+    if (argsProblem !== undefined) {
+      fail("validation", HOST_CODES.ARGS_INVALID, argsProblem);
+    }
     if (def.args_schema !== undefined) {
       const problem = valueProblem(def.args_schema, args, "args");
       if (problem !== undefined) {
         fail("validation", HOST_CODES.ARGS_INVALID, problem);
       }
     }
-    const result = def.run(deepCopy(args) as JsonValue);
+    // Command callbacks run inside the same error boundary as task, timer, and
+    // event callbacks: a fault is recorded as a handler violation (delivering
+    // `handler.violation`) and surfaced as the typed command-callback failure
+    // instead of escaping as a raw JS error.
+    let result: unknown = undefined;
+    try {
+      result = def.run(deepCopy(args) as JsonValue);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      this.recordViolation(`command ${qualified} callback failed: ${message}`);
+      fail(
+        "runtime",
+        HOST_CODES.COMMAND_CALLBACK_FAILED,
+        `command ${qualified} callback failed: ${message}`,
+      );
+    }
+    // A Lua command that returns nothing marshals to `nil`; tolerate the
+    // JS `undefined` equivalent as a valid (empty) result. Every other value
+    // crosses the same bounded bridge conversion as the args.
+    if (result !== undefined) {
+      const resultProblem = bridgeValueProblem(result, "result");
+      if (resultProblem !== undefined) {
+        fail("validation", HOST_CODES.RESULT_INVALID, resultProblem);
+      }
+    }
     if (def.result_schema !== undefined) {
       const problem = valueProblem(def.result_schema, result, "result");
       if (problem !== undefined) {
@@ -1101,13 +1167,29 @@ export class MockHost {
     return deepCopy(result);
   }
 
-  /** Run queued task callbacks cooperatively in insertion order. */
+  /**
+   * Run queued task callbacks cooperatively in insertion order.
+   *
+   * Eligible records are snapshotted before any callback runs, then each is
+   * rechecked against the live map, its own cancelled/done flags, the
+   * generation, and the host state. A callback that disposes and reloads
+   * stops the drain as soon as the generation changes, so a newly queued
+   * generation-N+1 task can never run inside an old drain (matching the timer
+   * path).
+   */
   drainTasks(): void {
     this.assertAlive();
-    for (const [handle, record] of this.tasks) {
-      if (record.generation !== this.generation) continue;
+    const generation = this.generation;
+    const eligible = [...this.tasks.entries()].filter(
+      ([, record]) =>
+        record.generation === generation && !record.cancelled && !record.done,
+    );
+    for (const [handle, record] of eligible) {
+      if (this.generation !== generation) break;
+      if (this.tasks.get(handle) !== record) continue;
       if (record.cancelled || record.done) continue;
-      if (this.state === "suspended") continue;
+      if (record.generation !== generation) continue;
+      if (this.state === "suspended" || this.state === "disposing") continue;
       record.done = true;
       this.runHostCallback(record.run, `task ${handle}`);
     }
@@ -1145,6 +1227,7 @@ export class MockHost {
         record.fired ||
         record.generation !== this.generation ||
         this.state === "disposed" ||
+        this.state === "disposing" ||
         this.state === "suspended"
       )
         continue;
@@ -1229,11 +1312,11 @@ export class MockHost {
 
   private assertOrdinaryDispatch(): void {
     this.assertAlive();
-    if (this.state === "suspended") {
+    if (this.state === "suspended" || this.state === "disposing") {
       fail(
         "validation",
         HOST_CODES.LIFECYCLE_STATE,
-        "the plugin generation is suspended; ordinary dispatch is detached",
+        `the plugin generation is ${this.state}; ordinary dispatch is detached`,
       );
     }
   }
@@ -1366,6 +1449,34 @@ export class MockHost {
         "command title must be a non-empty string",
         "def.title",
       );
+    }
+    if (utf8Bytes(def.title) > MOCK_LIMITS.COMMAND_TITLE_MAX_BYTES) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        `command title exceeds ${MOCK_LIMITS.COMMAND_TITLE_MAX_BYTES} bytes`,
+        "def.title",
+      );
+    }
+    if (def.description !== undefined) {
+      if (typeof def.description !== "string") {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "command description must be a string",
+          "def.description",
+        );
+      }
+      if (
+        utf8Bytes(def.description) > MOCK_LIMITS.COMMAND_DESCRIPTION_MAX_BYTES
+      ) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `command description exceeds ${MOCK_LIMITS.COMMAND_DESCRIPTION_MAX_BYTES} bytes`,
+          "def.description",
+        );
+      }
     }
     if (typeof def.run !== "function") {
       fail(
@@ -1647,22 +1758,64 @@ export class MockHost {
     if (problem !== undefined) {
       fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "component");
     }
+    // Node and text budgets are checked on the parsed node before the raw
+    // marshalling byte cap, matching `bitty-lua` `ui.rs`: the semantic
+    // `SCN-1`/`SCN-3` numbers are exact, while the byte cap only guards the
+    // raw value (text + 64 KiB).
+    const counts = countComponentResources(component);
+    if (counts.nodes > MOCK_LIMITS.UI_MAX_NODES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `component node count exceeds ${MOCK_LIMITS.UI_MAX_NODES}`,
+        "component",
+      );
+    }
+    if (counts.textBytes > MOCK_LIMITS.UI_MAX_TEXT_BYTES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `component text exceeds ${MOCK_LIMITS.UI_MAX_TEXT_BYTES} bytes`,
+        "component",
+      );
+    }
     if (
-      jsonBytes(component, MOCK_LIMITS.SNAPSHOT_MAX_BYTES) >
-      MOCK_LIMITS.SNAPSHOT_MAX_BYTES
+      jsonBytes(component, MOCK_LIMITS.UI_MARSHAL_MAX_BYTES) >
+      MOCK_LIMITS.UI_MARSHAL_MAX_BYTES
     ) {
       fail(
         "validation",
         HOST_CODES.UI_COMPONENT_INVALID,
-        `component exceeds ${MOCK_LIMITS.SNAPSHOT_MAX_BYTES} bytes`,
+        `component exceeds ${MOCK_LIMITS.UI_MARSHAL_MAX_BYTES} bytes`,
         "component",
       );
     }
+    // Block and aggregate-text budgets are per generation; reject before any
+    // mutation so a rejected mount retains the prior generation state.
+    if (this.blocks.size >= MOCK_LIMITS.UI_MAX_BLOCKS) {
+      fail(
+        "budget",
+        HOST_CODES.UI_BLOCK_BUDGET,
+        `ui block registry is full (${MOCK_LIMITS.UI_MAX_BLOCKS} blocks)`,
+      );
+    }
+    if (
+      this.aggregatedTextBytes + counts.textBytes >
+      MOCK_LIMITS.UI_MAX_AGGREGATED_TEXT_BYTES
+    ) {
+      fail(
+        "budget",
+        HOST_CODES.UI_BLOCK_BUDGET,
+        `ui block text budget exceeded (${MOCK_LIMITS.UI_MAX_AGGREGATED_TEXT_BYTES} bytes aggregated)`,
+      );
+    }
     const handle = this.nextHandle();
+    this.aggregatedTextBytes += counts.textBytes;
     this.blocks.set(handle, {
       generation: this.generation,
       slot,
       component: deepFreeze(deepCopy(component)),
+      textBytes: counts.textBytes,
       version: 1,
     });
     return handle;
@@ -1682,18 +1835,48 @@ export class MockHost {
     if (problem !== undefined) {
       fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "component");
     }
+    const counts = countComponentResources(component);
+    if (counts.nodes > MOCK_LIMITS.UI_MAX_NODES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `component node count exceeds ${MOCK_LIMITS.UI_MAX_NODES}`,
+        "component",
+      );
+    }
+    if (counts.textBytes > MOCK_LIMITS.UI_MAX_TEXT_BYTES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `component text exceeds ${MOCK_LIMITS.UI_MAX_TEXT_BYTES} bytes`,
+        "component",
+      );
+    }
     if (
-      jsonBytes(component, MOCK_LIMITS.SNAPSHOT_MAX_BYTES) >
-      MOCK_LIMITS.SNAPSHOT_MAX_BYTES
+      jsonBytes(component, MOCK_LIMITS.UI_MARSHAL_MAX_BYTES) >
+      MOCK_LIMITS.UI_MARSHAL_MAX_BYTES
     ) {
       fail(
         "validation",
         HOST_CODES.UI_COMPONENT_INVALID,
-        `component exceeds ${MOCK_LIMITS.SNAPSHOT_MAX_BYTES} bytes`,
+        `component exceeds ${MOCK_LIMITS.UI_MARSHAL_MAX_BYTES} bytes`,
         "component",
       );
     }
+    // Apply the update delta against the generation aggregate, rejecting before
+    // the block is mutated so the last good component is retained.
+    const newAggregate =
+      this.aggregatedTextBytes - block.textBytes + counts.textBytes;
+    if (newAggregate > MOCK_LIMITS.UI_MAX_AGGREGATED_TEXT_BYTES) {
+      fail(
+        "budget",
+        HOST_CODES.UI_BLOCK_BUDGET,
+        `ui block text budget exceeded (${MOCK_LIMITS.UI_MAX_AGGREGATED_TEXT_BYTES} bytes aggregated)`,
+      );
+    }
+    this.aggregatedTextBytes = newAggregate;
     block.component = deepFreeze(deepCopy(component));
+    block.textBytes = counts.textBytes;
     block.version += 1;
     return true;
   }
@@ -1718,13 +1901,12 @@ export class MockHost {
     }
     if (
       opts.terminal_id !== undefined &&
-      (typeof opts.terminal_id !== "number" ||
-        !Number.isInteger(opts.terminal_id))
+      !isNonnegativeSafeInteger(opts.terminal_id)
     ) {
       fail(
         "validation",
         HOST_CODES.DEF_INVALID,
-        "terminal_id must be an integer",
+        "terminal_id must be a nonnegative safe integer",
         "opts.terminal_id",
       );
     }
@@ -2021,7 +2203,11 @@ export class MockHost {
       if (subscription.kind !== kind) continue;
       if (subscription.generation !== this.generation) continue;
       if (this.state === "disposed") continue;
-      if (!lifecycle && this.state === "suspended") continue;
+      if (
+        !lifecycle &&
+        (this.state === "suspended" || this.state === "disposing")
+      )
+        continue;
       delivered += 1;
       try {
         const result = subscription.handler(envelope);

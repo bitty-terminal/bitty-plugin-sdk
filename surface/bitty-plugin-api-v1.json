@@ -329,8 +329,8 @@
     {
       "name": "BittyEventHandler",
       "kind": "alias",
-      "type": "fun(event: BittyEvent): boolean|nil",
-      "doc": "Observation and lifecycle return values are ignored; interception handlers return false to veto and anything else to approve."
+      "type": "fun(event: BittyEvent): any",
+      "doc": "Observation and lifecycle return values are ignored; interception handlers return the literal false to veto and any other value (including nil) to approve, so the shared handler result domain is any."
     },
     {
       "name": "BittyEventsNamespace",
