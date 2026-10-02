@@ -689,7 +689,9 @@ explicitly.
   `lazy.events`). The mock checks grants live where the host snapshots them
   per generation, and records traces only for events injected with
   `publish()` (the host's `deliver_event` path), never for lifecycle
-  deliveries; both choices are equal to or stricter than the host. Queued
+  deliveries; both choices are equal to or stricter than the host (a trace
+  also stops recording `workspace.*` kinds as soon as `workspace.read` is
+  revoked). Queued
   workspace requests are recorded for `drainWorkspaceRequests()` and never
   applied, matching the bridge, which only enqueues.
 - **High-risk capabilities.** The lint-side escalation set is documented in

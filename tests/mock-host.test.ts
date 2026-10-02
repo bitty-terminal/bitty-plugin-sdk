@@ -3511,6 +3511,25 @@ describe("debug namespace", () => {
     expect(records[1]?.payload).toMatchObject({ truncated: true });
   });
 
+  test("workspace events stop reaching traces once workspace.read is revoked", () => {
+    const host = new MockHost({
+      manifestSource: WORKSPACE_MANIFEST.replace(
+        "workspace.control = true",
+        "workspace.control = true\ndebug.trace = true",
+      ),
+    });
+    host.grant("workspace.read");
+    host.grant("debug.trace");
+    host.beginActivation();
+    const handle = host.bitty.debug.trace({ filter: "workspace.*" });
+    host.endActivation();
+    host.publish("workspace.focused", { id: 1 });
+    host.revoke("workspace.read");
+    host.publish("workspace.focused", { id: 2 });
+    const records = host.bitty.debug.trace_get(handle)?.records ?? [];
+    expect(records.map((record) => record.payload)).toEqual([{ id: 1 }]);
+  });
+
   test("traces are dropped with the generation", () => {
     const host = debugHost(["debug.trace"]);
     host.beginActivation();

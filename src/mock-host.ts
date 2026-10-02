@@ -2815,6 +2815,14 @@ export class MockHost {
     for (const trace of this.traces.values()) {
       if (trace.generation !== this.generation) continue;
       if (!trace.declared.has(kind)) continue;
+      // Workspace kinds stay gated on the live workspace.read grant, so a
+      // revoked grant stops trace observation exactly like delivery.
+      if (
+        kind.startsWith(WORKSPACE_EVENT_PREFIX) &&
+        !this.hasCapability("workspace.read")
+      ) {
+        continue;
+      }
       if (!traceFilterMatches(trace.filter, kind)) continue;
       let view: Record<string, unknown> = payload;
       if (kind === "intercept.paste" && !trace.granted.has("clipboard.read")) {
