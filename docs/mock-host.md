@@ -45,7 +45,11 @@ conformance tests can run deterministically on Bun only.
   `process.spawn` v1-OUT). Re-verified against bitty `main` `b867393` for
   0.0.21: no new Lua functions were added since the freeze (only a shared
   env-key predicate and the grant gate), so only the `services` verdict
-  moved. The SDK freeze in
+  moved. Re-verified against bitty `main` `799f743` (#1604, CTX-0906,
+  DIR-030): no verdict moved; Core removed its embedded Lua network binding,
+  so `bitty.network` stays a surface exclusion and the out-of-process `net`
+  component's Lua request surface stays deferred and unmodeled by the mock.
+  The SDK freeze in
   `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
   (`NAMESPACE_HOST_PARITY`), and `just host-parity-check` pins these verdicts
   (see [Host parity freeze](#host-parity-freeze)).

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Re-pin host parity to bitty `main` `799f743` (bitty #1603/#1604,
+  CTX-0906, DIR-030; issue #131): Core removed the embedded `network`
+  Cargo feature and Lua network binding, and network access moves to the
+  out-of-process `net` native component whose Lua request surface is
+  deferred, not wired. No namespace verdict moved (`hostParity.pr` stays
+  1391); the `bitty.network` exclusion reason now records the removal, and
+  `lua/bitty.d.lua` was regenerated with no drift.
 - Re-wire `services.get`/`provide` to the host backend for 0.0.21 (issue
   #115): bitty #1391 (CTX-0767, LUA-OQ-8) landed the accepted v1
   consumer/provider contract, so the `services` parity verdict flips

@@ -5,9 +5,9 @@
   "output": "lua/bitty.d.lua",
   "hostParity": {
     "repository": "bitty",
-    "commit": "b8673937b6825ae4e7f1c35f4adc152ffd171f87",
+    "commit": "799f7433d7f36b2011ece305c7d05adbc38120a5",
     "pr": 1391,
-    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions).",
+    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). Re-verified at bitty #1604 (CTX-0906, DIR-030), which moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded.",
     "namespaces": {
       "commands": "wired",
       "events": "wired",
@@ -1094,7 +1094,7 @@
     },
     {
       "path": "bitty.network",
-      "reason": "No network entry point in v1."
+      "reason": "No network entry point in v1. Core removed the embedded Lua network binding (bitty #1604, DIR-030); network access is the out-of-process net native component, and its Lua request surface (non-blocking handle plus response event) is deferred and not wired."
     },
     {
       "path": "bitty.clipboard",
