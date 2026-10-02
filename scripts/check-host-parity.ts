@@ -20,12 +20,14 @@ import { fileURLToPath } from "node:url";
 
 import { HostError } from "../src/host-diagnostics.js";
 import {
+  DEFERRED_FUNCTIONS,
   DEFERRED_NAMESPACES,
+  FUNCTION_HOST_PARITY,
   HOST_PARITY_SOURCE,
   NAMESPACE_HOST_PARITY,
 } from "../src/host-surface.js";
 import { MockHost } from "../src/mock-host.js";
-import { loadSurface } from "./generate-lua-defs.js";
+import { functionHostStatus, loadSurface } from "./generate-lua-defs.js";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DEFERRED_ANNOTATION =
@@ -95,9 +97,39 @@ export function main(): number {
     );
   }
 
+  const functionsFromSurface = new Map(
+    Object.entries(surface.hostParity.functions ?? {}),
+  );
+  const functionsFromCode = new Map(
+    FUNCTION_HOST_PARITY.map((entry) => [entry.path, entry.status]),
+  );
+  for (const [path, status] of functionsFromSurface) {
+    if (functionsFromCode.get(path) !== status) {
+      problems.push(
+        `function ${path}: surface says ${status}, host-surface.ts says ${String(functionsFromCode.get(path))}`,
+      );
+    }
+  }
+  for (const path of functionsFromCode.keys()) {
+    if (!functionsFromSurface.has(path)) {
+      problems.push(`function ${path}: missing from surface hostParity`);
+    }
+  }
+  if (
+    JSON.stringify([...DEFERRED_FUNCTIONS].sort()) !==
+    JSON.stringify(
+      [...functionsFromSurface.entries()]
+        .filter(([, status]) => status === "deferred")
+        .map(([path]) => path)
+        .sort(),
+    )
+  ) {
+    problems.push("DEFERRED_FUNCTIONS disagrees with surface hostParity");
+  }
+
   const defs = readFileSync(join(REPO_ROOT, "lua/bitty.d.lua"), "utf8");
   const deferredFunctions = surface.functions.filter(
-    (fn) => fromSurface.get(fn.path.split(".")[0] ?? "") === "deferred",
+    (fn) => functionHostStatus(surface.hostParity, fn.path) === "deferred",
   );
   const annotationCount = defs.split(DEFERRED_ANNOTATION).length - 1;
   if (annotationCount !== deferredFunctions.length) {
@@ -106,7 +138,7 @@ export function main(): number {
     );
   }
   const wiredFunctions = surface.functions.filter(
-    (fn) => fromSurface.get(fn.path.split(".")[0] ?? "") === "wired",
+    (fn) => functionHostStatus(surface.hostParity, fn.path) === "wired",
   );
   if (wiredFunctions.length === 0) {
     problems.push("expected at least one wired function");
@@ -155,6 +187,20 @@ export function main(): number {
       problems.push(
         "mock tasks.spawn: WIRED namespace must still issue a handle",
       );
+    }
+    for (const path of DEFERRED_FUNCTIONS) {
+      if (path !== "debug.control") {
+        problems.push(`no mock probe for deferred function ${path}`);
+        continue;
+      }
+      const denial = denialOf(() =>
+        host.bitty.debug.control("reload_plugin", "conformance.probe"),
+      );
+      if (denial.code !== "E_NOT_IMPLEMENTED" || denial.class !== "runtime") {
+        problems.push(
+          `mock ${path}: got ${denial.class}/${denial.code}, want runtime/E_NOT_IMPLEMENTED`,
+        );
+      }
     }
     host.endActivation();
     host.dispose();

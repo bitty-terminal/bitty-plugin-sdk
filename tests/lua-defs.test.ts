@@ -38,6 +38,17 @@ const EXPECTED_FUNCTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ["L1", "tasks.cancel", "boolean"],
   ["L1", "timers.create", "BittyTimerHandle"],
   ["L1", "timers.cancel", "boolean"],
+  ["L1", "debug.inspect", "BittyDebugInspectResult"],
+  ["L1", "debug.trace", "BittyDebugTraceHandle"],
+  ["L1", "debug.trace_get", "BittyDebugTraceDrain|nil"],
+  ["L1", "debug.control", "any"],
+  ["L1", "workspace.list", "BittyWorkspaceInfo[]"],
+  ["L1", "workspace.focus", "boolean"],
+  ["L1", "workspace.new", "boolean"],
+  ["L1", "workspace.next", "boolean"],
+  ["L1", "workspace.close", "boolean"],
+  ["L1", "workspace.rename", "boolean"],
+  ["L1", "workspace.move_panel", "boolean"],
 ];
 
 const EXPECTED_EVENTS: ReadonlyArray<readonly [string, string, string]> = [
@@ -54,6 +65,11 @@ const EXPECTED_EVENTS: ReadonlyArray<readonly [string, string, string]> = [
   ["selection.changed", "Observation", "BittySelectionChangedPayload"],
   ["process.exited", "Observation", "BittyProcessExitedPayload"],
   ["config.reloaded", "Observation", "BittyEmptyPayload"],
+  ["workspace.created", "Observation", "BittyWorkspaceNamedEventPayload"],
+  ["workspace.closed", "Observation", "BittyWorkspaceEventPayload"],
+  ["workspace.renamed", "Observation", "BittyWorkspaceNamedEventPayload"],
+  ["workspace.focused", "Observation", "BittyWorkspaceEventPayload"],
+  ["workspace.changed", "Observation", "BittyWorkspaceEventPayload"],
   ["intercept.command-dispatch", "Interception", "BittyInterceptPayload"],
   ["intercept.terminal-spawn", "Interception", "BittyInterceptPayload"],
   ["intercept.paste", "Interception", "BittyInterceptPayload"],
@@ -114,6 +130,22 @@ describe("surface table", () => {
     expect(gates.get("ui.mount")).toEqual(["ui.rich"]);
     expect(gates.get("ui.update")).toEqual(["ui.rich"]);
     expect(gates.get("terminal.snapshot")).toEqual(["terminal.semantic-read"]);
+    expect(gates.get("debug.inspect")).toEqual(["debug.inspect"]);
+    expect(gates.get("debug.trace")).toEqual(["debug.trace"]);
+    expect(gates.get("debug.trace_get")).toEqual(["debug.trace"]);
+    expect(gates.get("debug.control")).toEqual(["debug.control"]);
+    expect(gates.get("workspace.list")).toEqual(["workspace.read"]);
+    for (const path of [
+      "workspace.focus",
+      "workspace.new",
+      "workspace.next",
+      "workspace.close",
+      "workspace.rename",
+      "workspace.move_panel",
+    ]) {
+      // workspace.read never implies control and control never implies read.
+      expect(gates.get(path)).toEqual(["workspace.control"]);
+    }
     for (const fn of surface.functions) {
       if (
         ![
@@ -123,7 +155,9 @@ describe("surface table", () => {
           "ui.mount",
           "ui.update",
           "terminal.snapshot",
-        ].includes(fn.path)
+        ].includes(fn.path) &&
+        !fn.path.startsWith("debug.") &&
+        !fn.path.startsWith("workspace.")
       ) {
         expect(fn.capabilities).toEqual([]);
       }
@@ -133,7 +167,7 @@ describe("surface table", () => {
   test("pins host parity with wired keymaps/tasks/services and deferred env", () => {
     expect(surface.hostParity.repository).toBe("bitty");
     expect(surface.hostParity.commit).toMatch(/^[0-9a-f]{40}$/);
-    expect(surface.hostParity.pr).toBe(1391);
+    expect(surface.hostParity.pr).toBe(1584);
     // bitty #1604 (DIR-030) removed Core's embedded Lua network binding, so
     // bitty.network must stay excluded rather than gain a namespace verdict.
     expect(surface.hostParity.commit).toBe(HOST_PARITY_SOURCE.commit);
@@ -146,21 +180,44 @@ describe("surface table", () => {
     expect(namespaces.tasks).toBe("wired");
     expect(namespaces.services).toBe("wired");
     expect(namespaces.env).toBe("deferred");
-    expect(Object.keys(namespaces)).toHaveLength(12);
+    expect(namespaces.debug).toBe("wired");
+    expect(namespaces.workspace).toBe("wired");
+    expect(Object.keys(namespaces)).toHaveLength(14);
+    expect(surface.hostParity.functions).toEqual({
+      "debug.control": "deferred",
+    });
   });
 
   test("deferred functions carry exactly E_NOT_IMPLEMENTED and render the stub annotation", () => {
-    for (const path of ["env.get", "env.has"]) {
+    const deferred = ["env.get", "env.has", "debug.control"];
+    for (const path of deferred) {
       const fn = surface.functions.find((entry) => entry.path === path);
       expect(fn?.errors).toEqual(["E_NOT_IMPLEMENTED"]);
     }
     for (const fn of surface.functions) {
-      if (!["env.get", "env.has"].includes(fn.path)) {
+      if (!deferred.includes(fn.path)) {
         expect(fn.errors).not.toContain("E_NOT_IMPLEMENTED");
       }
     }
-    expect(defs).toContain(
-      "Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.",
+    const annotation =
+      "Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.";
+    expect(defs.split(annotation).length - 1).toBe(deferred.length);
+  });
+
+  test("rejects a per-function override outside a wired namespace", () => {
+    const broken = {
+      ...surface,
+      hostParity: {
+        ...surface.hostParity,
+        functions: { "env.get": "deferred", "debug.absent": "deferred" },
+      },
+    } as Surface;
+    const problems = validateSurface(broken);
+    expect(problems).toContain(
+      "hostParity.functions[env.get] overrides a namespace that is not wired",
+    );
+    expect(problems).toContain(
+      "hostParity.functions lists an unknown function: debug.absent",
     );
   });
 

@@ -1,0 +1,19 @@
+[plugin]
+id = "conformance.debug"
+name = "Conformance Debug"
+version = "1.0.0"
+description = "Debug namespace manifest (bitty CTX-0894/CTX-0897) for mock-host conformance."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+debug.inspect = true
+debug.trace = true
+debug.control = true
+
+[lazy]
+commands = ["conformance.debug:hello"]
+events = ["terminal.bell", "config.reloaded"]

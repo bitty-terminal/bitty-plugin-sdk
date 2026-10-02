@@ -26,6 +26,7 @@ import {
 import {
   CAPABILITY_GATED_SURFACE,
   EVENT_KINDS,
+  FUNCTION_HOST_PARITY,
   HOST_PARITY_SOURCE,
   MOCK_LIMITS,
   NAMESPACE_HOST_PARITY,
@@ -107,6 +108,8 @@ describe("conformance fixtures", () => {
       "tasks",
       "timers",
       "pending-host",
+      "workspace",
+      "debug",
     ]) {
       expect(tags.has(required)).toBe(true);
     }
@@ -146,6 +149,32 @@ describe("conformance fixtures", () => {
     }
     expect(envCalls).toBeGreaterThan(0);
     expect(servicesCalls).toBeGreaterThan(0);
+  });
+
+  test("workspace mutations never assert E_NOT_IMPLEMENTED; debug.control always does", () => {
+    let controlCalls = 0;
+    let workspaceCalls = 0;
+    for (const conformanceCase of readCases()) {
+      for (const step of conformanceCase.steps) {
+        if (step.op !== "call" || typeof step.surface !== "string") continue;
+        const expected = step.expect as
+          { denial?: { code?: string; class?: string } } | undefined;
+        if (step.surface.startsWith("workspace.")) {
+          workspaceCalls += 1;
+          expect(expected?.denial?.code ?? null).not.toBe("E_NOT_IMPLEMENTED");
+        }
+        if (
+          step.surface === "debug.control" &&
+          expected?.denial?.class !== "validation"
+        ) {
+          controlCalls += 1;
+          expect(expected?.denial?.code).toBe("E_NOT_IMPLEMENTED");
+          expect(expected?.denial?.class).toBe("runtime");
+        }
+      }
+    }
+    expect(workspaceCalls).toBeGreaterThan(0);
+    expect(controlCalls).toBeGreaterThan(0);
   });
 
   test("oversized fixture manifests are rejected before being read", async () => {
@@ -339,6 +368,11 @@ describe("accepted surface agreement", () => {
       "selection.changed",
       "process.exited",
       "config.reloaded",
+      "workspace.created",
+      "workspace.closed",
+      "workspace.renamed",
+      "workspace.focused",
+      "workspace.changed",
       "intercept.command-dispatch",
       "intercept.terminal-spawn",
       "intercept.paste",
@@ -374,6 +408,7 @@ describe("accepted surface agreement", () => {
         commit: string;
         pr: number;
         namespaces: Record<string, string>;
+        functions?: Record<string, string>;
       };
       functions: Array<{
         path: string;
@@ -443,8 +478,17 @@ describe("accepted surface agreement", () => {
         ),
       ),
     );
+    expect(new Map(Object.entries(parity.functions ?? {}))).toEqual(
+      new Map(
+        FUNCTION_HOST_PARITY.map(
+          (entry) => [entry.path, entry.status] as const,
+        ),
+      ),
+    );
     for (const fn of surface.functions) {
-      const status = parity.namespaces[fn.path.split(".")[0] ?? ""];
+      const status =
+        parity.functions?.[fn.path] ??
+        parity.namespaces[fn.path.split(".")[0] ?? ""];
       if (status === "deferred") {
         expect(fn.errors).toEqual(["E_NOT_IMPLEMENTED"]);
       } else {

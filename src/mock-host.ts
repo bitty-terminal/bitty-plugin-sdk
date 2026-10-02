@@ -26,6 +26,7 @@ import {
   type HostDiagnostic,
 } from "./host-diagnostics.js";
 import {
+  DEFERRED_FUNCTIONS,
   DEFERRED_NAMESPACES,
   ENV_CAPABILITY_PREFIX,
   ENV_KEY_PATTERN,
@@ -42,6 +43,7 @@ import {
   UI_SLOTS,
   UI_V1_EXCLUDED_NODE_KINDS,
   UI_V1_NODE_KINDS,
+  WORKSPACE_EVENT_PREFIX,
 } from "./host-surface.js";
 import {
   schemaProblem,
@@ -135,6 +137,65 @@ export interface PublishResult {
   readonly vetoed: boolean;
 }
 
+/** One `bitty.workspace.list()` row (bitty `WorkspaceInfo`, CTX-0889). */
+export interface WorkspaceInfo {
+  readonly id: number;
+  readonly name: string;
+  readonly active: boolean;
+  readonly panel_count: number;
+  readonly attention: {
+    readonly bell: boolean;
+    readonly activity: boolean;
+    readonly exited: boolean;
+  };
+}
+
+/** `bitty.workspace.focus` target: a stable id or a 1-based `{ index }`. */
+export type WorkspaceFocusTarget = number | { readonly index: number };
+
+/**
+ * One validated, queued workspace mutation (bitty `WorkspaceRequest`). The
+ * mock records requests for `drainWorkspaceRequests()`; it never applies
+ * them, exactly like the host bridge, which only enqueues.
+ */
+export type WorkspaceRequest =
+  | { readonly kind: "focus_id"; readonly id: number }
+  | { readonly kind: "focus_index"; readonly index: number }
+  | { readonly kind: "new" }
+  | { readonly kind: "next" }
+  | { readonly kind: "close"; readonly id: number | null }
+  | { readonly kind: "rename"; readonly id: number; readonly name: string }
+  | { readonly kind: "move_panel"; readonly id: number };
+
+/** `bitty.debug.inspect` result shape. */
+export interface DebugInspectResult {
+  readonly target: string;
+  readonly items: readonly unknown[];
+  readonly truncated: boolean;
+}
+
+/** `bitty.debug.trace` options. */
+export interface DebugTraceOptions {
+  readonly enabled?: boolean;
+  readonly filter?: string;
+  readonly max_events?: number;
+  readonly handle?: number;
+}
+
+/** One drained trace record. */
+export interface DebugTraceRecord {
+  readonly topic: string;
+  readonly sequence: number;
+  readonly timestamp: number;
+  readonly payload: Readonly<Record<string, unknown>>;
+}
+
+/** `bitty.debug.trace_get` result shape. */
+export interface DebugTraceDrain {
+  readonly records: readonly DebugTraceRecord[];
+  readonly dropped: number;
+}
+
 export type MockHostState =
   "created" | "activating" | "active" | "suspended" | "disposing" | "disposed";
 
@@ -172,6 +233,140 @@ interface ServiceRecord {
   readonly version: string;
   readonly impl: Record<string, ServiceMethod>;
   alive: boolean;
+}
+
+type TraceFilter =
+  | { readonly kind: "all" }
+  | { readonly kind: "exact"; readonly topic: string }
+  | { readonly kind: "prefix"; readonly prefix: string };
+
+interface TraceState {
+  readonly generation: number;
+  readonly declared: ReadonlySet<string>;
+  readonly granted: ReadonlySet<string>;
+  readonly filter: TraceFilter;
+  readonly maxEvents: number;
+  records: Array<DebugTraceRecord & { readonly bytes: number }>;
+  bytes: number;
+  dropped: number;
+}
+
+/** Lowercase lifecycle label served by `bitty.debug.inspect("plugins")`. */
+const DEBUG_STATE_LABEL: Readonly<Record<MockHostState, string>> = {
+  created: "unloaded",
+  activating: "activating",
+  active: "active",
+  suspended: "suspended",
+  disposing: "disposing",
+  disposed: "disposed",
+};
+
+const DEBUG_TRACE_OPTION_KEYS: ReadonlySet<string> = new Set([
+  "enabled",
+  "filter",
+  "max_events",
+  "handle",
+]);
+
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const CONTROL_CHARACTER = /\p{Cc}/u;
+
+/** Positive Lua integer as the host bridge accepts for workspace ids. */
+function isPositiveLuaInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+/** Validate a stable workspace id argument (bitty `workspace_id_arg`). */
+function workspaceIdArg(value: unknown, what: string): number {
+  if (!isPositiveLuaInteger(value)) {
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      `${what} must be a positive integer workspace id`,
+    );
+  }
+  return value;
+}
+
+/** Validate a rename name (bitty `workspace_name_arg`). */
+function workspaceNameArg(value: unknown): string {
+  if (typeof value !== "string") {
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      "workspace.rename name must be a string",
+    );
+  }
+  if (LONE_SURROGATE.test(value)) {
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      "workspace.rename name must be valid UTF-8",
+    );
+  }
+  if (utf8Bytes(value) > MOCK_LIMITS.WORKSPACE_RENAME_MAX_BYTES) {
+    fail(
+      "validation",
+      HOST_CODES.DEF_LIMIT,
+      `workspace.rename name exceeds ${MOCK_LIMITS.WORKSPACE_RENAME_MAX_BYTES} bytes`,
+    );
+  }
+  if (value.trim().length === 0 || CONTROL_CHARACTER.test(value)) {
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      "workspace.rename name must be non-blank without control characters",
+    );
+  }
+  return value;
+}
+
+/** Truncate a workspace name to the bridge character bound. */
+function boundedWorkspaceName(name: string): string {
+  return [...name].slice(0, MOCK_LIMITS.WORKSPACE_NAME_MAX_CHARS).join("");
+}
+
+/** Parse a trace topic filter (bitty `TraceFilter::parse`). */
+function parseTraceFilter(pattern: string): TraceFilter {
+  if (
+    pattern.length === 0 ||
+    utf8Bytes(pattern) > MOCK_LIMITS.DEBUG_TRACE_FILTER_MAX_BYTES
+  ) {
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      `debug.trace filter must be 1..=${MOCK_LIMITS.DEBUG_TRACE_FILTER_MAX_BYTES} bytes`,
+    );
+  }
+  if (!/^[\x21-\x7e]+$/.test(pattern)) {
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      "debug.trace filter must be printable ASCII without spaces",
+    );
+  }
+  const star = pattern.indexOf("*");
+  if (star === -1) return { kind: "exact", topic: pattern };
+  if (star === pattern.length - 1) {
+    return { kind: "prefix", prefix: pattern.slice(0, star) };
+  }
+  fail(
+    "validation",
+    HOST_CODES.DEF_INVALID,
+    "debug.trace filter allows a single trailing '*' only",
+  );
+}
+
+function traceFilterMatches(filter: TraceFilter, topic: string): boolean {
+  if (filter.kind === "all") return true;
+  if (filter.kind === "exact") return topic === filter.topic;
+  return topic.startsWith(filter.prefix);
+}
+
+/** Lua integer check for debug option and handle values. */
+function isLuaInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value);
 }
 
 function canonicalValue(value: unknown): string {
@@ -761,6 +956,21 @@ export class MockHost {
       create(delayMs: number, callback: () => unknown): number;
       cancel(handle: number): boolean;
     };
+    readonly debug: {
+      inspect(target: string): DebugInspectResult;
+      trace(opts?: DebugTraceOptions | null): number;
+      trace_get(handle: number): DebugTraceDrain | null;
+      control(action: string, target: string): unknown;
+    };
+    readonly workspace: {
+      list(): WorkspaceInfo[];
+      focus(target: WorkspaceFocusTarget): boolean;
+      readonly new: () => boolean;
+      next(): boolean;
+      close(id?: number | null): boolean;
+      rename(id: number, name: string): boolean;
+      move_panel(id: number): boolean;
+    };
   };
 
   private state: MockHostState = "created";
@@ -792,6 +1002,11 @@ export class MockHost {
   private readonly toolsGitVersion: string | null | undefined;
   private terminalSnapshot: Record<string, unknown> = {};
   private deliveringViolation = false;
+  private workspaceRows: WorkspaceInfo[] = [];
+  private workspaceQueue: WorkspaceRequest[] = [];
+  private droppedWorkspaceRequests = 0;
+  private readonly traces = new Map<number, TraceState>();
+  private traceHandleSequence = 0;
 
   constructor(options: MockHostOptions) {
     this.manifest = loadManifestModel(options.manifestSource);
@@ -863,6 +1078,42 @@ export class MockHost {
           this.timersCreate(delayMs, callback),
         cancel: (handle: number): boolean => this.timersCancel(handle),
       },
+      debug: {
+        inspect: (target: string): DebugInspectResult =>
+          this.debugInspect(target),
+        trace: (opts?: DebugTraceOptions | null): number =>
+          this.debugTrace(opts),
+        trace_get: (handle: number): DebugTraceDrain | null =>
+          this.debugTraceGet(handle),
+        control: (action: string, target: string): unknown =>
+          this.debugControl(action, target),
+      },
+      workspace: {
+        list: (): WorkspaceInfo[] => this.workspaceList(),
+        focus: (target: WorkspaceFocusTarget): boolean =>
+          this.workspaceRequest(() => this.workspaceFocusArg(target)),
+        new: (): boolean => this.workspaceRequest(() => ({ kind: "new" })),
+        next: (): boolean => this.workspaceRequest(() => ({ kind: "next" })),
+        close: (id?: number | null): boolean =>
+          this.workspaceRequest(() => ({
+            kind: "close",
+            id:
+              id === undefined || id === null
+                ? null
+                : workspaceIdArg(id, "workspace.close id"),
+          })),
+        rename: (id: number, name: string): boolean =>
+          this.workspaceRequest(() => ({
+            kind: "rename",
+            id: workspaceIdArg(id, "workspace.rename id"),
+            name: workspaceNameArg(name),
+          })),
+        move_panel: (id: number): boolean =>
+          this.workspaceRequest(() => ({
+            kind: "move_panel",
+            id: workspaceIdArg(id, "workspace.move_panel target"),
+          })),
+      },
     };
   }
 
@@ -928,6 +1179,27 @@ export class MockHost {
     }
   }
 
+  /**
+   * Fail closed when the manifest declares a `workspace.*` event kind without
+   * a granted `workspace.read` capability (bitty CTX-0889): the host rejects
+   * activation before any VM exists instead of letting the subscription
+   * silently never fire.
+   */
+  private checkWorkspaceEventActivation(): void {
+    if (this.hasCapability("workspace.read")) return;
+    const kind = this.manifest.events.find((entry) =>
+      entry.startsWith(WORKSPACE_EVENT_PREFIX),
+    );
+    if (kind !== undefined) {
+      fail(
+        "runtime",
+        HOST_CODES.CAPABILITY_DENIED,
+        `event '${kind}' requires the 'workspace.read' capability`,
+        "lazy.events",
+      );
+    }
+  }
+
   /** Open the activation window for a new generation. */
   beginActivation(): void {
     if (this.manifest.pluginApiRange !== undefined) {
@@ -944,6 +1216,7 @@ export class MockHost {
       }
     }
     this.checkToolsGitActivation();
+    this.checkWorkspaceEventActivation();
     if (this.state === "disposed" || this.state === "created") {
       this.generation += 1;
       this.state = "activating";
@@ -1013,6 +1286,8 @@ export class MockHost {
     this.timers.clear();
     for (const record of this.services.values()) record.alive = false;
     this.services.clear();
+    // Traces never outlive the generation (bitty `drop_traces`).
+    this.traces.clear();
     // Deliberate harness simplification, stricter than the accepted grant
     // record: the real host persists manifest-hash-addressed grants across
     // suspend and reload and re-prompts only on a manifest-hash change with
@@ -1106,6 +1381,9 @@ export class MockHost {
         `event payload exceeds ${EVENT_MAX_BYTES} bytes`,
       );
     }
+    // bitty `deliver_event` records every published event into open traces
+    // once, before fan-out, under the sequence the envelope will carry.
+    this.recordTrace(kind, this.eventSequence + 1, payload);
     return this.deliver(kind, payload);
   }
 
@@ -1260,6 +1538,67 @@ export class MockHost {
     const record = this.services.get(iface);
     if (record !== undefined) record.alive = false;
     this.services.delete(iface);
+  }
+
+  /**
+   * Set the Core workspace summary served to `bitty.workspace.list()`.
+   *
+   * Models the host's per-tick live workspace source: rows are validated,
+   * copied, truncated to `WORKSPACE_LIST_MAX_ITEMS`, and names are cut to
+   * `WORKSPACE_NAME_MAX_CHARS` characters exactly like the bridge. Before the
+   * first call the source is empty.
+   */
+  setWorkspaces(rows: readonly WorkspaceInfo[]): void {
+    if (!Array.isArray(rows)) {
+      fail("validation", HOST_CODES.DEF_INVALID, "workspaces must be an array");
+    }
+    const bounded: WorkspaceInfo[] = [];
+    for (const [index, row] of rows.entries()) {
+      if (index >= MOCK_LIMITS.WORKSPACE_LIST_MAX_ITEMS) break;
+      const path = `workspaces[${index}]`;
+      if (
+        !isPlainObject(row) ||
+        !isPositiveLuaInteger(row.id) ||
+        typeof row.name !== "string" ||
+        typeof row.active !== "boolean" ||
+        !isNonnegativeSafeInteger(row.panel_count)
+      ) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `${path} must carry a positive integer id, string name, boolean active, and nonnegative integer panel_count`,
+          path,
+        );
+      }
+      const attention = isPlainObject(row.attention) ? row.attention : {};
+      bounded.push({
+        id: row.id,
+        name: boundedWorkspaceName(row.name),
+        active: row.active,
+        panel_count: row.panel_count,
+        attention: {
+          bell: attention.bell === true,
+          activity: attention.activity === true,
+          exited: attention.exited === true,
+        },
+      });
+    }
+    this.workspaceRows = bounded;
+  }
+
+  /**
+   * Drain queued `bitty.workspace.*` mutations in FIFO order, as the host
+   * application does once per tick. The mock never applies them.
+   */
+  drainWorkspaceRequests(): WorkspaceRequest[] {
+    const drained = this.workspaceQueue;
+    this.workspaceQueue = [];
+    return drained;
+  }
+
+  /** Requests dropped because the bounded workspace queue was full. */
+  get workspaceRequestsDropped(): number {
+    return this.droppedWorkspaceRequests;
   }
 
   /**
@@ -2156,6 +2495,370 @@ export class MockHost {
     return true;
   }
 
+  /** Whether a capability is both declared and granted (no implication). */
+  private hasCapability(capability: string): boolean {
+    return (
+      this.manifest.capabilities.includes(capability) &&
+      this.grants.has(capability)
+    );
+  }
+
+  /** Fail closed for one host entry point that is still deferred. */
+  private assertFunctionWired(path: string): void {
+    if (DEFERRED_FUNCTIONS.has(path)) {
+      fail(
+        "runtime",
+        HOST_CODES.NOT_IMPLEMENTED,
+        `bitty.${path} is not implemented by this host`,
+      );
+    }
+  }
+
+  private workspaceList(): WorkspaceInfo[] {
+    this.assertAlive();
+    this.assertCapability("bitty.workspace.list", "workspace.read");
+    return deepCopy(this.workspaceRows);
+  }
+
+  private workspaceFocusArg(target: unknown): WorkspaceRequest {
+    if (isPlainObject(target)) {
+      // The host reads only `index` from a table target.
+      const index = target.index;
+      if (!isPositiveLuaInteger(index)) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "workspace.focus { index = n } needs a positive integer index",
+        );
+      }
+      return { kind: "focus_index", index };
+    }
+    return {
+      kind: "focus_id",
+      id: workspaceIdArg(target, "workspace.focus target"),
+    };
+  }
+
+  /**
+   * Shared `workspace.control` mutation path: the bridge validates argument
+   * shapes first, then the host checks the grant and enqueues into the bounded
+   * queue. Returns whether the request was queued, never whether it applied.
+   */
+  private workspaceRequest(parse: () => WorkspaceRequest): boolean {
+    this.assertAlive();
+    const request = parse();
+    this.assertCapability("bitty.workspace", "workspace.control");
+    if (
+      this.workspaceQueue.length >= MOCK_LIMITS.WORKSPACE_REQUEST_QUEUE_CAPACITY
+    ) {
+      this.droppedWorkspaceRequests += 1;
+      return false;
+    }
+    this.workspaceQueue.push(deepFreeze({ ...request }));
+    return true;
+  }
+
+  private debugInspect(target: unknown): DebugInspectResult {
+    this.assertAlive();
+    if (typeof target !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "debug.inspect target must be a string",
+      );
+    }
+    this.assertCapability("bitty.debug.inspect", "debug.inspect");
+    const compare = (left: string, right: string): number =>
+      left < right ? -1 : left > right ? 1 : 0;
+    const pluginId = this.manifest.pluginId;
+    let items: unknown[];
+    switch (target) {
+      case "plugins":
+        items = [
+          {
+            id: pluginId,
+            version: this.manifest.version,
+            state: DEBUG_STATE_LABEL[this.state],
+            generation: this.generation,
+          },
+        ];
+        break;
+      case "commands":
+        items = [...this.commands.values()]
+          .filter((record) => record.generation === this.generation)
+          .map((record) => ({
+            plugin: pluginId,
+            id: record.def.id,
+            title: record.def.title,
+          }))
+          .sort(
+            (left, right) =>
+              compare(left.id, right.id) || compare(left.title, right.title),
+          );
+        break;
+      case "events":
+        items = this.subscriptions
+          .filter((entry) => entry.generation === this.generation)
+          .map((entry) => ({ plugin: pluginId, kind: entry.kind }))
+          .sort((left, right) => compare(left.kind, right.kind));
+        break;
+      case "grants":
+        items = this.manifest.capabilities
+          .filter((capability) => this.grants.has(capability))
+          .sort(compare);
+        break;
+      case "panels":
+        fail(
+          "runtime",
+          HOST_CODES.NOT_IMPLEMENTED,
+          "bitty.debug.inspect panels is not implemented by this host",
+        );
+      default:
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "debug.inspect target must be one of plugins, commands, events, grants, panels",
+        );
+    }
+    const truncated = items.length > MOCK_LIMITS.DEBUG_INSPECT_MAX_ITEMS;
+    return {
+      target,
+      items: items.slice(0, MOCK_LIMITS.DEBUG_INSPECT_MAX_ITEMS),
+      truncated,
+    };
+  }
+
+  private debugTrace(opts: unknown): number {
+    this.assertAlive();
+    if (opts !== undefined && opts !== null && !isPlainObject(opts)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "debug.trace opts must be a table or nil",
+      );
+    }
+    if (opts !== undefined && opts !== null) {
+      const problem = bridgeValueProblem(opts, "opts");
+      if (problem !== undefined) {
+        fail("validation", HOST_CODES.DEF_INVALID, problem);
+      }
+    }
+    this.assertCapability("bitty.debug.trace", "debug.trace");
+    let enabled = true;
+    let filter: TraceFilter = { kind: "all" };
+    let filterSet = false;
+    let maxEvents: number | undefined;
+    let handle: number | undefined;
+    for (const [key, value] of Object.entries(opts ?? {})) {
+      if (!DEBUG_TRACE_OPTION_KEYS.has(key)) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `debug.trace opts.${key} is not supported`,
+        );
+      }
+      const wrongType = (): never =>
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `debug.trace opts.${key} has the wrong type`,
+        );
+      if (key === "enabled") {
+        if (typeof value !== "boolean") wrongType();
+        enabled = value as boolean;
+      } else if (key === "filter") {
+        if (typeof value !== "string") wrongType();
+        filter = parseTraceFilter(value as string);
+        filterSet = true;
+      } else if (key === "max_events") {
+        if (!isLuaInteger(value)) wrongType();
+        const count = value as number;
+        if (
+          count < MOCK_LIMITS.DEBUG_TRACE_MIN_EVENTS ||
+          count > MOCK_LIMITS.DEBUG_TRACE_MAX_EVENTS
+        ) {
+          fail(
+            "validation",
+            HOST_CODES.DEF_INVALID,
+            `debug.trace max_events must be ${MOCK_LIMITS.DEBUG_TRACE_MIN_EVENTS}..=${MOCK_LIMITS.DEBUG_TRACE_MAX_EVENTS}`,
+          );
+        }
+        maxEvents = count;
+      } else {
+        if (!isLuaInteger(value)) wrongType();
+        handle = value as number;
+      }
+    }
+    if (!enabled) {
+      if (filterSet || maxEvents !== undefined) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "debug.trace opts.filter/max_events are invalid with enabled = false",
+        );
+      }
+      if (handle === undefined) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "debug.trace enabled = false requires opts.handle",
+        );
+      }
+      // Unknown and foreign handles are indistinguishable.
+      const trace = this.traces.get(handle);
+      if (trace === undefined || trace.generation !== this.generation) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "debug.trace handle is not an open trace of this plugin",
+        );
+      }
+      this.traces.delete(handle);
+      return handle;
+    }
+    if (handle !== undefined) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "debug.trace opts.handle is only valid with enabled = false",
+      );
+    }
+    if (this.traces.size >= MOCK_LIMITS.DEBUG_TRACES_PER_PLUGIN) {
+      fail(
+        "budget",
+        HOST_CODES.DEF_LIMIT,
+        `debug.trace limit (${MOCK_LIMITS.DEBUG_TRACES_PER_PLUGIN} per plugin) exceeded`,
+      );
+    }
+    this.traceHandleSequence += 1;
+    const traceHandle = this.traceHandleSequence;
+    this.traces.set(traceHandle, {
+      generation: this.generation,
+      declared: new Set(this.manifest.events),
+      granted: new Set(
+        this.manifest.capabilities.filter((capability) =>
+          this.grants.has(capability),
+        ),
+      ),
+      filter,
+      maxEvents: maxEvents ?? MOCK_LIMITS.DEBUG_TRACE_DEFAULT_MAX_EVENTS,
+      records: [],
+      bytes: 0,
+      dropped: 0,
+    });
+    return traceHandle;
+  }
+
+  private debugTraceGet(handle: unknown): DebugTraceDrain | null {
+    this.assertAlive();
+    if (!isLuaInteger(handle)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "debug.trace_get handle must be an integer",
+      );
+    }
+    this.assertCapability("bitty.debug.trace_get", "debug.trace");
+    const trace = this.traces.get(handle);
+    if (trace === undefined || trace.generation !== this.generation) {
+      return null;
+    }
+    const records = trace.records.map(({ bytes: _bytes, ...record }) =>
+      deepFreeze(deepCopy(record)),
+    );
+    const dropped = trace.dropped;
+    trace.records = [];
+    trace.bytes = 0;
+    trace.dropped = 0;
+    return { records, dropped };
+  }
+
+  private debugControl(action: unknown, target: unknown): unknown {
+    this.assertAlive();
+    if (typeof action !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "debug.control action must be a string",
+      );
+    }
+    if (typeof target !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "debug.control target must be a string",
+      );
+    }
+    // The host fails closed before reading the grant or the target.
+    this.assertFunctionWired("debug.control");
+    this.assertCapability("bitty.debug.control", "debug.control");
+    fail(
+      "runtime",
+      HOST_CODES.NOT_IMPLEMENTED,
+      "bitty.debug.control is not implemented by this host",
+    );
+  }
+
+  /**
+   * Record one published event into every open trace whose snapshot of the
+   * manifest `[lazy].events` declares it and whose filter matches, while the
+   * generation is active (bitty `TraceHub::record`). Payloads are redacted for
+   * the owner's grant snapshot (`intercept.paste` keeps only action/origin
+   * without `clipboard.read`), then bounded by the trace payload ceiling.
+   */
+  private recordTrace(
+    kind: string,
+    sequence: number,
+    payload: Record<string, unknown>,
+  ): void {
+    if (this.traces.size === 0 || this.state !== "active") return;
+    for (const trace of this.traces.values()) {
+      if (trace.generation !== this.generation) continue;
+      if (!trace.declared.has(kind)) continue;
+      // Workspace kinds stay gated on the live workspace.read grant, so a
+      // revoked grant stops trace observation exactly like delivery.
+      if (
+        kind.startsWith(WORKSPACE_EVENT_PREFIX) &&
+        !this.hasCapability("workspace.read")
+      ) {
+        continue;
+      }
+      if (!traceFilterMatches(trace.filter, kind)) continue;
+      let view: Record<string, unknown> = payload;
+      if (kind === "intercept.paste" && !trace.granted.has("clipboard.read")) {
+        view = { redacted: true };
+        for (const field of ["action", "origin"]) {
+          if (field in payload) view[field] = payload[field];
+        }
+      }
+      const encoded = utf8Bytes(JSON.stringify(view));
+      let bounded: Record<string, unknown> = deepCopy(view);
+      let payloadBytes = encoded;
+      if (encoded > MOCK_LIMITS.DEBUG_TRACE_PAYLOAD_MAX_BYTES) {
+        bounded = { truncated: true, bytes: encoded };
+        payloadBytes = utf8Bytes(JSON.stringify(bounded));
+      }
+      const bytes = utf8Bytes(kind) + payloadBytes;
+      while (
+        trace.records.length > 0 &&
+        (trace.records.length >= trace.maxEvents ||
+          trace.bytes + bytes > MOCK_LIMITS.DEBUG_TRACE_BUFFER_MAX_BYTES)
+      ) {
+        const old = trace.records.shift();
+        if (old !== undefined) trace.bytes -= old.bytes;
+        trace.dropped += 1;
+      }
+      trace.bytes += bytes;
+      trace.records.push({
+        topic: kind,
+        sequence,
+        timestamp: this.virtualNow,
+        payload: bounded,
+        bytes,
+      });
+    }
+  }
+
   private runHostCallback(callback: () => unknown, source: string): void {
     try {
       callback();
@@ -2199,6 +2902,13 @@ export class MockHost {
     });
     let delivered = 0;
     let vetoed = false;
+    // Workspace events reach only `workspace.read` holders (bitty CTX-0889).
+    if (
+      kind.startsWith(WORKSPACE_EVENT_PREFIX) &&
+      !this.hasCapability("workspace.read")
+    ) {
+      return { delivered, vetoed };
+    }
     for (const subscription of [...this.subscriptions]) {
       if (subscription.kind !== kind) continue;
       if (subscription.generation !== this.generation) continue;

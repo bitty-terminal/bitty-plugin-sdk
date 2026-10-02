@@ -36,6 +36,13 @@ export const EVENT_KINDS: readonly EventKindSpec[] = [
   { kind: "selection.changed", class: "observation", coalescable: true },
   { kind: "process.exited", class: "observation", coalescable: false },
   { kind: "config.reloaded", class: "observation", coalescable: false },
+  // CTX-0889 (ADR-0014): workspace observation events, delivered only to
+  // `workspace.read` holders and coalesced per host tick by the diff tracker.
+  { kind: "workspace.created", class: "observation", coalescable: false },
+  { kind: "workspace.closed", class: "observation", coalescable: false },
+  { kind: "workspace.renamed", class: "observation", coalescable: false },
+  { kind: "workspace.focused", class: "observation", coalescable: false },
+  { kind: "workspace.changed", class: "observation", coalescable: false },
   {
     kind: "intercept.command-dispatch",
     class: "interception",
@@ -95,7 +102,21 @@ export const CAPABILITY_GATED_SURFACE: readonly CapabilityGate[] = [
   { surface: "bitty.terminal.snapshot", capability: "terminal.semantic-read" },
   { surface: "bitty.env.get", capability: "env.read:<KEY>" },
   { surface: "bitty.env.has", capability: "env.read:<KEY>" },
+  { surface: "bitty.debug.inspect", capability: "debug.inspect" },
+  { surface: "bitty.debug.trace", capability: "debug.trace" },
+  { surface: "bitty.debug.trace_get", capability: "debug.trace" },
+  { surface: "bitty.debug.control", capability: "debug.control" },
+  { surface: "bitty.workspace.list", capability: "workspace.read" },
+  { surface: "bitty.workspace.focus", capability: "workspace.control" },
+  { surface: "bitty.workspace.new", capability: "workspace.control" },
+  { surface: "bitty.workspace.next", capability: "workspace.control" },
+  { surface: "bitty.workspace.close", capability: "workspace.control" },
+  { surface: "bitty.workspace.rename", capability: "workspace.control" },
+  { surface: "bitty.workspace.move_panel", capability: "workspace.control" },
 ];
+
+/** Event-kind prefix of the workspace domain; receipt requires `workspace.read`. */
+export const WORKSPACE_EVENT_PREFIX = "workspace.";
 
 /**
  * Modeled function paths, matching `surface/bitty-plugin-api-v1.json`
@@ -121,6 +142,17 @@ export const V1_SURFACE_FUNCTIONS: readonly string[] = [
   "tasks.cancel",
   "timers.create",
   "timers.cancel",
+  "debug.inspect",
+  "debug.trace",
+  "debug.trace_get",
+  "debug.control",
+  "workspace.list",
+  "workspace.focus",
+  "workspace.new",
+  "workspace.next",
+  "workspace.close",
+  "workspace.rename",
+  "workspace.move_panel",
 ];
 
 /** The only snapshot scope accepted in v1 (`scope = "raw"` is excluded). */
@@ -219,6 +251,24 @@ export const MOCK_LIMITS = {
   BRIDGE_MAX_DEPTH: 8,
   BRIDGE_MAX_NODES: 1024,
   BRIDGE_MAX_VALUE_BYTES: 8 * 1024,
+  // Workspace domain bounds mirror `bitty-lua` `host.rs` (CTX-0889):
+  // `WORKSPACE_LIST_MAX_ITEMS` (= Core `MAX_WORKSPACES`),
+  // `WORKSPACE_NAME_MAX_CHARS`, `WORKSPACE_RENAME_MAX_BYTES`, and the
+  // runtime-shared `WORKSPACE_REQUEST_QUEUE_CAPACITY` (2 x list bound).
+  WORKSPACE_LIST_MAX_ITEMS: 16,
+  WORKSPACE_NAME_MAX_CHARS: 32,
+  WORKSPACE_RENAME_MAX_BYTES: 256,
+  WORKSPACE_REQUEST_QUEUE_CAPACITY: 32,
+  // Debug backend bounds mirror `bitty-runtime` `plugin_runtime/debug.rs`
+  // (CTX-0897).
+  DEBUG_INSPECT_MAX_ITEMS: 1024,
+  DEBUG_TRACE_DEFAULT_MAX_EVENTS: 1000,
+  DEBUG_TRACE_MIN_EVENTS: 1,
+  DEBUG_TRACE_MAX_EVENTS: 10_000,
+  DEBUG_TRACES_PER_PLUGIN: 4,
+  DEBUG_TRACE_PAYLOAD_MAX_BYTES: 4096,
+  DEBUG_TRACE_FILTER_MAX_BYTES: 128,
+  DEBUG_TRACE_BUFFER_MAX_BYTES: 1024 * 1024,
 } as const;
 
 /** Command id grammar from the accepted surface. */
@@ -261,6 +311,17 @@ export const EVENT_PAYLOAD_FIELDS: Readonly<
     { name: "runtime_id", type: "integer" },
     { name: "exit_code", type: "integer" },
   ],
+  "workspace.created": [
+    { name: "id", type: "integer" },
+    { name: "name", type: "string" },
+  ],
+  "workspace.closed": [{ name: "id", type: "integer" }],
+  "workspace.renamed": [
+    { name: "id", type: "integer" },
+    { name: "name", type: "string" },
+  ],
+  "workspace.focused": [{ name: "id", type: "integer" }],
+  "workspace.changed": [{ name: "id", type: "integer" }],
   "intercept.command-dispatch": [
     { name: "action", type: "string" },
     { name: "origin", type: "string" },
@@ -309,16 +370,21 @@ export interface NamespaceHostParity {
  * `env.read:<KEY>` grant exists. Bitty #1604 (CTX-0906, DIR-030) moved no
  * verdict: it removed the embedded Lua network binding from Core, so
  * `bitty.network` stays a v1 exclusion and the out-of-process `net`
- * component's Lua request surface remains deferred, not wired. `commit` is
- * the last re-verified bitty
+ * component's Lua request surface remains deferred, not wired. Bitty #1563 /
+ * #1573 (CTX-0894/CTX-0897) wired the read-only `bitty.debug` backend
+ * (`inspect`, `trace`, `trace_get`) while `debug.control` stays deferred
+ * (see {@link FUNCTION_HOST_PARITY}); bitty #1584 (CTX-0889, ADR-0014) wired
+ * `bitty.workspace` and the `workspace.*` observation events. Both landed
+ * before #1604 but were synced here only at bitty `main` `2cb49afe`. `commit`
+ * is the last re-verified bitty
  * `main`; `pr` is the change that last moved a verdict. Mirrors
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
  * fails when the two drift apart.
  */
 export const HOST_PARITY_SOURCE = {
   repository: "bitty",
-  commit: "799f7433d7f36b2011ece305c7d05adbc38120a5",
-  pr: 1391,
+  commit: "2cb49afed11fcac4a69dd556ff71e576760e063d",
+  pr: 1584,
 } as const;
 
 /**
@@ -341,7 +407,33 @@ export const NAMESPACE_HOST_PARITY: readonly NamespaceHostParity[] = [
   { namespace: "terminal", status: "wired" },
   { namespace: "tasks", status: "wired" },
   { namespace: "timers", status: "wired" },
+  { namespace: "debug", status: "wired" },
+  { namespace: "workspace", status: "wired" },
 ];
+
+/** One per-function parity override inside a wired namespace. */
+export interface FunctionHostParity {
+  readonly path: string;
+  readonly status: HostParityStatus;
+}
+
+/**
+ * Functions that stay deferred inside an otherwise wired namespace.
+ *
+ * `debug.control` is registered by the host bridge, but the runtime
+ * implementation fails closed with `E_NOT_IMPLEMENTED` before reading the
+ * grant or the target (bitty `services.rs` `debug_control`).
+ */
+export const FUNCTION_HOST_PARITY: readonly FunctionHostParity[] = [
+  { path: "debug.control", status: "deferred" },
+];
+
+/** Function paths that fail closed with `E_NOT_IMPLEMENTED` individually. */
+export const DEFERRED_FUNCTIONS: ReadonlySet<string> = new Set(
+  FUNCTION_HOST_PARITY.filter((entry) => entry.status === "deferred").map(
+    (entry) => entry.path,
+  ),
+);
 
 /**
  * Namespaces whose calls fail closed with `E_NOT_IMPLEMENTED`, derived from

@@ -1,0 +1,82 @@
+{
+  "name": "workspace events: identity-only payloads delivered only to workspace.read holders",
+  "description": "bitty #1584 (CTX-0889): the host publishes workspace.created/closed/renamed/focused/changed as coalesced per-tick observations. Payloads are identity only ({ id }, plus name for created/renamed) and reach only generations holding workspace.read; a revoked grant receives nothing.",
+  "manifest": "manifests/workspace.toml",
+  "tags": ["workspace", "events", "round-trip"],
+  "grants": ["workspace.read"],
+  "steps": [
+    { "op": "begin-activation" },
+    { "op": "subscribe", "event": "workspace.created", "capture": "created" },
+    { "op": "subscribe", "event": "workspace.closed", "capture": "closed" },
+    { "op": "subscribe", "event": "workspace.renamed", "capture": "renamed" },
+    { "op": "subscribe", "event": "workspace.focused", "capture": "focused" },
+    { "op": "subscribe", "event": "workspace.changed", "capture": "changed" },
+    { "op": "end-activation" },
+    {
+      "op": "publish",
+      "event": "workspace.created",
+      "payload": { "id": 5, "name": "build" },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "publish",
+      "event": "workspace.renamed",
+      "payload": { "id": 5, "name": "ci" },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "publish",
+      "event": "workspace.focused",
+      "payload": { "id": 5 },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "publish",
+      "event": "workspace.changed",
+      "payload": { "id": 1 },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "publish",
+      "event": "workspace.closed",
+      "payload": { "id": 5 },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "expect-event",
+      "capture": "created",
+      "events": [
+        { "kind": "workspace.created", "payload": { "id": 5, "name": "build" } }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "renamed",
+      "events": [
+        { "kind": "workspace.renamed", "payload": { "id": 5, "name": "ci" } }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "focused",
+      "events": [{ "kind": "workspace.focused", "payload": { "id": 5 } }]
+    },
+    {
+      "op": "expect-event",
+      "capture": "changed",
+      "events": [{ "kind": "workspace.changed", "payload": { "id": 1 } }]
+    },
+    {
+      "op": "expect-event",
+      "capture": "closed",
+      "events": [{ "kind": "workspace.closed", "payload": { "id": 5 } }]
+    },
+    { "op": "revoke", "capability": "workspace.read" },
+    {
+      "op": "publish",
+      "event": "workspace.focused",
+      "payload": { "id": 1 },
+      "expect": { "result": { "delivered": 0, "vetoed": false } }
+    }
+  ]
+}
