@@ -491,7 +491,7 @@
       "name": "BittyUiSlot",
       "kind": "alias",
       "type": "\"terminal\"|\"top\"|\"bottom\"|\"left\"|\"right\"|\"tabline\"|\"statusline\"|\"overlay\"",
-      "doc": "Accepted closed slot set. tabline is an exclusive claim; status components compose; overlay is non-focusable presentation content."
+      "doc": "Accepted closed slot set. tabline is an exclusive claim; status components compose; overlay is non-focusable presentation content. The host presents top, bottom, left, right, and statusline; tabline, overlay, and terminal have no host surface yet and ui.mount rejects them with E_UI_UNAVAILABLE."
     },
     {
       "name": "BittySceneNode",
@@ -1186,8 +1186,13 @@
       "conditionalCapabilities": [
         { "capability": "ui.overlay", "when": "slot == \"overlay\"" }
       ],
-      "errors": ["E_CAPABILITY_DENIED", "E_UI_COMPONENT_INVALID"],
-      "doc": "Mounts declarative component content into an accepted semantic slot; rich content requires ui.rich and the overlay slot additionally requires ui.overlay. Host layout owns placement and decoration, and there are no global coordinates, shaders, pipelines, glyph injection, native windows, or renderer handles.",
+      "errors": [
+        "E_CAPABILITY_DENIED",
+        "E_UI_CLAIM_REQUIRED",
+        "E_UI_UNAVAILABLE",
+        "E_UI_COMPONENT_INVALID"
+      ],
+      "doc": "Mounts declarative component content into an accepted semantic slot; rich content requires ui.rich, the overlay slot additionally requires ui.overlay, and the exclusive tabline slot requires a matching [lazy].claims entry (E_UI_CLAIM_REQUIRED). After those gates, an accepted slot the host does not present (tabline, overlay, terminal) fails closed with E_UI_UNAVAILABLE (runtime). Host layout owns placement and decoration, and there are no global coordinates, shaders, pipelines, glyph injection, native windows, or renderer handles.",
       "params": [
         { "name": "slot", "type": "BittyUiSlot" },
         { "name": "component", "type": "BittySceneNode" }

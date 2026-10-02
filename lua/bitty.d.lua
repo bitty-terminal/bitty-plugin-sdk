@@ -282,7 +282,9 @@ function BittyServicesNamespace.get(iface, opts) end
 function BittyServicesNamespace.provide(iface, impl) end
 
 --- Accepted closed slot set. tabline is an exclusive claim; status components compose; overlay is
---- non-focusable presentation content.
+--- non-focusable presentation content. The host presents top, bottom, left, right, and statusline;
+--- tabline, overlay, and terminal have no host surface yet and ui.mount rejects them with
+--- E_UI_UNAVAILABLE.
 ---@alias BittyUiSlot "terminal"|"top"|"bottom"|"left"|"right"|"tabline"|"statusline"|"overlay"
 
 --- Bounded declarative component table shaped by the accepted SceneNode contract; v1 accepts Text,
@@ -296,12 +298,14 @@ function BittyServicesNamespace.provide(iface, impl) end
 local BittyUiNamespace = {}
 
 --- Mounts declarative component content into an accepted semantic slot; rich content requires
---- ui.rich and the overlay slot additionally requires ui.overlay. Host layout owns placement and
---- decoration, and there are no global coordinates, shaders, pipelines, glyph injection, native
---- windows, or renderer handles.
+--- ui.rich, the overlay slot additionally requires ui.overlay, and the exclusive tabline slot
+--- requires a matching [lazy].claims entry (E_UI_CLAIM_REQUIRED). After those gates, an accepted
+--- slot the host does not present (tabline, overlay, terminal) fails closed with E_UI_UNAVAILABLE
+--- (runtime). Host layout owns placement and decoration, and there are no global coordinates,
+--- shaders, pipelines, glyph injection, native windows, or renderer handles.
 --- Capabilities: ui.rich.
 --- Conditional capabilities: ui.overlay (when slot == "overlay").
---- Errors: E_CAPABILITY_DENIED, E_UI_COMPONENT_INVALID.
+--- Errors: E_CAPABILITY_DENIED, E_UI_CLAIM_REQUIRED, E_UI_UNAVAILABLE, E_UI_COMPONENT_INVALID.
 ---@param slot BittyUiSlot
 ---@param component BittySceneNode
 ---@return BittyBlockHandle

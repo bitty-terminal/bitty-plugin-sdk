@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Mirror bitty #1609 (CTX-0923) in the mock host (CTX-0064): `ui.mount` on
+  the unhosted `tabline`, `overlay`, and `terminal` slots fails closed with the
+  accepted v1 code `E_UI_UNAVAILABLE` (`runtime`) after the capability and
+  claim gates, so a claimed `tabline` or a granted `overlay` no longer mounts.
+  `HOST_CODES.UI_UNAVAILABLE` joins `ACCEPTED_HOST_CODES`; `host-surface`
+  exports `UI_UNAVAILABLE_SLOTS`, `UI_UNAVAILABLE_SLOT_REASONS`, and
+  `UI_HOSTED_SLOTS`. The surface table lists `E_UI_CLAIM_REQUIRED` and
+  `E_UI_UNAVAILABLE` in `ui.mount.errors`, `lua/bitty.d.lua` is regenerated,
+  and conformance case 10 covers all three unhosted slots.
 - Sync the surface with bitty `main` `2cb49afe` (issue #133, CTX-0063,
   core-audit blocker B1): add the `bitty.workspace` namespace (`list`,
   `focus`, `new`, `next`, `close`, `rename`, `move_panel`; bitty #1584,

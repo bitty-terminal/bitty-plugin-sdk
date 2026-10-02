@@ -41,6 +41,7 @@ import {
   SNAPSHOT_SCOPE_ONLY,
   STORE_KEY_PATTERN,
   UI_SLOTS,
+  UI_UNAVAILABLE_SLOT_REASONS,
   UI_V1_EXCLUDED_NODE_KINDS,
   UI_V1_NODE_KINDS,
   WORKSPACE_EVENT_PREFIX,
@@ -2090,6 +2091,17 @@ export class MockHost {
         "validation",
         HOST_CODES.UI_CLAIM_REQUIRED,
         `slot '${slot}' is an exclusive claim; declare claims = ["${slot}"] in [lazy]`,
+        "slot",
+      );
+    }
+    // CTX-0923 parity: an accepted slot the host does not present fails closed
+    // after the capability and claim gates, before component validation and
+    // budgets, so nothing is admitted that the host would never render.
+    if (Object.hasOwn(UI_UNAVAILABLE_SLOT_REASONS, slot)) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_UNAVAILABLE,
+        `UI slot '${slot}' ${UI_UNAVAILABLE_SLOT_REASONS[slot]}`,
         "slot",
       );
     }

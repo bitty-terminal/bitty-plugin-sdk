@@ -24,7 +24,10 @@ import {
   EVENT_MAX_BYTES,
   MOCK_LIMITS,
   PLUGIN_API_VERSION,
+  UI_HOSTED_SLOTS,
   UI_SLOTS,
+  UI_UNAVAILABLE_SLOT_REASONS,
+  UI_UNAVAILABLE_SLOTS,
   UI_V1_EXCLUDED_NODE_KINDS,
   UI_V1_NODE_KINDS,
 } from "../src/host-surface.js";
@@ -138,6 +141,7 @@ describe("surface", () => {
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.CAPABILITY_DENIED)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.STORE_QUOTA)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.BUDGET_TASK)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_UNAVAILABLE)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.REGISTRATION_CLOSED)).toBe(false);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(false);
     expect(MOCK_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(true);
@@ -347,7 +351,7 @@ describe("host parity (bitty #1303 freeze, #1391 services re-wire)", () => {
 });
 
 describe("registration window and lifecycle", () => {
-  test.each([...UI_SLOTS])(
+  test.each([...UI_HOSTED_SLOTS])(
     "ui.mount requires activation for slot %s",
     (slot) => {
       const host = makeHost(
@@ -390,6 +394,48 @@ describe("registration window and lifecycle", () => {
       expect(host.bitty.ui.update(block, { kind: "Text", text: "stale" })).toBe(
         false,
       );
+    },
+  );
+
+  test("hosted and unavailable slots partition the accepted slot set", () => {
+    expect(UI_UNAVAILABLE_SLOTS).toEqual(["tabline", "overlay", "terminal"]);
+    expect([...UI_HOSTED_SLOTS, ...UI_UNAVAILABLE_SLOTS].sort()).toEqual(
+      [...UI_SLOTS].sort(),
+    );
+  });
+
+  test.each([...UI_UNAVAILABLE_SLOTS])(
+    "ui.mount on unhosted slot %s fails closed with E_UI_UNAVAILABLE",
+    (slot) => {
+      // Every gate before placement is satisfied: ui.rich and ui.overlay are
+      // granted and tabline is claimed, so only the unhosted slot remains.
+      const host = makeHost(
+        MANIFEST.replace("[lazy]", '[lazy]\nclaims = ["tabline"]'),
+      );
+      host.grant("ui.rich");
+      host.grant("ui.overlay");
+      const mount = () =>
+        host.bitty.ui.mount(slot, { kind: "Text", text: "panel" });
+      // Lifecycle guards still run first.
+      expect(denial(mount).code).toBe(HOST_CODES.GENERATION_DISPOSED);
+      host.beginActivation();
+      expect(denial(mount)).toEqual({
+        class: "runtime",
+        code: HOST_CODES.UI_UNAVAILABLE,
+        message: `UI slot '${slot}' ${UI_UNAVAILABLE_SLOT_REASONS[slot]}`,
+        path: "slot",
+      });
+      // Placement is rejected before component validation and budgets.
+      expect(
+        denial(() => host.bitty.ui.mount(slot, { kind: "Image", src: "x" }))
+          .code,
+      ).toBe(HOST_CODES.UI_UNAVAILABLE);
+      // A rejected mount admits no block, so a hosted slot still works.
+      expect(
+        host.bitty.ui.mount("top", { kind: "Text", text: "ok" }),
+      ).toBeGreaterThan(0);
+      host.endActivation();
+      expect(denial(mount).code).toBe(HOST_CODES.REGISTRATION_CLOSED);
     },
   );
 
@@ -1877,6 +1923,16 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     ).toBeGreaterThan(0);
   });
 
+  test("overlay stays unavailable even with ui.overlay granted", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    host.grant("ui.overlay");
+    activate(host);
+    expect(
+      denial(() => host.bitty.ui.mount("overlay", { kind: "Text", text: "x" })),
+    ).toMatchObject({ code: HOST_CODES.UI_UNAVAILABLE, class: "runtime" });
+  });
+
   test("terminal snapshot rejects raw scope and oversized snapshots", () => {
     const host = makeHost();
     host.grant("terminal.semantic-read");
@@ -2196,9 +2252,12 @@ describe("contract alignment", () => {
     );
     withClaim.grant("ui.rich");
     withClaim.beginActivation();
+    // The claim gate passes, but tabline has no host surface yet (CTX-0923).
     expect(
-      withClaim.bitty.ui.mount("tabline", { kind: "Text", text: "x" }),
-    ).toBeGreaterThan(0);
+      denial(() =>
+        withClaim.bitty.ui.mount("tabline", { kind: "Text", text: "x" }),
+      ),
+    ).toMatchObject({ code: HOST_CODES.UI_UNAVAILABLE, class: "runtime" });
   });
 
   test("key chords are trimmed, case-insensitive, and alias-aware", () => {
