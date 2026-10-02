@@ -13,6 +13,7 @@ import {
   findLuaLanguageServer,
   runConformance,
 } from "../scripts/check-lua-luals.js";
+import { HOST_PARITY_SOURCE } from "../src/host-surface.js";
 
 const surface = loadSurface();
 const defs = readFileSync(OUTPUT_PATH, "utf8");
@@ -133,6 +134,13 @@ describe("surface table", () => {
     expect(surface.hostParity.repository).toBe("bitty");
     expect(surface.hostParity.commit).toMatch(/^[0-9a-f]{40}$/);
     expect(surface.hostParity.pr).toBe(1391);
+    // bitty #1604 (DIR-030) removed Core's embedded Lua network binding, so
+    // bitty.network must stay excluded rather than gain a namespace verdict.
+    expect(surface.hostParity.commit).toBe(HOST_PARITY_SOURCE.commit);
+    expect(Object.keys(surface.hostParity.namespaces)).not.toContain("network");
+    expect(surface.exclusions.map((entry) => entry.path)).toContain(
+      "bitty.network",
+    );
     const namespaces = surface.hostParity.namespaces;
     expect(namespaces.keymaps).toBe("wired");
     expect(namespaces.tasks).toBe("wired");

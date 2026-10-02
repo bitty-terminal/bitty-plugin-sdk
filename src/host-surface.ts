@@ -306,14 +306,18 @@ export interface NamespaceHostParity {
  * backend (shape checks, manifest-gated provide capture, deterministic
  * resolution with typed `E_SERVICE_*` failures); `env.get`/`has` stay
  * grant-gated and deny with the backend-absent code until an
- * `env.read:<KEY>` grant exists. `commit` is the last re-verified bitty
+ * `env.read:<KEY>` grant exists. Bitty #1604 (CTX-0906, DIR-030) moved no
+ * verdict: it removed the embedded Lua network binding from Core, so
+ * `bitty.network` stays a v1 exclusion and the out-of-process `net`
+ * component's Lua request surface remains deferred, not wired. `commit` is
+ * the last re-verified bitty
  * `main`; `pr` is the change that last moved a verdict. Mirrors
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
  * fails when the two drift apart.
  */
 export const HOST_PARITY_SOURCE = {
   repository: "bitty",
-  commit: "b8673937b6825ae4e7f1c35f4adc152ffd171f87",
+  commit: "799f7433d7f36b2011ece305c7d05adbc38120a5",
   pr: 1391,
 } as const;
 

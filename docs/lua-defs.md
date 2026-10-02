@@ -177,10 +177,14 @@ just host-parity-check  # surface/model/defs/mock/fixture parity agreement
 ## Host parity and regen-sync
 
 The surface table pins the bitty host revision it was frozen against
-(`hostParity`: repository `bitty`, the #1391 merge commit, PR 1391; verdict
-set provenance #1303) and one
-verdict per namespace: every namespace is `wired` except `env`,
+(`hostParity`: repository `bitty`, commit `799f743` re-verified at bitty PR
+1604, PR 1391 as the last verdict move; verdict set provenance #1303) and
+one verdict per namespace: every namespace is `wired` except `env`,
 which is `deferred`. `process.spawn` is v1-OUT and stays excluded.
+`bitty.network` also stays excluded: bitty #1604 (DIR-030) removed the
+embedded Lua network binding from Core, and network access now belongs to
+the out-of-process `net` native component, whose Lua request surface is
+deferred and not wired.
 
 The SDK owns regen-sync for these artifacts. Run this trigger whenever a
 bitty host change flips a namespace verdict or an accepted contract revision

@@ -110,7 +110,11 @@ because observation/lifecycle returns are ignored and only the literal `false`
 vetoes, so `false`, `nil`, and non-boolean returns all type-check. The one
 namespace the host has not wired yet (`env`; bitty #1303, still deferred after
 the #1391 services re-wire) is generated as typed
-`E_NOT_IMPLEMENTED` stubs: still declared, never silent. LuaLS conformance runs
+`E_NOT_IMPLEMENTED` stubs: still declared, never silent. There is no
+`bitty.network` namespace: it is a v1 surface exclusion, bitty #1604
+(DIR-030) removed Core's embedded Lua network binding, and the Lua request
+surface of the out-of-process `net` native component is deferred, not wired.
+The parity pin is bitty `main` `799f743`. LuaLS conformance runs
 locally only: CI has no `lua-language-server`, so that check skips there.
 
 See [`docs/lua-defs.md`](docs/lua-defs.md) for LuaLS setup, coverage,
