@@ -119,7 +119,12 @@ too. The `bitty.workspace` namespace (`list`, `focus`, `new`, `next`,
 gated on `workspace.read` (list and events) and `workspace.control`
 (mutations, which only enqueue). Both namespaces are host-implemented
 candidates outside the ADR 0009 v1 guarantee; the workspace spellings stay
-open under OQ-056. There is no
+open under OQ-056. The W-139 history/search/selection surface is **blocked**
+and adds no namespace: the delegating W-135/W-137/W-138 contracts are draft and
+authorize no implementation, and no accepted closed-set `terminal` capability
+covers scrollback/history text read (which needs a successor RFC with its own
+security review), so the path is recorded as an explicit exclusion rather than
+declared. There is no
 `bitty.network` namespace: it is a v1 surface exclusion, bitty #1604
 (DIR-030) removed Core's embedded Lua network binding, and the Lua request
 surface of the out-of-process `net` native component is deferred, not wired.

@@ -46,6 +46,24 @@
       "path": "docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md",
       "status": "accepted",
       "revision": "5f8892e0d7898b3f8b8dc8ba3f336bdb888c71d6"
+    },
+    {
+      "repository": "bitty-terminal-docs",
+      "path": "specifications/search-selection-contract.md",
+      "status": "draft",
+      "revision": "89dbec0c9f75329d252cf0a22dffbf30ada73072"
+    },
+    {
+      "repository": "bitty-plugins-docs",
+      "path": "extensibility/history-and-storage-policy.md",
+      "status": "draft",
+      "revision": "60c644173fa93824e6dbc6ef713363bbd311c948"
+    },
+    {
+      "repository": "bitty-plugins-docs",
+      "path": "specifications/search-copy-mode-policy.md",
+      "status": "draft",
+      "revision": "c97af7444858e149edaf063d9eb8702cfa6bcceb"
     }
   ],
   "types": [
@@ -1558,6 +1576,10 @@
     {
       "path": "bitty.ui.protocol-register",
       "reason": "Level 4 protocol registration is excluded in v1."
+    },
+    {
+      "path": "bitty.history",
+      "reason": "W-139 (CTX-0066) history/search/selection surface is blocked: the delegating W-135 (bitty-terminal-docs search-selection-contract), W-137 (bitty-plugins-docs history-and-storage-policy), and W-138 (bitty-plugins-docs search-copy-mode-policy) contracts are draft and authorize no implementation, and no accepted closed-set capability covers scrollback or history text read. The Plugin Platform RFC fixes the terminal family as terminal.semantic-read/raw-read/input.self/input.all/manage, and the accepted Plugin API v1 Lua Surface RFC states v1 has no scrollback text read path; adding a scrollback/history read capability requires a successor RFC with its own security review. Re-evaluate when an accepted capability and a bitty host entry point exist."
     }
   ],
   "excludedArgumentLiterals": [

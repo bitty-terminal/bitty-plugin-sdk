@@ -190,6 +190,49 @@ the LuaLS negative fixture samples six excluded spellings plus the excluded
 `raw` scope literal and wrong-shape `services.get` calls to verify rejection at
 author time.
 
+## Blocked surface: history, search, and selection (W-139, CTX-0066)
+
+SDK task `CTX-0066` (issue #138, plan key W-139) owns the plugin-facing
+history/storage/search/selection public APIs delegated by three **draft**
+contracts:
+
+- `bitty-terminal-docs` `specifications/search-selection-contract.md` (W-135,
+  `status: draft`).
+- `bitty-plugins-docs` `extensibility/history-and-storage-policy.md` (W-137,
+  `status: draft`).
+- `bitty-plugins-docs` `specifications/search-copy-mode-policy.md` (W-138,
+  `status: draft`).
+
+These documents are recorded in the surface table `sources` with `status:
+draft` for traceability, but **none authorizes implementation** and each
+delegates the exact SDK spellings to W-139. They are therefore a source record,
+not surface authority. The task is **blocked** and adds no accepted
+function path:
+
+- **No accepted capability authorizes the read.** The Plugin Platform RFC fixes
+  the `terminal` capability family as a closed set (`terminal.semantic-read`,
+  `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`,
+  `terminal.manage`), and the accepted Plugin API v1 Lua Surface RFC states v1
+  has no scrollback text read path. The accepted `terminal.semantic-read`
+  gates the bounded visible-viewport snapshot only. W-137/W-138 park the exact
+  identifier to W-139 but require that a capability absent from the closed set
+  be added only by a **successor RFC with its own security review**; W-139 does
+  not hold that authority, so it does not widen the closed set and does not add
+  `terminal.scrollback-read` or any history-read head.
+- **No host entry point exists.** W-135's implementation-status section states
+  there is no snapshot surface, no generation-stamped result handle, and no
+  public navigation or clipboard host operation; the search/copy-mode package
+  (`CTX-0003`) and the Core integration (`W-143`/`W-144`) are separate tasks.
+
+The `bitty.history` surface path is recorded as an explicit exclusion in
+`surface/bitty-plugin-api-v1.json` with the same blocker. Re-evaluate when an
+accepted capability and a bitty host entry point exist (a successor RFC plus
+`W-146`-style host wiring). The `debug`/`workspace` namespaces remain the only
+host-candidate additions, unchanged by this task.
+
+`selection` and the `terminal` closed-set membership are not touched: no
+`terminal.*` head is added or renamed.
+
 ## Validation
 
 ```sh

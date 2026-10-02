@@ -2,6 +2,7 @@
 --- GENERATED FILE - DO NOT EDIT.
 --- Source: surface/bitty-plugin-api-v1.json
 --- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md
+--- Referenced (not authority): bitty-terminal-docs:specifications/search-selection-contract.md (draft) + bitty-plugins-docs:extensibility/history-and-storage-policy.md (draft) + bitty-plugins-docs:specifications/search-copy-mode-policy.md (draft)
 --- Regenerate: bun scripts/generate-lua-defs.ts --write
 --- Verify: just lua-defs-check
 ---@meta bitty

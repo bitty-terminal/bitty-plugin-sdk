@@ -16,10 +16,18 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * One pinned contract source. `accepted` sources authorize the declared
+ * surface; `draft`/`candidate` sources are recorded for traceability when a
+ * declared name derives from a not-yet-accepted contract, and they never
+ * authorize a name on their own.
+ */
+export type SurfaceSourceStatus = "accepted" | "draft" | "candidate";
+
 export interface SurfaceSource {
   readonly repository: string;
   readonly path: string;
-  readonly status: string;
+  readonly status: SurfaceSourceStatus;
   readonly revision: string;
 }
 
@@ -195,15 +203,23 @@ export function validateSurface(surface: Surface): string[] {
   if (surface.output !== "lua/bitty.d.lua") {
     problems.push(`output must be lua/bitty.d.lua: ${surface.output}`);
   }
+  let acceptedSources = 0;
   for (const source of surface.sources) {
-    if (source.status !== "accepted") {
-      problems.push(`${source.path}: source status must be accepted`);
+    if (
+      source.status !== "accepted" &&
+      source.status !== "draft" &&
+      source.status !== "candidate"
+    ) {
+      problems.push(
+        `${source.path}: source status must be accepted, draft, or candidate`,
+      );
     }
+    if (source.status === "accepted") acceptedSources += 1;
     if (!/^[0-9a-f]{7,40}$/.test(source.revision)) {
       problems.push(`${source.path}: revision must be a pinned git object id`);
     }
   }
-  if (surface.sources.length === 0) {
+  if (acceptedSources === 0) {
     problems.push("at least one accepted source is required");
   }
 
@@ -645,16 +661,29 @@ function renderFunction(
 }
 
 export function renderDefinitions(surface: Surface): string {
+  const contractSources = surface.sources.filter(
+    (source) => source.status === "accepted",
+  );
+  const referenceSources = surface.sources.filter(
+    (source) => source.status !== "accepted",
+  );
   const lines: string[] = [
     "--- Bitty Plugin API v1 LuaLS definitions.",
     "--- GENERATED FILE - DO NOT EDIT.",
     `--- Source: ${surface.output === "" ? "" : "surface/bitty-plugin-api-v1.json"}`,
-    `--- Contract: ${surface.sources.map((source) => `${source.repository}:${source.path}`).join(" + ")}`,
+    `--- Contract: ${contractSources.map((source) => `${source.repository}:${source.path}`).join(" + ")}`,
+  ];
+  if (referenceSources.length > 0) {
+    lines.push(
+      `--- Referenced (not authority): ${referenceSources.map((source) => `${source.repository}:${source.path} (${source.status})`).join(" + ")}`,
+    );
+  }
+  lines.push(
     "--- Regenerate: bun scripts/generate-lua-defs.ts --write",
     "--- Verify: just lua-defs-check",
     `---@meta ${surface.module}`,
     "",
-  ];
+  );
 
   const namespaceByPrefix = new Map<string, SurfaceType>();
   for (const type of surface.types) {
