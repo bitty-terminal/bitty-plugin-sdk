@@ -17,7 +17,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EXCLUSIVE_CLAIM_SLOTS } from "../src/host-surface.js";
+import { HOST_CODES, HostError } from "../src/host-diagnostics.js";
+import {
+  EXCLUSIVE_CLAIM_SLOTS,
+  UI_UNAVAILABLE_SLOTS,
+} from "../src/host-surface.js";
 import { loadManifestModel } from "../src/manifest-model.js";
 import { lintManifestSource } from "../src/manifest.js";
 import { MockHost } from "../src/mock-host.js";
@@ -251,16 +255,26 @@ describe("shipped manifest examples", () => {
       expect(model.claims).toContain(slot);
     }
 
-    // Mounting proves the host accepts the shipped claim token; before the
-    // `tabline` fix the example declared `workspaceline` and failed with
-    // E_UI_CLAIM_REQUIRED here.
+    // The shipped claim token passes the claim gate (before the `tabline` fix
+    // the example declared `workspaceline` and failed with
+    // E_UI_CLAIM_REQUIRED here); every exclusive-claim slot is currently also
+    // unhosted, so the mount then fails closed with E_UI_UNAVAILABLE
+    // (CTX-0923) rather than the claim error.
     const host = new MockHost({ manifestSource: source });
     host.grant("ui.rich");
     host.beginActivation();
     for (const slot of EXCLUSIVE_CLAIM_SLOTS) {
-      expect(
-        host.bitty.ui.mount(slot, { kind: "Text", text: "claim" }),
-      ).toBeGreaterThan(0);
+      const expected = UI_UNAVAILABLE_SLOTS.includes(slot)
+        ? HOST_CODES.UI_UNAVAILABLE
+        : undefined;
+      let code: string | undefined;
+      try {
+        host.bitty.ui.mount(slot, { kind: "Text", text: "claim" });
+      } catch (cause) {
+        if (!(cause instanceof HostError)) throw cause;
+        code = cause.diagnostic.code;
+      }
+      expect(code).toBe(expected);
     }
     host.endActivation();
     expect(host.currentState).toBe("active");

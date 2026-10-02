@@ -185,6 +185,34 @@ export const UI_SLOTS: readonly string[] = [
  */
 export const EXCLUSIVE_CLAIM_SLOTS: readonly string[] = ["tabline"];
 
+/**
+ * Accepted v1 slots the host has no surface for, each with the host's reason
+ * wording.
+ *
+ * Mirrors bitty `bitty_runtime::runtime::band_slots::ui_slot_placement`
+ * (CTX-0923, bitty #1609): `ui.mount` fails closed on these slots with the
+ * existing v1 code `E_UI_UNAVAILABLE` (class `runtime`), after the capability
+ * (`ui.rich` / `ui.overlay`) and `tabline` exclusive-claim gates, so a granted
+ * `overlay` or a claimed `tabline` still fails. The message is
+ * `UI slot '<slot>' <reason>`.
+ */
+export const UI_UNAVAILABLE_SLOT_REASONS: Readonly<Record<string, string>> =
+  Object.freeze({
+    tabline: "is reserved for panel tabs (PW-10) and has no host surface yet",
+    overlay: "has no plugin overlay host in this build yet",
+    terminal: "has no terminal-attached block host in this build yet",
+  });
+
+/** Accepted v1 slots `ui.mount` rejects with `E_UI_UNAVAILABLE`. */
+export const UI_UNAVAILABLE_SLOTS: readonly string[] = Object.freeze(
+  Object.keys(UI_UNAVAILABLE_SLOT_REASONS),
+);
+
+/** Accepted v1 slots the host presents (`ui.mount` can succeed). */
+export const UI_HOSTED_SLOTS: readonly string[] = Object.freeze(
+  UI_SLOTS.filter((slot) => !UI_UNAVAILABLE_SLOTS.includes(slot)),
+);
+
 /** v1 declarative node kinds. */
 export const UI_V1_NODE_KINDS: readonly string[] = [
   "Text",

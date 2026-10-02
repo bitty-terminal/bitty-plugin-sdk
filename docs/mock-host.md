@@ -189,7 +189,7 @@ in `tests/mock-host.test.ts`.
 | `store`     | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                                                                                                                         |
 | `notify`    | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                                                                                                                |
 | `env`       | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                                                                                                                     |
-| `ui`        | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                                                                                                                  |
+| `ui`        | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; unhosted `tabline`/`overlay`/`terminal` then fail `E_UI_UNAVAILABLE`; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                                            |
 | `terminal`  | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                                                                                                                                                                                                                                                                   |
 | `services`  | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears                                                                                                 |
 | `tasks`     | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                                                                                                                                                                                                                                                                            |
@@ -357,6 +357,20 @@ freeze is never silent and never more permissive than the host.
   capability and component validation. During activation, mounts still require
   declared and granted `ui.rich`, plus `ui.overlay` for the overlay slot, and
   an exclusive slot claim where applicable.
+- `ui.mount` presents only the slots the bitty band host renders (bitty #1609,
+  CTX-0923): `top`, `bottom`, `left`, `right`, and `statusline`. The accepted
+  `tabline` (reserved for PW-10 panel tabs), `overlay` (no plugin overlay
+  host), and `terminal` (no terminal-attached block host) slots fail closed
+  with the accepted v1 code `E_UI_UNAVAILABLE` (`runtime`, path `slot`), and
+  the message names the slot and reason
+  (`UI_UNAVAILABLE_SLOT_REASONS`). The check runs after the capability and
+  claim gates, so a missing `ui.overlay` grant still yields
+  `E_CAPABILITY_DENIED` and an unclaimed `tabline` still yields
+  `E_UI_CLAIM_REQUIRED`, while a granted `overlay` or claimed `tabline` gets
+  `E_UI_UNAVAILABLE` instead of a block. It runs before component validation
+  and budgets, and a rejected mount admits no block. `UI_HOSTED_SLOTS` and
+  `UI_UNAVAILABLE_SLOTS` partition `UI_SLOTS`; conformance case
+  `10-ui-terminal.json` covers all three unhosted slots.
 - `ui.update` is not a new registration: a live block mounted during activation
   can still be updated after `endActivation()`. Its existing capability,
   component-validation, and generation checks remain independent; revoking
@@ -497,6 +511,7 @@ exported as `ACCEPTED_HOST_CODES`:
 | `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                                                                           |
 | `E_STORE_QUOTA`          | `budget`     | ADR 0009                                                                                           |
 | `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                                                                           |
+| `E_UI_UNAVAILABLE`       | `runtime`    | Plugin API v1 frozen vocabulary (OQ-056); bitty `bitty_lua::host::E_UI_UNAVAILABLE`                |
 | `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                                                                           |
 | `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                                                                           |
 | `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                                                                           |
@@ -651,7 +666,8 @@ explicitly.
   claim while status components compose. The mock therefore requires a
   `lazy.claims` entry named exactly `tabline` before mounting to `tabline`
   (`E_UI_CLAIM_REQUIRED`); other slots, including `statusline` and `overlay`,
-  need no claim. The accepted corpus does not yet define a claim grammar beyond
+  need no claim. A satisfied claim does not make `tabline` mountable: the slot
+  is unhosted and then fails with `E_UI_UNAVAILABLE`. The accepted corpus does not yet define a claim grammar beyond
   the slot name.
 - **Cross-generation grants (deliberate harness simplification; diverges from
   the accepted persistent grant record).** The accepted grant lifecycle
