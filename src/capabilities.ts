@@ -79,6 +79,14 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   // `workspace.control` mutates. Neither implies the other.
   "workspace.read",
   "workspace.control",
+  // NOTE (CTX-0066, W-139): the plugin-facing history/search/selection
+  // surface delegated to W-139 by the W-135/W-137/W-138 draft contracts has no
+  // accepted closed-set capability. The `terminal` family is a CLOSED SET
+  // (plugin-platform RFC: `terminal.semantic-read`, `terminal.raw-read`,
+  // `terminal.input.self`, `terminal.input.all`, `terminal.manage`), and v1
+  // has no scrollback text read path. Adding a scrollback/history read
+  // capability requires a successor RFC with its own security review, so it is
+  // deliberately NOT added here.
 ];
 
 /** Heads that must carry a `:PARAMETER` constraint. */

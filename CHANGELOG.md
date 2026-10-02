@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Record the W-139 (CTX-0066, issue #138) history/storage/search/selection
+  public-API task as **blocked**, with no accepted surface added.
+  The three delegating contracts are **draft**, not accepted, and each says it
+  authorizes no implementation: the terminal-side
+  `bitty-terminal-docs` search-selection contract (W-135) and the
+  `bitty-plugins-docs` history-and-storage policy (W-137) and search/copy-mode
+  policy (W-138). They are pinned in the surface table `sources` with `status:
+draft` for traceability only (the generator now accepts `draft`/`candidate`
+  source records alongside `accepted` and still requires at least one accepted
+  source). W-139 cannot mint the required authority: the Plugin Platform RFC
+  fixes the `terminal` capability family as a closed set and the accepted
+  Plugin API v1 Lua Surface RFC states v1 has no scrollback text read path, so
+  a scrollback/history read capability requires a successor RFC with its own
+  security review; W-139 adds no capability head and no function path. The
+  blocked surface is recorded as the explicit `bitty.history` exclusion with
+  the reason. No `terminal.*` head is added or renamed, no mock method is
+  introduced, and no private first-party channel exists. Re-evaluate when an
+  accepted capability and a bitty host entry point exist.
 - Mirror bitty #1609 (CTX-0923) in the mock host (CTX-0064): `ui.mount` on
   the unhosted `tabline`, `overlay`, and `terminal` slots fails closed with the
   accepted v1 code `E_UI_UNAVAILABLE` (`runtime`) after the capability and

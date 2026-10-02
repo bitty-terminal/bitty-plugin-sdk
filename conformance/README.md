@@ -29,3 +29,8 @@ expectations on `services.*` and `workspace.*` steps.
 Cases `16-workspace-gates.json` and `17-workspace-events.json` cover the
 `bitty.workspace` domain and the `workspace.*` events (bitty PR #1584, ADR 0014) with `manifests/workspace.toml`; case `18-debug-namespace.json` covers
 `bitty.debug` (bitty PR #1573) with `manifests/debug.toml`.
+
+The W-139 history/search/selection surface has no conformance cases: it is
+blocked (the delegating contracts are draft, and no accepted closed-set
+capability covers scrollback/history text read), so it declares no namespace to
+exercise. See `docs/lua-defs.md` "Blocked surface".

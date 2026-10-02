@@ -726,6 +726,24 @@ explicitly.
 
 ## Known gaps
 
+- **History and storage policy.** The plugin-facing history/storage policy
+  ([`history-and-storage-policy.md`](https://github.com/bitty-terminal/bitty-plugins-docs/blob/main/extensibility/history-and-storage-policy.md),
+  W-137) is not re-derived by the mock; `store`/`settings` remain the only
+  plugin persistence the mock models.
+- **Search/selection SDK surface (W-139) is blocked.** The plugin-facing
+  history/search/selection public APIs delegated to W-139 by the W-135/W-137/W-138
+  draft contracts are not implemented: those contracts are `status: draft`, are
+  recorded in the surface table `sources` for traceability, and authorize no
+  implementation, and no accepted closed-set `terminal` capability covers
+  scrollback or history text read. The Plugin Platform RFC fixes the `terminal`
+  family as `terminal.semantic-read`/`raw-read`/`input.self`/`input.all`/
+  `manage`, and the accepted Plugin API v1 Lua Surface RFC states v1 has no
+  scrollback text read path; a scrollback/history read capability requires a
+  successor RFC with its own security review. W-139 therefore adds no mock
+  method, no capability head, and no function path; the surface records the
+  blocked path as the explicit `bitty.history` exclusion. See
+  [`docs/lua-defs.md`](lua-defs.md) "Blocked surface: history, search, and
+  selection (W-139, CTX-0066)".
 - **R-SDK-1 drift coverage.** The modeled function paths, capability gates,
   event names/classes, and the raw-snapshot exclusion are checked against
   `surface/bitty-plugin-api-v1.json` in `tests/conformance.test.ts`. LuaLS

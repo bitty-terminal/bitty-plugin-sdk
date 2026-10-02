@@ -408,6 +408,12 @@ export interface NamespaceHostParity {
  * `main`; `pr` is the change that last moved a verdict. Mirrors
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
  * fails when the two drift apart.
+ *
+ * SDK task W-139 (CTX-0066) adds no verdict: the plugin-facing
+ * history/search/selection surface the W-135/W-137/W-138 draft contracts
+ * delegate to W-139 has no accepted closed-set capability and no host entry
+ * point, so it is not declared as accepted SDK surface here (see the surface
+ * table exclusion `bitty.history`).
  */
 export const HOST_PARITY_SOURCE = {
   repository: "bitty",
