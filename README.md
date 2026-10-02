@@ -110,11 +110,20 @@ because observation/lifecycle returns are ignored and only the literal `false`
 vetoes, so `false`, `nil`, and non-boolean returns all type-check. The one
 namespace the host has not wired yet (`env`; bitty #1303, still deferred after
 the #1391 services re-wire) is generated as typed
-`E_NOT_IMPLEMENTED` stubs: still declared, never silent. There is no
+`E_NOT_IMPLEMENTED` stubs: still declared, never silent. The `bitty.debug`
+namespace (bitty #1573) is wired except `debug.control`, which the host still
+fails closed with `E_NOT_IMPLEMENTED` and which is generated as a typed stub
+too. The `bitty.workspace` namespace (`list`, `focus`, `new`, `next`,
+`close`, `rename`, `move_panel`; bitty #1584, ADR 0014) and the
+`workspace.created`/`closed`/`renamed`/`focused`/`changed` events are wired,
+gated on `workspace.read` (list and events) and `workspace.control`
+(mutations, which only enqueue). Both namespaces are host-implemented
+candidates outside the ADR 0009 v1 guarantee; the workspace spellings stay
+open under OQ-056. There is no
 `bitty.network` namespace: it is a v1 surface exclusion, bitty #1604
 (DIR-030) removed Core's embedded Lua network binding, and the Lua request
 surface of the out-of-process `net` native component is deferred, not wired.
-The parity pin is bitty `main` `799f743`. LuaLS conformance runs
+The parity pin is bitty `main` `2cb49afe`. LuaLS conformance runs
 locally only: CI has no `lua-language-server`, so that check skips there.
 
 See [`docs/lua-defs.md`](docs/lua-defs.md) for LuaLS setup, coverage,
@@ -128,9 +137,11 @@ The Plugin API v1 mock host models the accepted `bitty` host bridge for
 conformance testing: deny-by-default capability gates with the typed
 `E_CAPABILITY_DENIED` denial, the activation-only registration window,
 generation-owned handles, the closed v1 event set, bounded command/store/UI/
-snapshot data, wired services, the deferred `env` (`E_NOT_IMPLEMENTED`), and
-tasks/timers on a virtual clock. It performs no I/O, spawns no process, and
-opens no network.
+snapshot data, wired services, the deferred `env` (`E_NOT_IMPLEMENTED`),
+tasks/timers on a virtual clock, the `bitty.debug` inspect/trace backend
+(deferred `debug.control`), and the `bitty.workspace` domain with its bounded
+request queue and `workspace.read`-gated events. It performs no I/O, spawns
+no process, and opens no network.
 
 ```sh
 just conformance                    # run the declarative fixture suite

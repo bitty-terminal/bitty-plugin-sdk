@@ -5,9 +5,9 @@
   "output": "lua/bitty.d.lua",
   "hostParity": {
     "repository": "bitty",
-    "commit": "799f7433d7f36b2011ece305c7d05adbc38120a5",
-    "pr": 1391,
-    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). Re-verified at bitty #1604 (CTX-0906, DIR-030), which moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded.",
+    "commit": "2cb49afed11fcac4a69dd556ff71e576760e063d",
+    "pr": 1584,
+    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe.",
     "namespaces": {
       "commands": "wired",
       "events": "wired",
@@ -20,7 +20,12 @@
       "ui": "wired",
       "terminal": "wired",
       "tasks": "wired",
-      "timers": "wired"
+      "timers": "wired",
+      "debug": "wired",
+      "workspace": "wired"
+    },
+    "functions": {
+      "debug.control": "deferred"
     }
   },
   "sources": [
@@ -35,6 +40,12 @@
       "path": "docs/specifications/plugin-api-v1-lua-surface-rfc.md",
       "status": "accepted",
       "revision": "9891949ca20b245375ece9a9015d0f42458fd2b1"
+    },
+    {
+      "repository": "bitty-docs",
+      "path": "docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md",
+      "status": "accepted",
+      "revision": "5f8892e0d7898b3f8b8dc8ba3f336bdb888c71d6"
     }
   ],
   "types": [
@@ -134,8 +145,8 @@
     {
       "name": "BittyEventName",
       "kind": "alias",
-      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
-      "doc": "Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error."
+      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"workspace.created\"|\"workspace.closed\"|\"workspace.renamed\"|\"workspace.focused\"|\"workspace.changed\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
+      "doc": "Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error, and declaring any workspace.* name requires a granted workspace.read capability at activation."
     },
     {
       "name": "BittyEmptyPayload",
@@ -285,6 +296,35 @@
       ]
     },
     {
+      "name": "BittyWorkspaceEventPayload",
+      "kind": "class",
+      "doc": "workspace.closed, workspace.changed, and workspace.focused payload: identity only, never terminal content; delivered only to workspace.read holders and coalesced per host tick.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "BittyWorkspaceId",
+          "doc": "Stable workspace id."
+        }
+      ]
+    },
+    {
+      "name": "BittyWorkspaceNamedEventPayload",
+      "kind": "class",
+      "doc": "workspace.created and workspace.renamed payload: identity plus the bounded display name; delivered only to workspace.read holders.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "BittyWorkspaceId",
+          "doc": "Stable workspace id."
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "doc": "Display name, bounded by Core to 32 characters."
+        }
+      ]
+    },
+    {
       "name": "BittyInterceptPayload",
       "kind": "class",
       "doc": "Interception payload with bounded sanitized metadata; rewriting content is not expressible.",
@@ -301,7 +341,7 @@
     {
       "name": "BittyEventPayload",
       "kind": "alias",
-      "type": "BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyInterceptPayload",
+      "type": "BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyInterceptPayload",
       "doc": "Union of the closed v1 event payload shapes."
     },
     {
@@ -770,6 +810,245 @@
       "name": "BittyTimersNamespace",
       "kind": "class",
       "doc": "Host-owned one-shot timer surface (L1) capped at 32 live timers per plugin; exceeding the cap fails with E_BUDGET_TIMER."
+    },
+    {
+      "name": "BittyDebugInspectTarget",
+      "kind": "alias",
+      "type": "\"plugins\"|\"commands\"|\"events\"|\"grants\"|\"panels\"",
+      "doc": "bitty.debug.inspect target; panels is reserved and fails closed with E_NOT_IMPLEMENTED, and any other string is E_DEF_INVALID."
+    },
+    {
+      "name": "BittyDebugPluginState",
+      "kind": "alias",
+      "type": "\"unloaded\"|\"loading\"|\"activating\"|\"active\"|\"suspended\"|\"disposing\"|\"disposed\"|\"failed\"",
+      "doc": "Stable lowercase lifecycle label; failed never carries the failure message."
+    },
+    {
+      "name": "BittyDebugPluginRow",
+      "kind": "class",
+      "doc": "One plugins inspect row, sorted by id.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "doc": "Owner-qualified plugin id."
+        },
+        { "name": "version", "type": "string", "doc": "Manifest version." },
+        {
+          "name": "state",
+          "type": "BittyDebugPluginState",
+          "doc": "Lifecycle label."
+        },
+        {
+          "name": "generation",
+          "type": "integer",
+          "doc": "Activation generation (0 before the first activation)."
+        }
+      ]
+    },
+    {
+      "name": "BittyDebugCommandRow",
+      "kind": "class",
+      "doc": "One commands inspect row, sorted by plugin, id, title.",
+      "fields": [
+        { "name": "plugin", "type": "string", "doc": "Owning plugin id." },
+        {
+          "name": "id",
+          "type": "string",
+          "doc": "Command id as registered (unqualified)."
+        },
+        { "name": "title", "type": "string", "doc": "Bounded command title." }
+      ]
+    },
+    {
+      "name": "BittyDebugEventRow",
+      "kind": "class",
+      "doc": "One events inspect row (an event subscription), sorted by plugin, kind.",
+      "fields": [
+        { "name": "plugin", "type": "string", "doc": "Owning plugin id." },
+        { "name": "kind", "type": "string", "doc": "Subscribed event kind." }
+      ]
+    },
+    {
+      "name": "BittyDebugInspectResult",
+      "kind": "class",
+      "doc": "bitty.debug.inspect result; never includes settings values, store contents, secrets, or terminal content.",
+      "fields": [
+        {
+          "name": "target",
+          "type": "BittyDebugInspectTarget",
+          "doc": "Echoed inspect target."
+        },
+        {
+          "name": "items",
+          "type": "BittyDebugPluginRow[]|BittyDebugCommandRow[]|BittyDebugEventRow[]|string[]",
+          "doc": "Rows for the target, capped at 1024 items; grants yields the caller's own sorted capability ids only."
+        },
+        {
+          "name": "truncated",
+          "type": "boolean",
+          "doc": "Whether rows were cut at the item cap."
+        }
+      ]
+    },
+    {
+      "name": "BittyDebugTraceHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Positive monotonic trace handle returned by bitty.debug.trace; never reused, dropped with the owning generation."
+    },
+    {
+      "name": "BittyDebugTraceOpts",
+      "kind": "class",
+      "doc": "bitty.debug.trace options; unknown keys, wrong types, and out-of-range values are E_DEF_INVALID.",
+      "fields": [
+        {
+          "name": "enabled",
+          "type": "boolean",
+          "optional": true,
+          "doc": "true (default) opens a new trace; false closes the trace named by handle."
+        },
+        {
+          "name": "filter",
+          "type": "string",
+          "optional": true,
+          "doc": "Exact topic, or a prefix when the pattern ends with a single *; 1..128 printable ASCII bytes; rejected with enabled = false."
+        },
+        {
+          "name": "max_events",
+          "type": "integer",
+          "optional": true,
+          "doc": "Drop-oldest ring size, 1..10000 (default 1000); rejected with enabled = false."
+        },
+        {
+          "name": "handle",
+          "type": "BittyDebugTraceHandle",
+          "optional": true,
+          "doc": "Required with enabled = false and rejected otherwise."
+        }
+      ]
+    },
+    {
+      "name": "BittyDebugTraceRecord",
+      "kind": "class",
+      "doc": "One recorded event, redacted for the trace owner's own grants.",
+      "fields": [
+        { "name": "topic", "type": "string", "doc": "Event kind." },
+        {
+          "name": "sequence",
+          "type": "integer",
+          "doc": "Runtime event sequence."
+        },
+        {
+          "name": "timestamp",
+          "type": "integer",
+          "doc": "Milliseconds on a monotonic host clock (no wall clock)."
+        },
+        {
+          "name": "payload",
+          "type": "table",
+          "doc": "Event payload, replaced by { truncated = true, bytes = <n> } when its encoded size exceeds 4096 bytes."
+        }
+      ]
+    },
+    {
+      "name": "BittyDebugTraceDrain",
+      "kind": "class",
+      "doc": "Drained trace buffer returned by bitty.debug.trace_get; draining empties the buffer.",
+      "fields": [
+        {
+          "name": "records",
+          "type": "BittyDebugTraceRecord[]",
+          "doc": "Records in arrival order."
+        },
+        {
+          "name": "dropped",
+          "type": "integer",
+          "doc": "Records lost to drop-oldest since the previous drain; resets after being reported."
+        }
+      ]
+    },
+    {
+      "name": "BittyDebugNamespace",
+      "kind": "class",
+      "doc": "Devtools inspection surface; each entry point needs its own grant (debug.inspect, debug.trace, debug.control) with no implication between them. Host-implemented spellings; not part of the ADR 0009 v1 guarantee."
+    },
+    {
+      "name": "BittyWorkspaceId",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Positive stable workspace id (Core creation sequence); survives index shifts and is never reused for another workspace."
+    },
+    {
+      "name": "BittyWorkspaceAttention",
+      "kind": "class",
+      "doc": "Attention flags of one workspace; the host reports every flag false until Core grows a per-workspace attention source.",
+      "fields": [
+        {
+          "name": "bell",
+          "type": "boolean",
+          "doc": "A bell rang since the workspace was last focused."
+        },
+        {
+          "name": "activity",
+          "type": "boolean",
+          "doc": "Output arrived while the workspace was inactive."
+        },
+        {
+          "name": "exited",
+          "type": "boolean",
+          "doc": "A panel process in the workspace exited."
+        }
+      ]
+    },
+    {
+      "name": "BittyWorkspaceInfo",
+      "kind": "class",
+      "doc": "One bitty.workspace.list row: identity, order, and structure only, never terminal content.",
+      "fields": [
+        {
+          "name": "id",
+          "type": "BittyWorkspaceId",
+          "doc": "Stable workspace id."
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "doc": "Display name, truncated to 32 characters."
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "doc": "Whether this is the active workspace."
+        },
+        {
+          "name": "panel_count",
+          "type": "integer",
+          "doc": "Number of panels (layout leaves)."
+        },
+        {
+          "name": "attention",
+          "type": "BittyWorkspaceAttention",
+          "doc": "Attention flags."
+        }
+      ]
+    },
+    {
+      "name": "BittyWorkspaceIndexTarget",
+      "kind": "class",
+      "doc": "Positional bitty.workspace.focus target.",
+      "fields": [
+        {
+          "name": "index",
+          "type": "integer",
+          "doc": "1-based position, clamped to the last workspace like the Alt+N binding."
+        }
+      ]
+    },
+    {
+      "name": "BittyWorkspaceNamespace",
+      "kind": "class",
+      "doc": "Workspace domain (L1, ADR 0014): list is gated on workspace.read; every mutation is gated on workspace.control only (read never implies control), enqueues into a bounded host queue (32 requests per tick), and returns whether it was queued, not applied. Spellings are host candidates pending OQ-056."
     }
   ],
   "functions": [
@@ -974,6 +1253,120 @@
       "doc": "Cancels a timer and releases the cap slot; handles from a disposed generation fail closed.",
       "params": [{ "name": "timer_id", "type": "BittyTimerHandle" }],
       "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "debug.inspect",
+      "level": "L1",
+      "capabilities": ["debug.inspect"],
+      "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
+      "doc": "Read-only runtime inspection returning { target, items, truncated }; a non-string target is E_DEF_INVALID before the grant check, the reserved panels target fails closed with E_NOT_IMPLEMENTED, and other plugins' grants are never exposed.",
+      "params": [{ "name": "target", "type": "BittyDebugInspectTarget" }],
+      "returns": [{ "type": "BittyDebugInspectResult" }]
+    },
+    {
+      "path": "debug.trace",
+      "level": "L1",
+      "capabilities": ["debug.trace"],
+      "errors": ["E_DEF_INVALID", "E_DEF_LIMIT", "E_CAPABILITY_DENIED"],
+      "doc": "Opens (nil or enabled = true) or closes (enabled = false with handle) an event trace; a trace records only event kinds the plugin declares in [lazy].events, intersected with filter, at most 4 traces per plugin (E_DEF_LIMIT), and closing an unknown or foreign handle is E_DEF_INVALID.",
+      "params": [
+        { "name": "opts", "type": "BittyDebugTraceOpts", "optional": true }
+      ],
+      "returns": [{ "type": "BittyDebugTraceHandle" }]
+    },
+    {
+      "path": "debug.trace_get",
+      "level": "L1",
+      "capabilities": ["debug.trace"],
+      "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
+      "doc": "Drains a trace owned by this plugin; a non-integer handle is E_DEF_INVALID, and an unknown or foreign handle returns nil so other plugins' traces cannot be probed.",
+      "params": [{ "name": "handle", "type": "BittyDebugTraceHandle" }],
+      "returns": [{ "type": "BittyDebugTraceDrain|nil" }]
+    },
+    {
+      "path": "debug.control",
+      "level": "L1",
+      "capabilities": ["debug.control"],
+      "errors": ["E_NOT_IMPLEMENTED"],
+      "doc": "High-risk lifecycle control (reload_plugin, suspend_plugin, resume_plugin, clear_state by plugin id); non-string arguments are E_DEF_INVALID, and the host fails closed before reading the grant or the target.",
+      "params": [
+        { "name": "action", "type": "string" },
+        { "name": "target", "type": "string" }
+      ],
+      "returns": [{ "type": "any" }]
+    },
+    {
+      "path": "workspace.list",
+      "level": "L1",
+      "capabilities": ["workspace.read"],
+      "errors": ["E_CAPABILITY_DENIED"],
+      "doc": "Lists workspaces in order, at most 16 rows (the Core MAX_WORKSPACES bound); names are truncated to 32 characters and rows never carry terminal content.",
+      "params": [],
+      "returns": [{ "type": "BittyWorkspaceInfo[]" }]
+    },
+    {
+      "path": "workspace.focus",
+      "level": "L1",
+      "capabilities": ["workspace.control"],
+      "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
+      "doc": "Queues focusing a workspace by positive stable id or by { index = n } (1-based); an id that no longer exists at apply time is dropped fail-closed.",
+      "params": [
+        {
+          "name": "target",
+          "type": "BittyWorkspaceId|BittyWorkspaceIndexTarget"
+        }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "workspace.new",
+      "level": "L1",
+      "capabilities": ["workspace.control"],
+      "errors": ["E_CAPABILITY_DENIED"],
+      "doc": "Queues creating a workspace and switching to it, subject to the Core capacity bound.",
+      "params": [],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "workspace.next",
+      "level": "L1",
+      "capabilities": ["workspace.control"],
+      "errors": ["E_CAPABILITY_DENIED"],
+      "doc": "Queues switching to the next workspace (wraps).",
+      "params": [],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "workspace.close",
+      "level": "L1",
+      "capabilities": ["workspace.control"],
+      "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
+      "doc": "Queues closing a workspace (nil closes the active one) through the kill-confirm gate: idle workspaces close immediately and live ones arm the user confirmation.",
+      "params": [
+        { "name": "id", "type": "BittyWorkspaceId", "optional": true }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "workspace.rename",
+      "level": "L1",
+      "capabilities": ["workspace.control"],
+      "errors": ["E_DEF_INVALID", "E_DEF_LIMIT", "E_CAPABILITY_DENIED"],
+      "doc": "Queues renaming a workspace; name must be a non-blank UTF-8 string without control characters and at most 256 bytes (E_DEF_LIMIT), and Core truncates accepted names to 32 characters.",
+      "params": [
+        { "name": "id", "type": "BittyWorkspaceId" },
+        { "name": "name", "type": "string" }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "workspace.move_panel",
+      "level": "L1",
+      "capabilities": ["workspace.control"],
+      "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
+      "doc": "Queues moving the focused panel of the active workspace into the workspace with this stable id.",
+      "params": [{ "name": "id", "type": "BittyWorkspaceId" }],
+      "returns": [{ "type": "boolean" }]
     }
   ],
   "events": [
@@ -1041,6 +1434,31 @@
       "name": "config.reloaded",
       "class": "Observation",
       "payload": "BittyEmptyPayload"
+    },
+    {
+      "name": "workspace.created",
+      "class": "Observation",
+      "payload": "BittyWorkspaceNamedEventPayload"
+    },
+    {
+      "name": "workspace.closed",
+      "class": "Observation",
+      "payload": "BittyWorkspaceEventPayload"
+    },
+    {
+      "name": "workspace.renamed",
+      "class": "Observation",
+      "payload": "BittyWorkspaceNamedEventPayload"
+    },
+    {
+      "name": "workspace.focused",
+      "class": "Observation",
+      "payload": "BittyWorkspaceEventPayload"
+    },
+    {
+      "name": "workspace.changed",
+      "class": "Observation",
+      "payload": "BittyWorkspaceEventPayload"
     },
     {
       "name": "intercept.command-dispatch",

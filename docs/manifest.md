@@ -304,6 +304,15 @@ validation instead of being ignored. Parameterized heads must carry a
 | `env`       | `env.read:KEY`, `env.read:PREFIX_*`                                                                           |
 | `mcp`       | `mcp.invoke:TOOL`                                                                                             |
 | `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                        |
+| `workspace` | `workspace.read`, `workspace.control`                                                                         |
+
+The `workspace` family mirrors the host closed set (`bitty-package`
+`CLOSED_CAPABILITY_HEADS`, ADR 0014, bitty CTX-0889): `workspace.read` lists
+workspaces and observes the `workspace.*` events (no terminal content), and
+`workspace.control` creates, closes, renames, and focuses workspaces and moves
+panels. Neither implies the other, neither takes a parameter, and the host
+does not classify either as high-risk. Declaring a `workspace.*` event in
+`[lazy].events` requires a granted `workspace.read` at activation.
 
 A flat `fs.read:PATTERN` / `fs.write:PATTERN` capability applies the same
 pattern rules as the structured `[[capabilities.filesystem]]` form (relative

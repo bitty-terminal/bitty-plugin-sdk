@@ -1,0 +1,23 @@
+[plugin]
+id = "conformance.workspace"
+name = "Conformance Workspace"
+version = "1.0.0"
+description = "Workspace domain manifest (bitty CTX-0889, ADR 0014) for mock-host conformance."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+workspace.read = true
+workspace.control = true
+
+[lazy]
+events = [
+  "workspace.created",
+  "workspace.closed",
+  "workspace.renamed",
+  "workspace.focused",
+  "workspace.changed",
+]

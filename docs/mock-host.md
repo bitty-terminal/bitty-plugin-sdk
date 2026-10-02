@@ -49,9 +49,16 @@ conformance tests can run deterministically on Bun only.
   DIR-030): no verdict moved; Core removed its embedded Lua network binding,
   so `bitty.network` stays a surface exclusion and the out-of-process `net`
   component's Lua request surface stays deferred and unmodeled by the mock.
+  Re-verified against bitty `main` `2cb49afe` (SDK CTX-0063): the
+  `bitty.debug` backend (#1563/#1573, CTX-0894/CTX-0897) and the
+  `bitty.workspace` domain with its `workspace.*` events (#1584, CTX-0889,
+  ADR 0014) had already landed before #1604 and are now modeled:
+  `debug` and `workspace` are WIRED, while `debug.control` is a DEFERRED
+  function inside the wired `debug` namespace.
   The SDK freeze in
   `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
-  (`NAMESPACE_HOST_PARITY`), and `just host-parity-check` pins these verdicts
+  (`NAMESPACE_HOST_PARITY`, `FUNCTION_HOST_PARITY`), and
+  `just host-parity-check` pins these verdicts
   (see [Host parity freeze](#host-parity-freeze)).
 
 ## Usage
@@ -93,11 +100,13 @@ host.dispose(); // delivers plugin.disposed, invalidates generation handles
 
 `host.bitty` mirrors the injected Lua table (`api_version`, `commands`,
 `events`, `keymaps`, `settings`, `store`, `notify`, `env`, `ui`, `terminal`,
-`services`, `tasks`, `timers`). Host-side controls stay on the host object:
+`services`, `tasks`, `timers`, `debug`, `workspace`). Host-side controls stay on
+the host object:
 lifecycle (`beginActivation`, `endActivation`, `suspend`, `dispose`), consent
 (`grant`, `revoke`, `isGranted`), event injection (`publish`), command dispatch
-(`dispatchCommand`), data injection (`setTerminalSnapshot`, `removeService`),
-and virtual time (`drainTasks`, `advanceTimers`).
+(`dispatchCommand`), data injection (`setTerminalSnapshot`, `removeService`,
+`setWorkspaces`), the workspace request queue (`drainWorkspaceRequests`,
+`workspaceRequestsDropped`), and virtual time (`drainTasks`, `advanceTimers`).
 
 Timers run on a virtual clock: `advanceTimers(ms)` fires due one-shot timers in
 due order. Tasks are drained cooperatively with `drainTasks()`. No test ever
@@ -171,28 +180,39 @@ in `tests/mock-host.test.ts`.
 
 ## Surface model
 
-| Namespace  | Modeled behavior                                                                                                                                                                                                                                                                                          |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commands` | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch; 128-byte title / 1024-byte description bounds                                                                                                                                                       |
-| `events`   | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                                                                                                                                                                       |
-| `keymaps`  | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target                                                                                                                                                |
-| `settings` | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                                                                                                                                                                      |
-| `store`    | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                         |
-| `notify`   | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                |
-| `env`      | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                     |
-| `ui`       | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                  |
-| `terminal` | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                                                                                                                                                                   |
-| `services` | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears |
-| `tasks`    | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                                                                                                                                                                            |
-| `timers`   | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                                                                                                                                                                            |
+| Namespace   | Modeled behavior                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commands`  | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch; 128-byte title / 1024-byte description bounds                                                                                                                                                                                                                                                       |
+| `events`    | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                                                                                                                                                                                                                                                                       |
+| `keymaps`   | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target                                                                                                                                                                                                                                                |
+| `settings`  | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                                                                                                                                                                                                                                                                      |
+| `store`     | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                                                                                                                         |
+| `notify`    | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                                                                                                                |
+| `env`       | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                                                                                                                     |
+| `ui`        | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                                                                                                                  |
+| `terminal`  | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                                                                                                                                                                                                                                                                   |
+| `services`  | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears                                                                                                 |
+| `tasks`     | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                                                                                                                                                                                                                                                                            |
+| `timers`    | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                                                                                                                                                                                                                                                                            |
+| `debug`     | WIRED (bitty #1573): `inspect` (`debug.inspect`) serves sanitized sorted `plugins`/`commands`/`events`/`grants` rows capped at 1024 and fails `E_NOT_IMPLEMENTED` on `panels`; `trace`/`trace_get` (`debug.trace`) open at most 4 traces, record only declared kinds matching the filter while active, redact for the owner's grants, bound payloads at 4096 bytes, and drain once; `control` is DEFERRED |
+| `workspace` | WIRED (bitty #1584): `list` (`workspace.read`) serves at most 16 rows with names cut to 32 characters; `focus`/`new`/`next`/`close`/`rename`/`move_panel` (`workspace.control`) validate arguments first, then enqueue into a 32-request queue and return whether it was queued; `workspace.*` events reach only `workspace.read` holders                                                                 |
 
 Capability gates follow the accepted mapping: `bitty.notify.show` requires
 `platform.notify`, `bitty.ui.mount`/`bitty.ui.update` require `ui.rich`
 (plus `ui.overlay` for the overlay slot), and `bitty.terminal.snapshot`
-requires `terminal.semantic-read`. Commands, events, keymaps, settings, store,
-services, tasks, and timers are ungated. Execution requires **both** manifest
-declaration and an explicit grant: a grant for an undeclared capability is
-ignored, and a declared-but-ungranted call fails closed with
+requires `terminal.semantic-read`. `bitty.debug.inspect` requires
+`debug.inspect`, `bitty.debug.trace`/`trace_get` require `debug.trace`, and
+`bitty.debug.control` is mapped to `debug.control` (it fails closed with
+`E_NOT_IMPLEMENTED` before reading the grant, like the host).
+`bitty.workspace.list` requires `workspace.read` and every workspace mutation
+requires `workspace.control`; neither implies the other, and declaring any
+`workspace.*` event kind without a granted `workspace.read` fails
+`beginActivation()` with `E_CAPABILITY_DENIED` (path `lazy.events`). Bridge
+argument validation (`E_DEF_INVALID`/`E_DEF_LIMIT`) runs before these grant
+checks, exactly like the host bridge. Commands, events, keymaps, settings,
+store, services, tasks, and timers are ungated. Execution requires **both**
+manifest declaration and an explicit grant: a grant for an undeclared
+capability is ignored, and a declared-but-ungranted call fails closed with
 `E_CAPABILITY_DENIED` (`runtime` class) before any side effect.
 
 Service version requirements use the shared structural grammar in
@@ -282,16 +302,21 @@ verdict regardless of traversal order or where it was first validated.
 `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
 (`NAMESPACE_HOST_PARITY`), the generated `lua/bitty.d.lua` annotations, the
 mock host, and the conformance fixtures are frozen on the bitty #1303
-(CTX-0707) verdict set as re-wired by bitty #1391 (CTX-0767): `keymaps`,
-`tasks`, and `services` are WIRED; `env` is DEFERRED; `process.spawn` is
+(CTX-0707) verdict set as re-wired by bitty #1391 (CTX-0767) and extended at
+bitty `main` `2cb49afe`: `keymaps`, `tasks`, `services`, `debug`, and
+`workspace` are WIRED; `env` is DEFERRED; `debug.control` is a DEFERRED
+function inside the wired `debug` namespace (`hostParity.functions`,
+`FUNCTION_HOST_PARITY`); `process.spawn` is
 v1-OUT and stays in the surface-table
-`exclusions`. WIRED namespaces generate full bindings; DEFERRED namespaces
-stay present but generate typed `E_NOT_IMPLEMENTED` stubs, so the freeze is
-never silent and never more permissive than the host.
+`exclusions`. WIRED namespaces generate full bindings; DEFERRED namespaces and
+functions stay present but generate typed `E_NOT_IMPLEMENTED` stubs, so the
+freeze is never silent and never more permissive than the host.
 
-- The deferred gate runs before activation, capability, and argument checks:
-  grants, declarations, key shapes, versions, and `optional` change nothing,
-  and lifecycle state changes nothing.
+- The deferred `env` gate runs before activation, capability, and argument
+  checks: grants, declarations, key shapes, versions, and `optional` change
+  nothing, and lifecycle state changes nothing. The deferred `debug.control`
+  function follows the host order instead: the bridge rejects non-string
+  arguments with `E_DEF_INVALID`, then every call fails `E_NOT_IMPLEMENTED`.
 - The `bitty.env` absent-unless-declared carve-out stays in the mock per the
   accepted ADR 0006 contract. The current host bridge always presents the
   deferred tables (it knows no manifest); the mock carve-out is stricter and
@@ -407,9 +432,13 @@ never silent and never more permissive than the host.
 
 ## Events
 
-The closed 17-name v1 set is modeled with its classes and required payload
+The closed 22-name v1 set is modeled with its classes and required payload
 fields; unknown names fail with `E_EVENT_UNKNOWN` and known-but-undeclared
-names with `E_EVENT_UNDECLARED`. The manifest linter validates `[lazy].events`
+names with `E_EVENT_UNDECLARED`. The five `workspace.*` observation kinds
+(`created`, `closed`, `renamed`, `focused`, `changed`; bitty #1584) carry
+identity-only payloads (`{ id }`, plus `name` for `created`/`renamed`), are
+delivered only while `workspace.read` is declared and granted, and their
+declaration requires a granted `workspace.read` at activation. The manifest linter validates `[lazy].events`
 against the same closed set (`lazy.events.unknown`), read from `EVENT_KINDS` in
 `src/host-surface.ts`, so an unknown kind cannot reach this runtime check.
 Kinds with declared fields tolerate unknown optional fields for forward
@@ -446,6 +475,13 @@ run; observation and interception deliveries are detached entirely (see
 | UI blocks / aggregate text         | 64 / 2 MiB per generation | `bitty-lua` `ui.rs` (`SCN-5`/`SCN-4`)       |
 | `process.exited.exit_code`         | signed `i32`              | `bitty-runtime` `registry.rs`               |
 | Live tasks / timers                | 64 / 32                   | ADR 0007 (RC-4)                             |
+| Workspace list rows / name chars   | 16 / 32                   | `bitty-lua` `host.rs` (CTX-0889)            |
+| Workspace rename name              | 256 bytes (`E_DEF_LIMIT`) | `bitty-lua` `host.rs` (CTX-0889)            |
+| Workspace request queue            | 32 requests               | `bitty-runtime` `plugin_runtime` (CTX-0889) |
+| Debug inspect items                | 1024                      | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Debug traces / events per trace    | 4 / 1..10000 (1000)       | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Debug trace payload / buffer       | 4096 bytes / 1 MiB        | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Debug trace filter                 | 1..128 printable ASCII    | `bitty-runtime` `debug.rs` (CTX-0897)       |
 
 ## Diagnostics
 
@@ -453,22 +489,22 @@ The mock host throws `HostError` carrying
 `{ class, code, message, path? }`. Codes fixed by accepted contracts are
 exported as `ACCEPTED_HOST_CODES`:
 
-| Code                     | Class        | Source                                                            |
-| ------------------------ | ------------ | ----------------------------------------------------------------- |
-| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009                                                          |
-| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006                                                          |
-| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                                          |
-| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                                          |
-| `E_STORE_QUOTA`          | `budget`     | ADR 0009                                                          |
-| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                                          |
-| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                                          |
-| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                                          |
-| `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                                          |
-| `E_TOOL_ABSENT`          | `resolution` | Layer-2 `[tools.git]` (mock-owned until accepted)                 |
-| `E_TOOL_MISMATCH`        | `validation` | Layer-2 `[tools.git]` (mock-owned until accepted)                 |
-| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009                                               |
-| `E_NOT_IMPLEMENTED`      | `runtime`    | deferred `env` only since bitty #1391 (mock-owned until accepted) |
-| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009                                               |
+| Code                     | Class        | Source                                                                                             |
+| ------------------------ | ------------ | -------------------------------------------------------------------------------------------------- |
+| `E_CAPABILITY_DENIED`    | `runtime`    | ADR 0009                                                                                           |
+| `E_ENV_KEY_INVALID`      | `validation` | ADR 0006                                                                                           |
+| `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                                                                           |
+| `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                                                                           |
+| `E_STORE_QUOTA`          | `budget`     | ADR 0009                                                                                           |
+| `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                                                                           |
+| `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                                                                           |
+| `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                                                                           |
+| `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                                                                           |
+| `E_TOOL_ABSENT`          | `resolution` | Layer-2 `[tools.git]` (mock-owned until accepted)                                                  |
+| `E_TOOL_MISMATCH`        | `validation` | Layer-2 `[tools.git]` (mock-owned until accepted)                                                  |
+| `E_BUDGET_TASK`          | `budget`     | ADR 0007 / ADR 0009                                                                                |
+| `E_NOT_IMPLEMENTED`      | `runtime`    | deferred `env` and `debug.control`, reserved `debug.inspect("panels")` (mock-owned until accepted) |
+| `E_BUDGET_TIMER`         | `budget`     | ADR 0007 / ADR 0009                                                                                |
 
 Behaviors the accepted corpus requires but does not yet spell with a stable
 code use `MOCK_HOST_CODES` (documented test-tool codes, never a replacement
@@ -480,7 +516,9 @@ activation (`E_TOOL_ABSENT`, `E_TOOL_MISMATCH`), event and command validations
 `E_COMMAND_DUPLICATE`, `E_SCHEMA_INVALID`, `E_ARGS_INVALID`, `E_RESULT_INVALID`,
 `E_COMMAND_CALLBACK_FAILED`), keymaps and definitions
 (`E_KEYMAP_WHEN_UNSUPPORTED`, `E_KEYMAP_CHORD_INVALID`,
-`E_KEYMAP_COMMAND_UNKNOWN`, `E_DEF_INVALID`), store and settings keys
+`E_KEYMAP_COMMAND_UNKNOWN`, `E_DEF_INVALID`, and `E_DEF_LIMIT`, which mirrors
+the host bridge bound code for an over-long `workspace.rename` name
+(`validation`) and the per-plugin `debug.trace` limit (`budget`)), store and settings keys
 (`E_STORE_KEY_INVALID`, `E_SETTINGS_KEY_INVALID`), snapshot scope
 (`E_SNAPSHOT_SCOPE_UNSUPPORTED`), UI exclusivity (`E_UI_CLAIM_REQUIRED`) and the
 per-generation UI block budget (`E_UI_BLOCK_BUDGET`, matching the host's own
@@ -534,9 +572,11 @@ present, `null` when absent; omitted means absent), and an ordered step list:
 ```
 
 Cases covering deferred namespaces carry the `pending-host` tag and assert
-`E_NOT_IMPLEMENTED` (`runtime`) for every `services.*`/`env.*` call instead of
-accepted-contract success (see [Host parity freeze](#host-parity-freeze));
-`tests/conformance.test.ts` enforces this agreement.
+`E_NOT_IMPLEMENTED` (`runtime`) for every `env.*` call and every
+argument-valid `debug.control` call instead of accepted-contract success (see
+[Host parity freeze](#host-parity-freeze)); `tests/conformance.test.ts`
+enforces this agreement and forbids `E_NOT_IMPLEMENTED` expectations on
+`services.*` and `workspace.*` steps.
 
 ### Step vocabulary
 
@@ -557,6 +597,8 @@ accepted-contract success (see [Host parity freeze](#host-parity-freeze));
 | `advance-time` / `drain-tasks`        | Virtual clock and cooperative task execution                                                                          |
 | `set-terminal-snapshot`               | Inject host snapshot data                                                                                             |
 | `remove-service`                      | Simulate provider disappearance                                                                                       |
+| `set-workspaces`                      | Inject the Core workspace summary served to `workspace.list`                                                          |
+| `drain-workspace-requests`            | Drain queued workspace mutations and assert them (`expect.result`)                                                    |
 
 `{"$ref": "<capture>"}` resolves a previously captured value (for example a
 handle) inside `args` or `expect`. `expect` supports `{ "result": ... }` and
@@ -583,9 +625,13 @@ undeclared capabilities), the `bitty.env` carve-out, the registration window
 and generation invalidation, store persistence across reloads, round-trips for
 every kind of the closed event set, interception veto, command schema
 validation, table-form `[lazy].commands` reservations, store bounds,
-UI/terminal gates, service/task/timer behavior, and the Layer-2 `[tools.git]`
+UI/terminal gates, service/task/timer behavior, the Layer-2 `[tools.git]`
 activation slice (present-version success plus absent/mismatch fail-closed
-denials with `E_TOOL_ABSENT` / `E_TOOL_MISMATCH`).
+denials with `E_TOOL_ABSENT` / `E_TOOL_MISMATCH`), the workspace domain
+(separate read/control gates, bounded list, enqueue-only mutations, and
+`workspace.read`-only event delivery; cases `16` and `17`), and the debug
+namespace (per-entry-point grants, sanitized inspect, bounded traces, and the
+deferred `debug.control`; case `18`).
 
 ## Contract choices and divergences
 
@@ -631,6 +677,21 @@ explicitly.
   `alt`/`opt`/`option`, `super`/`meta`/`cmd`/`command`/`win`/`windows`,
   named-key aliases plus `f1..f35`, single-character keys requiring a modifier,
   and the 64-byte bound).
+- **Workspace and debug host candidates.** `bitty.workspace.*`, the
+  `workspace.*` events, and `bitty.debug.*` are modeled from the bitty host
+  implementation at `2cb49afe`. ADR 0014 accepts the workspace mechanism and
+  its separate read/control gates, but its Lua, event, and command spellings
+  stay host candidates under OQ-056, and no accepted contract fixes the
+  `bitty.debug` Lua spellings; both namespaces are outside the ADR 0009 v1
+  guarantee. The host rejects a `workspace.*` event declaration without
+  `workspace.read` as an activation capture error rather than a bridge code;
+  the mock reports it as `E_CAPABILITY_DENIED` (`runtime`, path
+  `lazy.events`). The mock checks grants live where the host snapshots them
+  per generation, and records traces only for events injected with
+  `publish()` (the host's `deliver_event` path), never for lifecycle
+  deliveries; both choices are equal to or stricter than the host. Queued
+  workspace requests are recorded for `drainWorkspaceRequests()` and never
+  applied, matching the bridge, which only enqueues.
 - **High-risk capabilities.** The lint-side escalation set is documented in
   [`docs/manifest.md`](manifest.md); the mock does not re-derive it.
 - **Version-range structural grammar.** The mock and the linter share one

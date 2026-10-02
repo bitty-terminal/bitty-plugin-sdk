@@ -29,6 +29,7 @@ export const CAPABILITY_FAMILIES: readonly string[] = [
   "mcp",
   "ai",
   "env",
+  "workspace",
 ];
 
 /** Every closed capability head; parameterized heads carry a `:PARAMETER`. */
@@ -73,6 +74,11 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "ai.provider",
   "ai.stream",
   "ai.model",
+  // Workspace L1 domain (ADR 0014, bitty CTX-0889): `workspace.read`
+  // observes identity/order/attention and the `workspace.*` events;
+  // `workspace.control` mutates. Neither implies the other.
+  "workspace.read",
+  "workspace.control",
 ];
 
 /** Heads that must carry a `:PARAMETER` constraint. */

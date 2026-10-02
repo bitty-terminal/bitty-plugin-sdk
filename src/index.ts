@@ -43,6 +43,7 @@ export type { DiagnosticClass, HostDiagnostic } from "./host-diagnostics.js";
 export {
   CAPABILITY_GATED_SURFACE,
   COMMAND_ID_PATTERN,
+  DEFERRED_FUNCTIONS,
   DEFERRED_NAMESPACES,
   ENV_CAPABILITY_PREFIX,
   ENV_KEY_PATTERN as HOST_ENV_KEY_PATTERN,
@@ -53,6 +54,7 @@ export {
   EVENT_PAYLOAD_FIELDS,
   eventKindSpec,
   EXCLUSIVE_CLAIM_SLOTS,
+  FUNCTION_HOST_PARITY,
   HOST_PARITY_SOURCE,
   INTERCEPTION_KINDS,
   LIFECYCLE_KINDS,
@@ -67,10 +69,12 @@ export {
   UI_V1_EXCLUDED_NODE_KINDS,
   UI_V1_NODE_KINDS,
   V1_SURFACE_FUNCTIONS,
+  WORKSPACE_EVENT_PREFIX,
 } from "./host-surface.js";
 export type {
   EventClass,
   EventKindSpec,
+  FunctionHostParity,
   HostParityStatus,
   NamespaceHostParity,
 } from "./host-surface.js";
@@ -95,6 +99,10 @@ export type {
 export { MockHost, MOCK_PLUGIN_API_VERSION } from "./mock-host.js";
 export type {
   CommandDefinition,
+  DebugInspectResult,
+  DebugTraceDrain,
+  DebugTraceOptions,
+  DebugTraceRecord,
   EventHandler,
   HostEvent,
   KeymapSuggestion,
@@ -106,5 +114,8 @@ export type {
   ServiceGetOptions,
   ServiceMethod,
   SnapshotOptions,
+  WorkspaceFocusTarget,
+  WorkspaceInfo,
+  WorkspaceRequest,
 } from "./mock-host.js";
 export * from "./schema.js";

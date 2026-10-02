@@ -1,0 +1,149 @@
+{
+  "name": "debug namespace: per-entry-point grants, sanitized inspect, bounded traces, deferred control",
+  "description": "bitty #1563/#1573 (CTX-0894/CTX-0897): bitty.debug.inspect needs debug.inspect, trace/trace_get need debug.trace, with no implication between them. Inspect serves sanitized sorted rows and fails closed on the reserved panels target; a trace records only declared kinds matching its filter and drains once; unknown handles return nil. debug.control validates its string arguments and then always fails with E_NOT_IMPLEMENTED.",
+  "manifest": "manifests/debug.toml",
+  "tags": ["debug", "deny-by-default", "capability", "pending-host"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "debug.inspect",
+      "args": { "target": "grants" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "debug.inspect",
+      "args": { "target": 7 },
+      "expect": { "denial": { "code": "E_DEF_INVALID", "class": "validation" } }
+    },
+    { "op": "grant", "capability": "debug.inspect" },
+    {
+      "op": "call",
+      "surface": "debug.trace",
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "register",
+      "command": { "id": "hello", "title": "Hello" },
+      "expect": {}
+    },
+    {
+      "op": "call",
+      "surface": "debug.inspect",
+      "args": { "target": "commands" },
+      "expect": {
+        "result": {
+          "target": "commands",
+          "items": [
+            { "plugin": "conformance.debug", "id": "hello", "title": "Hello" }
+          ],
+          "truncated": false
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "debug.inspect",
+      "args": { "target": "grants" },
+      "expect": {
+        "result": {
+          "target": "grants",
+          "items": ["debug.inspect"],
+          "truncated": false
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "debug.inspect",
+      "args": { "target": "panels" },
+      "expect": {
+        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "debug.inspect",
+      "args": { "target": "store" },
+      "expect": { "denial": { "code": "E_DEF_INVALID", "class": "validation" } }
+    },
+    { "op": "grant", "capability": "debug.trace" },
+    {
+      "op": "call",
+      "surface": "debug.trace",
+      "args": { "opts": { "filter": "terminal.*", "max_events": 4 } },
+      "capture": "trace",
+      "expect": {}
+    },
+    {
+      "op": "call",
+      "surface": "debug.trace",
+      "args": { "opts": { "filter": "*a*" } },
+      "expect": { "denial": { "code": "E_DEF_INVALID", "class": "validation" } }
+    },
+    { "op": "end-activation" },
+    {
+      "op": "publish",
+      "event": "terminal.bell",
+      "expect": { "result": { "delivered": 0, "vetoed": false } }
+    },
+    {
+      "op": "publish",
+      "event": "config.reloaded",
+      "expect": { "result": { "delivered": 0, "vetoed": false } }
+    },
+    {
+      "op": "call",
+      "surface": "debug.trace_get",
+      "args": { "handle": { "$ref": "trace" } },
+      "capture": "drain",
+      "expect": {}
+    },
+    {
+      "op": "expect-capture",
+      "capture": "drain",
+      "value": {
+        "records": [
+          {
+            "topic": "terminal.bell",
+            "sequence": 2,
+            "timestamp": 0,
+            "payload": {}
+          }
+        ],
+        "dropped": 0
+      }
+    },
+    {
+      "op": "call",
+      "surface": "debug.trace_get",
+      "args": { "handle": 999 },
+      "expect": { "result": null }
+    },
+    {
+      "op": "call",
+      "surface": "debug.trace",
+      "args": { "opts": { "enabled": false, "handle": { "$ref": "trace" } } },
+      "expect": { "result": { "$ref": "trace" } }
+    },
+    {
+      "op": "call",
+      "surface": "debug.control",
+      "args": { "action": "reload_plugin", "target": "conformance.debug" },
+      "expect": {
+        "denial": { "code": "E_NOT_IMPLEMENTED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "debug.control",
+      "args": { "action": "reload_plugin" },
+      "expect": { "denial": { "code": "E_DEF_INVALID", "class": "validation" } }
+    }
+  ]
+}

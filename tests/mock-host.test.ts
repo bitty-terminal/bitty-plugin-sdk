@@ -114,16 +114,18 @@ describe("surface", () => {
       "services",
       "tasks",
       "timers",
+      "debug",
+      "workspace",
     ] as const) {
       expect(host.bitty[namespace]).toBeDefined();
     }
   });
 
   test("closed v1 event set matches the accepted classes", () => {
-    expect(EVENT_KINDS).toHaveLength(17);
+    expect(EVENT_KINDS).toHaveLength(22);
     const byClass = { lifecycle: 0, observation: 0, interception: 0 };
     for (const spec of EVENT_KINDS) byClass[spec.class] += 1;
-    expect(byClass).toEqual({ lifecycle: 4, observation: 9, interception: 4 });
+    expect(byClass).toEqual({ lifecycle: 4, observation: 14, interception: 4 });
     expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
       "plugin.activated",
     );
@@ -593,42 +595,46 @@ describe("suspended dispatch", () => {
     expect(calls).toBe(1);
   });
 
-  test.each(EVENT_KINDS.filter((spec) => spec.class !== "lifecycle"))(
-    "$kind delivery is detached while suspended",
-    (spec) => {
-      const host = makeHost();
-      host.beginActivation();
-      let calls = 0;
-      host.bitty.events.subscribe(spec.kind, () => {
-        calls += 1;
-        return false;
-      });
-      host.endActivation();
-      host.suspend();
-      const payload =
-        spec.class === "interception"
-          ? { action: "fixture", origin: "fixture", preview: "fixture" }
-          : spec.kind === "terminal.opened"
-            ? { terminal_id: 1, runtime_id: 1, generation: 1 }
-            : spec.kind === "terminal.closed"
-              ? { terminal_id: 1, runtime_id: 1, reason: "closed" }
-              : spec.kind === "terminal.title-changed"
-                ? { terminal_id: 1, runtime_id: 1, title: "fixture" }
-                : spec.kind === "terminal.cwd-changed"
-                  ? { terminal_id: 1, runtime_id: 1, cwd: "fixture" }
-                  : spec.kind === "focus.changed" ||
-                      spec.kind === "selection.changed"
-                    ? { view_id: 1 }
-                    : spec.kind === "process.exited"
-                      ? { terminal_id: 1, runtime_id: 1, exit_code: 0 }
-                      : {};
-      expect(host.publish(spec.kind, payload)).toEqual({
-        delivered: 0,
-        vetoed: false,
-      });
-      expect(calls).toBe(0);
-    },
-  );
+  // Workspace kinds need a granted workspace.read at activation; their
+  // suspended detachment is covered by the workspace domain suite below.
+  test.each(
+    EVENT_KINDS.filter(
+      (spec) =>
+        spec.class !== "lifecycle" && !spec.kind.startsWith("workspace."),
+    ),
+  )("$kind delivery is detached while suspended", (spec) => {
+    const host = makeHost();
+    host.beginActivation();
+    let calls = 0;
+    host.bitty.events.subscribe(spec.kind, () => {
+      calls += 1;
+      return false;
+    });
+    host.endActivation();
+    host.suspend();
+    const payload =
+      spec.class === "interception"
+        ? { action: "fixture", origin: "fixture", preview: "fixture" }
+        : spec.kind === "terminal.opened"
+          ? { terminal_id: 1, runtime_id: 1, generation: 1 }
+          : spec.kind === "terminal.closed"
+            ? { terminal_id: 1, runtime_id: 1, reason: "closed" }
+            : spec.kind === "terminal.title-changed"
+              ? { terminal_id: 1, runtime_id: 1, title: "fixture" }
+              : spec.kind === "terminal.cwd-changed"
+                ? { terminal_id: 1, runtime_id: 1, cwd: "fixture" }
+                : spec.kind === "focus.changed" ||
+                    spec.kind === "selection.changed"
+                  ? { view_id: 1 }
+                  : spec.kind === "process.exited"
+                    ? { terminal_id: 1, runtime_id: 1, exit_code: 0 }
+                    : {};
+    expect(host.publish(spec.kind, payload)).toEqual({
+      delivered: 0,
+      vetoed: false,
+    });
+    expect(calls).toBe(0);
+  });
 
   test.each(["observation", "interception", "task", "timer"] as const)(
     "suspension inside a %s callback stops the remaining batch",
@@ -3108,5 +3114,426 @@ describe("mock boundary hardening (SDK-006..SDK-012)", () => {
       ).code,
     ).toBe(HOST_CODES.DEF_INVALID);
     rejecting.endActivation();
+  });
+});
+
+const WORKSPACE_MANIFEST = `
+[plugin]
+id = "conformance.workspace"
+name = "Conformance Workspace"
+version = "1.0.0"
+description = "Workspace domain fixture (bitty CTX-0889)."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+workspace.read = true
+workspace.control = true
+
+[lazy]
+events = [
+  "workspace.created",
+  "workspace.closed",
+  "workspace.renamed",
+  "workspace.focused",
+  "workspace.changed",
+]
+`;
+
+const DEBUG_MANIFEST = `
+[plugin]
+id = "conformance.debug"
+name = "Conformance Debug"
+version = "2.1.0"
+description = "Debug namespace fixture (bitty CTX-0897)."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+debug.inspect = true
+debug.trace = true
+debug.control = true
+clipboard.read = true
+
+[lazy]
+commands = ["conformance.debug:hello"]
+events = ["terminal.bell", "terminal.title-changed", "intercept.paste"]
+`;
+
+const WORKSPACE_ROWS = [
+  {
+    id: 1,
+    name: "main",
+    active: true,
+    panel_count: 2,
+    attention: { bell: false, activity: false, exited: false },
+  },
+  {
+    id: 4,
+    name: "scratch",
+    active: false,
+    panel_count: 1,
+    attention: { bell: false, activity: false, exited: false },
+  },
+];
+
+function workspaceHost(grants: readonly string[]): MockHost {
+  const host = new MockHost({ manifestSource: WORKSPACE_MANIFEST });
+  for (const capability of grants) host.grant(capability);
+  return host;
+}
+
+describe("workspace domain", () => {
+  test("declaring workspace.* events without workspace.read fails activation", () => {
+    const host = workspaceHost(["workspace.control"]);
+    expect(denial(() => host.beginActivation())).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+  });
+
+  test("list is gated on workspace.read and returns bounded rows", () => {
+    const host = new MockHost({
+      manifestSource: WORKSPACE_MANIFEST.replace(/events = \[[^\]]*\]/, ""),
+    });
+    host.beginActivation();
+    expect(denial(() => host.bitty.workspace.list())).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    host.grant("workspace.read");
+    host.setWorkspaces([
+      ...WORKSPACE_ROWS,
+      ...Array.from({ length: 20 }, (_, index) => ({
+        id: 10 + index,
+        name: "x".repeat(40),
+        active: false,
+        panel_count: 0,
+        attention: { bell: false, activity: false, exited: false },
+      })),
+    ]);
+    const rows = host.bitty.workspace.list();
+    expect(rows).toHaveLength(MOCK_LIMITS.WORKSPACE_LIST_MAX_ITEMS);
+    expect(rows[0]).toEqual(WORKSPACE_ROWS[0]);
+    expect([...(rows[2]?.name ?? "")]).toHaveLength(
+      MOCK_LIMITS.WORKSPACE_NAME_MAX_CHARS,
+    );
+  });
+
+  test("read never implies control and control never implies read", () => {
+    const readOnly = workspaceHost(["workspace.read"]);
+    readOnly.beginActivation();
+    expect(denial(() => readOnly.bitty.workspace.new())).toMatchObject({
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    const controlOnly = new MockHost({
+      manifestSource: WORKSPACE_MANIFEST.replace(/events = \[[^\]]*\]/, ""),
+    });
+    controlOnly.grant("workspace.control");
+    controlOnly.beginActivation();
+    expect(controlOnly.bitty.workspace.next()).toBe(true);
+    expect(denial(() => controlOnly.bitty.workspace.list())).toMatchObject({
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+  });
+
+  test("mutations validate arguments before the grant and only enqueue", () => {
+    const host = workspaceHost(["workspace.read"]);
+    host.beginActivation();
+    // Bridge validation runs before the capability check.
+    expect(denial(() => host.bitty.workspace.focus(0))).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.DEF_INVALID,
+    });
+    host.grant("workspace.control");
+    expect(host.bitty.workspace.focus(4)).toBe(true);
+    expect(host.bitty.workspace.focus({ index: 2 })).toBe(true);
+    expect(host.bitty.workspace.new()).toBe(true);
+    expect(host.bitty.workspace.next()).toBe(true);
+    expect(host.bitty.workspace.close()).toBe(true);
+    expect(host.bitty.workspace.close(4)).toBe(true);
+    expect(host.bitty.workspace.rename(4, "logs")).toBe(true);
+    expect(host.bitty.workspace.move_panel(1)).toBe(true);
+    expect(host.drainWorkspaceRequests()).toEqual([
+      { kind: "focus_id", id: 4 },
+      { kind: "focus_index", index: 2 },
+      { kind: "new" },
+      { kind: "next" },
+      { kind: "close", id: null },
+      { kind: "close", id: 4 },
+      { kind: "rename", id: 4, name: "logs" },
+      { kind: "move_panel", id: 1 },
+    ]);
+    expect(host.drainWorkspaceRequests()).toEqual([]);
+    for (const run of [
+      () => host.bitty.workspace.focus({ index: 0 }),
+      () => host.bitty.workspace.focus(1.5),
+      () => host.bitty.workspace.close(-1),
+      () => host.bitty.workspace.rename(1, "   "),
+      () => host.bitty.workspace.rename(1, "bad\nname"),
+      () => host.bitty.workspace.move_panel("1" as unknown as number),
+    ]) {
+      expect(denial(run)).toMatchObject({
+        class: "validation",
+        code: HOST_CODES.DEF_INVALID,
+      });
+    }
+    expect(
+      denial(() =>
+        host.bitty.workspace.rename(
+          1,
+          "n".repeat(MOCK_LIMITS.WORKSPACE_RENAME_MAX_BYTES + 1),
+        ),
+      ),
+    ).toMatchObject({ class: "validation", code: HOST_CODES.DEF_LIMIT });
+  });
+
+  test("the bounded request queue drops overflow and returns false", () => {
+    const host = workspaceHost(["workspace.read", "workspace.control"]);
+    host.beginActivation();
+    for (let i = 0; i < MOCK_LIMITS.WORKSPACE_REQUEST_QUEUE_CAPACITY; i += 1) {
+      expect(host.bitty.workspace.next()).toBe(true);
+    }
+    expect(host.bitty.workspace.next()).toBe(false);
+    expect(host.workspaceRequestsDropped).toBe(1);
+    expect(host.drainWorkspaceRequests()).toHaveLength(
+      MOCK_LIMITS.WORKSPACE_REQUEST_QUEUE_CAPACITY,
+    );
+  });
+
+  test("workspace events carry identity payloads and reach only workspace.read holders", () => {
+    const host = workspaceHost(["workspace.read"]);
+    host.beginActivation();
+    const seen: unknown[] = [];
+    host.bitty.events.subscribe("workspace.created", (event) => {
+      seen.push(event.payload);
+    });
+    host.bitty.events.subscribe("workspace.focused", (event) => {
+      seen.push(event.payload);
+    });
+    host.endActivation();
+    expect(
+      host.publish("workspace.created", { id: 7, name: "new" }),
+    ).toMatchObject({ delivered: 1 });
+    expect(host.publish("workspace.focused", { id: 7 })).toMatchObject({
+      delivered: 1,
+    });
+    expect(seen).toEqual([{ id: 7, name: "new" }, { id: 7 }]);
+    expect(
+      denial(() => host.publish("workspace.renamed", { id: 7 })),
+    ).toMatchObject({ code: HOST_CODES.EVENT_PAYLOAD_INVALID });
+    host.revoke("workspace.read");
+    expect(host.publish("workspace.focused", { id: 7 })).toEqual({
+      delivered: 0,
+      vetoed: false,
+    });
+    host.grant("workspace.read");
+    host.suspend();
+    expect(host.publish("workspace.focused", { id: 7 })).toEqual({
+      delivered: 0,
+      vetoed: false,
+    });
+  });
+});
+
+function debugHost(grants: readonly string[]): MockHost {
+  const host = new MockHost({ manifestSource: DEBUG_MANIFEST });
+  for (const capability of grants) host.grant(capability);
+  return host;
+}
+
+describe("debug namespace", () => {
+  test("each entry point needs its own grant", () => {
+    const host = debugHost(["debug.trace"]);
+    host.beginActivation();
+    expect(denial(() => host.bitty.debug.inspect("grants"))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    const inspectOnly = debugHost(["debug.inspect"]);
+    inspectOnly.beginActivation();
+    expect(denial(() => inspectOnly.bitty.debug.trace())).toMatchObject({
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    expect(denial(() => inspectOnly.bitty.debug.trace_get(1))).toMatchObject({
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+  });
+
+  test("inspect serves sanitized sorted rows and fails closed on panels", () => {
+    const host = debugHost(["debug.inspect", "debug.trace"]);
+    host.beginActivation();
+    host.bitty.commands.register({
+      id: "hello",
+      title: "Hello",
+      run: () => null,
+    });
+    host.bitty.events.subscribe("terminal.bell", () => null);
+    expect(host.bitty.debug.inspect("plugins")).toEqual({
+      target: "plugins",
+      items: [
+        {
+          id: "conformance.debug",
+          version: "2.1.0",
+          state: "activating",
+          generation: 1,
+        },
+      ],
+      truncated: false,
+    });
+    expect(host.bitty.debug.inspect("commands").items).toEqual([
+      { plugin: "conformance.debug", id: "hello", title: "Hello" },
+    ]);
+    expect(host.bitty.debug.inspect("events").items).toEqual([
+      { plugin: "conformance.debug", kind: "terminal.bell" },
+    ]);
+    expect(host.bitty.debug.inspect("grants").items).toEqual([
+      "debug.inspect",
+      "debug.trace",
+    ]);
+    expect(denial(() => host.bitty.debug.inspect("panels"))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.NOT_IMPLEMENTED,
+    });
+    expect(denial(() => host.bitty.debug.inspect("secrets"))).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.DEF_INVALID,
+    });
+    expect(
+      denial(() => host.bitty.debug.inspect(1 as unknown as string)),
+    ).toMatchObject({ code: HOST_CODES.DEF_INVALID });
+  });
+
+  test("trace options are validated and capped per plugin", () => {
+    const host = debugHost(["debug.trace"]);
+    host.beginActivation();
+    for (const opts of [
+      { unknown: true },
+      { filter: "" },
+      { filter: "a*b*" },
+      { filter: "has space" },
+      { max_events: 0 },
+      { max_events: MOCK_LIMITS.DEBUG_TRACE_MAX_EVENTS + 1 },
+      { handle: 1 },
+      { enabled: false },
+      { enabled: false, handle: 1, filter: "x" },
+      { enabled: "yes" },
+    ]) {
+      expect(denial(() => host.bitty.debug.trace(opts as never))).toMatchObject(
+        { class: "validation", code: HOST_CODES.DEF_INVALID },
+      );
+    }
+    const handles: number[] = [];
+    for (let i = 0; i < MOCK_LIMITS.DEBUG_TRACES_PER_PLUGIN; i += 1) {
+      handles.push(host.bitty.debug.trace({ filter: "terminal.*" }));
+    }
+    expect(denial(() => host.bitty.debug.trace())).toMatchObject({
+      class: "budget",
+      code: HOST_CODES.DEF_LIMIT,
+    });
+    const first = handles[0] ?? 0;
+    expect(host.bitty.debug.trace({ enabled: false, handle: first })).toBe(
+      first,
+    );
+    expect(
+      denial(() => host.bitty.debug.trace({ enabled: false, handle: first })),
+    ).toMatchObject({ code: HOST_CODES.DEF_INVALID });
+    expect(host.bitty.debug.trace()).toBeGreaterThan(first);
+  });
+
+  test("trace records only declared, filtered events while active and drains once", () => {
+    const host = debugHost(["debug.trace"]);
+    host.beginActivation();
+    const handle = host.bitty.debug.trace({
+      filter: "terminal.*",
+      max_events: 2,
+    });
+    host.endActivation();
+    host.publish("terminal.bell");
+    host.publish("terminal.title-changed", {
+      title: "a",
+      terminal_id: 1,
+      runtime_id: 1,
+    });
+    host.publish("focus.changed", { view_id: 1 });
+    host.publish("terminal.bell");
+    const drain = host.bitty.debug.trace_get(handle);
+    expect(drain?.dropped).toBe(1);
+    expect(drain?.records.map((record) => record.topic)).toEqual([
+      "terminal.title-changed",
+      "terminal.bell",
+    ]);
+    expect(drain?.records[0]).toMatchObject({
+      sequence: expect.any(Number),
+      timestamp: expect.any(Number),
+      payload: { title: "a", terminal_id: 1, runtime_id: 1 },
+    });
+    expect(host.bitty.debug.trace_get(handle)).toEqual({
+      records: [],
+      dropped: 0,
+    });
+    expect(host.bitty.debug.trace_get(handle + 100)).toBeNull();
+    expect(
+      denial(() => host.bitty.debug.trace_get("1" as unknown as number)),
+    ).toMatchObject({ code: HOST_CODES.DEF_INVALID });
+    host.suspend();
+    host.publish("terminal.bell");
+    expect(host.bitty.debug.trace_get(handle)?.records).toEqual([]);
+  });
+
+  test("trace payloads are redacted for the owner's grants and size-bounded", () => {
+    const host = debugHost(["debug.trace"]);
+    host.beginActivation();
+    const handle = host.bitty.debug.trace();
+    host.endActivation();
+    host.publish("intercept.paste", {
+      action: "paste",
+      origin: "keyboard",
+      preview: "secret",
+    });
+    host.publish("terminal.title-changed", {
+      title: "t".repeat(MOCK_LIMITS.DEBUG_TRACE_PAYLOAD_MAX_BYTES),
+      terminal_id: 1,
+      runtime_id: 1,
+    });
+    const records = host.bitty.debug.trace_get(handle)?.records ?? [];
+    expect(records[0]?.payload).toEqual({
+      action: "paste",
+      origin: "keyboard",
+      redacted: true,
+    });
+    expect(records[1]?.payload).toMatchObject({ truncated: true });
+  });
+
+  test("traces are dropped with the generation", () => {
+    const host = debugHost(["debug.trace"]);
+    host.beginActivation();
+    const handle = host.bitty.debug.trace();
+    host.endActivation();
+    host.dispose();
+    host.grant("debug.trace");
+    host.beginActivation();
+    expect(host.bitty.debug.trace_get(handle)).toBeNull();
+  });
+
+  test("control stays deferred after bridge argument validation", () => {
+    const host = debugHost(["debug.control"]);
+    host.beginActivation();
+    expect(
+      denial(() =>
+        host.bitty.debug.control(1 as unknown as string, "conformance.debug"),
+      ),
+    ).toMatchObject({ class: "validation", code: HOST_CODES.DEF_INVALID });
+    expect(
+      denial(() =>
+        host.bitty.debug.control("reload_plugin", "conformance.debug"),
+      ),
+    ).toMatchObject({ class: "runtime", code: HOST_CODES.NOT_IMPLEMENTED });
   });
 });

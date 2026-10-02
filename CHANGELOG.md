@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Sync the surface with bitty `main` `2cb49afe` (issue #133, CTX-0063,
+  core-audit blocker B1): add the `bitty.workspace` namespace (`list`,
+  `focus`, `new`, `next`, `close`, `rename`, `move_panel`; bitty #1584,
+  CTX-0889, ADR 0014), the `workspace.created`/`closed`/`renamed`/
+  `focused`/`changed` observation events (22-name event set), and the
+  `bitty.debug` namespace (`inspect`, `trace`, `trace_get`, `control`; bitty
+  #1563/#1573, CTX-0894/CTX-0897). `debug` and `workspace` are WIRED;
+  `debug.control` is DEFERRED through the new per-function
+  `hostParity.functions` override (generator, parity check, and
+  `FUNCTION_HOST_PARITY`/`DEFERRED_FUNCTIONS` in `src/host-surface.ts`).
+  The validator accepts the `workspace` capability family
+  (`workspace.read`, `workspace.control`). The mock host models both
+  namespaces (deny-by-default gates, bridge argument validation before grant
+  checks, the bounded workspace request queue, `workspace.read`-only event
+  delivery and activation gate, bounded/redacted traces, and the new
+  mock-owned `E_DEF_LIMIT` code); conformance cases 16-18 and
+  `manifests/{workspace,debug}.toml` cover them. ADR 0014 joins the pinned
+  sources; `hostParity.pr` moves to 1584 and `lua/bitty.d.lua` is
+  regenerated. `bitty.network` stays excluded.
 - Re-pin host parity to bitty `main` `799f743` (bitty #1603/#1604,
   CTX-0906, DIR-030; issue #131): Core removed the embedded `network`
   Cargo feature and Lua network binding, and network access moves to the

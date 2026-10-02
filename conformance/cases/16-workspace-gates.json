@@ -1,0 +1,135 @@
+{
+  "name": "workspace domain: separate read/control gates, bounded list, enqueue-only mutations",
+  "description": "bitty #1584 (CTX-0889, ADR 0014): declaring workspace.* events without a granted workspace.read fails activation closed. bitty.workspace.list is gated on workspace.read; every mutation is gated on workspace.control only (read never implies control), validates argument shapes before the grant check, and only enqueues a bounded request that the host applies on its next tick.",
+  "manifest": "manifests/workspace.toml",
+  "tags": ["workspace", "deny-by-default", "capability"],
+  "steps": [
+    {
+      "op": "begin-activation",
+      "expect": {
+        "denial": {
+          "code": "E_CAPABILITY_DENIED",
+          "class": "runtime",
+          "path": "lazy.events"
+        }
+      }
+    },
+    { "op": "grant", "capability": "workspace.read" },
+    { "op": "begin-activation" },
+    {
+      "op": "set-workspaces",
+      "workspaces": [
+        {
+          "id": 1,
+          "name": "main",
+          "active": true,
+          "panel_count": 2,
+          "attention": { "bell": false, "activity": false, "exited": false }
+        },
+        {
+          "id": 3,
+          "name": "a-workspace-name-longer-than-thirty-two-characters",
+          "active": false,
+          "panel_count": 1,
+          "attention": { "bell": false, "activity": false, "exited": false }
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "surface": "workspace.list",
+      "expect": {
+        "result": [
+          {
+            "id": 1,
+            "name": "main",
+            "active": true,
+            "panel_count": 2,
+            "attention": { "bell": false, "activity": false, "exited": false }
+          },
+          {
+            "id": 3,
+            "name": "a-workspace-name-longer-than-thi",
+            "active": false,
+            "panel_count": 1,
+            "attention": { "bell": false, "activity": false, "exited": false }
+          }
+        ]
+      }
+    },
+    {
+      "op": "call",
+      "surface": "workspace.new",
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "workspace.focus",
+      "args": { "target": 0 },
+      "expect": { "denial": { "code": "E_DEF_INVALID", "class": "validation" } }
+    },
+    { "op": "grant", "capability": "workspace.control" },
+    {
+      "op": "call",
+      "surface": "workspace.focus",
+      "args": { "target": 3 },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "workspace.focus",
+      "args": { "target": { "index": 2 } },
+      "expect": { "result": true }
+    },
+    { "op": "call", "surface": "workspace.new", "expect": { "result": true } },
+    { "op": "call", "surface": "workspace.next", "expect": { "result": true } },
+    {
+      "op": "call",
+      "surface": "workspace.close",
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "workspace.rename",
+      "args": { "id": 3, "name": "logs" },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "workspace.move_panel",
+      "args": { "id": 1 },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "workspace.rename",
+      "args": { "id": 3, "name": "   " },
+      "expect": { "denial": { "code": "E_DEF_INVALID", "class": "validation" } }
+    },
+    {
+      "op": "drain-workspace-requests",
+      "expect": {
+        "result": [
+          { "kind": "focus_id", "id": 3 },
+          { "kind": "focus_index", "index": 2 },
+          { "kind": "new" },
+          { "kind": "next" },
+          { "kind": "close", "id": null },
+          { "kind": "rename", "id": 3, "name": "logs" },
+          { "kind": "move_panel", "id": 1 }
+        ]
+      }
+    },
+    { "op": "revoke", "capability": "workspace.read" },
+    {
+      "op": "call",
+      "surface": "workspace.list",
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "call", "surface": "workspace.next", "expect": { "result": true } }
+  ]
+}

@@ -68,6 +68,26 @@ export interface SurfaceHostParity {
   readonly pr: number;
   readonly note: string;
   readonly namespaces: Readonly<Record<string, HostParityStatus>>;
+  /**
+   * Per-function verdicts that override a `wired` namespace verdict. Only
+   * `deferred` overrides are meaningful: a wired namespace may still carry a
+   * host entry point that always fails closed with E_NOT_IMPLEMENTED (for
+   * example `debug.control`).
+   */
+  readonly functions?: Readonly<Record<string, HostParityStatus>>;
+}
+
+/**
+ * Effective host status of one function: a per-function override wins over
+ * the namespace verdict.
+ */
+export function functionHostStatus(
+  hostParity: SurfaceHostParity,
+  path: string,
+): HostParityStatus | undefined {
+  const override = hostParity.functions?.[path];
+  if (override !== undefined) return override;
+  return hostParity.namespaces?.[path.split(".")[0] ?? ""];
 }
 
 export interface SurfaceFunction {
@@ -391,14 +411,43 @@ export function validateSurface(surface: Surface): string[] {
       "hostParity must pin the host repository, 40-hex commit, numeric PR, and namespace map",
     );
   } else {
+    const parityFunctions: Record<string, unknown> = isRecord(
+      surface.hostParity.functions,
+    )
+      ? (surface.hostParity.functions as Record<string, unknown>)
+      : {};
+    if (
+      surface.hostParity.functions !== undefined &&
+      !isRecord(surface.hostParity.functions)
+    ) {
+      problems.push("hostParity.functions must be an object when present");
+    }
+    for (const [path, status] of Object.entries(parityFunctions)) {
+      if (!functionPaths.has(path)) {
+        problems.push(
+          `hostParity.functions lists an unknown function: ${path}`,
+        );
+      }
+      if (status !== "deferred") {
+        problems.push(
+          `hostParity.functions[${path}] may only override to deferred`,
+        );
+      }
+      if (parityNamespaces[path.split(".")[0] ?? ""] !== "wired") {
+        problems.push(
+          `hostParity.functions[${path}] overrides a namespace that is not wired`,
+        );
+      }
+    }
     const missingPrefixes = new Set<string>();
     for (const fn of surface.functions) {
       const prefix = fn.path.split(".")[0] ?? "";
-      const status = parityNamespaces[prefix];
-      if (status !== "wired" && status !== "deferred") {
+      const namespaceStatus = parityNamespaces[prefix];
+      if (namespaceStatus !== "wired" && namespaceStatus !== "deferred") {
         missingPrefixes.add(prefix);
         continue;
       }
+      const status = parityFunctions[fn.path] ?? namespaceStatus;
       if (status === "deferred") {
         if (fn.errors.length !== 1 || fn.errors[0] !== "E_NOT_IMPLEMENTED") {
           problems.push(
@@ -612,12 +661,6 @@ export function renderDefinitions(surface: Surface): string {
     const prefix = namespacePrefix(type.name);
     if (prefix !== undefined) namespaceByPrefix.set(prefix, type);
   }
-  const deferredNamespaces = new Set(
-    Object.entries(surface.hostParity.namespaces ?? {})
-      .filter(([, status]) => status === "deferred")
-      .map(([namespace]) => namespace),
-  );
-
   for (const type of surface.types) {
     lines.push(...renderType(type));
     const prefix = namespacePrefix(type.name);
@@ -630,7 +673,7 @@ export function renderDefinitions(surface: Surface): string {
             ...renderFunction(
               fn,
               type.name,
-              deferredNamespaces.has(prefix ?? ""),
+              functionHostStatus(surface.hostParity, fn.path) === "deferred",
             ),
           );
           lines.push("");

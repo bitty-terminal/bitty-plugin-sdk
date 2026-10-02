@@ -1,7 +1,7 @@
 --- Bitty Plugin API v1 LuaLS definitions.
 --- GENERATED FILE - DO NOT EDIT.
 --- Source: surface/bitty-plugin-api-v1.json
---- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md
+--- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md
 --- Regenerate: bun scripts/generate-lua-defs.ts --write
 --- Verify: just lua-defs-check
 ---@meta bitty
@@ -55,8 +55,9 @@ local BittyCommandsNamespace = {}
 ---@return BittyCommandHandle
 function BittyCommandsNamespace.register(def) end
 
---- Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error.
----@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
+--- Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error,
+--- and declaring any workspace.* name requires a granted workspace.read capability at activation.
+---@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"workspace.created"|"workspace.closed"|"workspace.renamed"|"workspace.focused"|"workspace.changed"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
 
 --- Event payload with no fields for lifecycle, signal, and coalescable observation events.
 ---@class BittyEmptyPayload
@@ -101,6 +102,17 @@ function BittyCommandsNamespace.register(def) end
 ---@field runtime_id integer Live PTY incarnation identity.
 ---@field exit_code integer Process exit status.
 
+--- workspace.closed, workspace.changed, and workspace.focused payload: identity only, never
+--- terminal content; delivered only to workspace.read holders and coalesced per host tick.
+---@class BittyWorkspaceEventPayload
+---@field id BittyWorkspaceId Stable workspace id.
+
+--- workspace.created and workspace.renamed payload: identity plus the bounded display name;
+--- delivered only to workspace.read holders.
+---@class BittyWorkspaceNamedEventPayload
+---@field id BittyWorkspaceId Stable workspace id.
+---@field name string Display name, bounded by Core to 32 characters.
+
 --- Interception payload with bounded sanitized metadata; rewriting content is not expressible.
 ---@class BittyInterceptPayload
 ---@field action string Bounded action label.
@@ -108,7 +120,7 @@ function BittyCommandsNamespace.register(def) end
 ---@field preview string Bounded sanitized preview; intercept.paste never carries paste text without clipboard.read.
 
 --- Union of the closed v1 event payload shapes.
----@alias BittyEventPayload BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyInterceptPayload
+---@alias BittyEventPayload BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyInterceptPayload
 
 --- Immutable bounded event envelope delivered to subscribed handlers.
 ---@class BittyEvent
@@ -434,6 +446,185 @@ function BittyTimersNamespace.create(delay_ms, callback) end
 ---@return boolean
 function BittyTimersNamespace.cancel(timer_id) end
 
+--- bitty.debug.inspect target; panels is reserved and fails closed with E_NOT_IMPLEMENTED, and any
+--- other string is E_DEF_INVALID.
+---@alias BittyDebugInspectTarget "plugins"|"commands"|"events"|"grants"|"panels"
+
+--- Stable lowercase lifecycle label; failed never carries the failure message.
+---@alias BittyDebugPluginState "unloaded"|"loading"|"activating"|"active"|"suspended"|"disposing"|"disposed"|"failed"
+
+--- One plugins inspect row, sorted by id.
+---@class BittyDebugPluginRow
+---@field id string Owner-qualified plugin id.
+---@field version string Manifest version.
+---@field state BittyDebugPluginState Lifecycle label.
+---@field generation integer Activation generation (0 before the first activation).
+
+--- One commands inspect row, sorted by plugin, id, title.
+---@class BittyDebugCommandRow
+---@field plugin string Owning plugin id.
+---@field id string Command id as registered (unqualified).
+---@field title string Bounded command title.
+
+--- One events inspect row (an event subscription), sorted by plugin, kind.
+---@class BittyDebugEventRow
+---@field plugin string Owning plugin id.
+---@field kind string Subscribed event kind.
+
+--- bitty.debug.inspect result; never includes settings values, store contents, secrets, or terminal
+--- content.
+---@class BittyDebugInspectResult
+---@field target BittyDebugInspectTarget Echoed inspect target.
+---@field items BittyDebugPluginRow[]|BittyDebugCommandRow[]|BittyDebugEventRow[]|string[] Rows for the target, capped at 1024 items; grants yields the caller's own sorted capability ids only.
+---@field truncated boolean Whether rows were cut at the item cap.
+
+--- Positive monotonic trace handle returned by bitty.debug.trace; never reused, dropped with the
+--- owning generation.
+---@alias BittyDebugTraceHandle integer
+
+--- bitty.debug.trace options; unknown keys, wrong types, and out-of-range values are E_DEF_INVALID.
+---@class BittyDebugTraceOpts
+---@field enabled? boolean true (default) opens a new trace; false closes the trace named by handle.
+---@field filter? string Exact topic, or a prefix when the pattern ends with a single *; 1..128 printable ASCII bytes; rejected with enabled = false.
+---@field max_events? integer Drop-oldest ring size, 1..10000 (default 1000); rejected with enabled = false.
+---@field handle? BittyDebugTraceHandle Required with enabled = false and rejected otherwise.
+
+--- One recorded event, redacted for the trace owner's own grants.
+---@class BittyDebugTraceRecord
+---@field topic string Event kind.
+---@field sequence integer Runtime event sequence.
+---@field timestamp integer Milliseconds on a monotonic host clock (no wall clock).
+---@field payload table Event payload, replaced by { truncated = true, bytes = <n> } when its encoded size exceeds 4096 bytes.
+
+--- Drained trace buffer returned by bitty.debug.trace_get; draining empties the buffer.
+---@class BittyDebugTraceDrain
+---@field records BittyDebugTraceRecord[] Records in arrival order.
+---@field dropped integer Records lost to drop-oldest since the previous drain; resets after being reported.
+
+--- Devtools inspection surface; each entry point needs its own grant (debug.inspect, debug.trace,
+--- debug.control) with no implication between them. Host-implemented spellings; not part of the ADR
+--- 0009 v1 guarantee.
+---@class BittyDebugNamespace
+local BittyDebugNamespace = {}
+
+--- Read-only runtime inspection returning { target, items, truncated }; a non-string target is
+--- E_DEF_INVALID before the grant check, the reserved panels target fails closed with
+--- E_NOT_IMPLEMENTED, and other plugins' grants are never exposed.
+--- Capabilities: debug.inspect.
+--- Errors: E_DEF_INVALID, E_CAPABILITY_DENIED.
+---@param target BittyDebugInspectTarget
+---@return BittyDebugInspectResult
+function BittyDebugNamespace.inspect(target) end
+
+--- Opens (nil or enabled = true) or closes (enabled = false with handle) an event trace; a trace
+--- records only event kinds the plugin declares in [lazy].events, intersected with filter, at most
+--- 4 traces per plugin (E_DEF_LIMIT), and closing an unknown or foreign handle is E_DEF_INVALID.
+--- Capabilities: debug.trace.
+--- Errors: E_DEF_INVALID, E_DEF_LIMIT, E_CAPABILITY_DENIED.
+---@param opts? BittyDebugTraceOpts
+---@return BittyDebugTraceHandle
+function BittyDebugNamespace.trace(opts) end
+
+--- Drains a trace owned by this plugin; a non-integer handle is E_DEF_INVALID, and an unknown or
+--- foreign handle returns nil so other plugins' traces cannot be probed.
+--- Capabilities: debug.trace.
+--- Errors: E_DEF_INVALID, E_CAPABILITY_DENIED.
+---@param handle BittyDebugTraceHandle
+---@return BittyDebugTraceDrain|nil
+function BittyDebugNamespace.trace_get(handle) end
+
+--- High-risk lifecycle control (reload_plugin, suspend_plugin, resume_plugin, clear_state by plugin
+--- id); non-string arguments are E_DEF_INVALID, and the host fails closed before reading the grant
+--- or the target.
+--- Capabilities: debug.control.
+--- Host status: deferred - always fails with E_NOT_IMPLEMENTED (runtime) until the host backend lands.
+--- Errors: E_NOT_IMPLEMENTED.
+---@param action string
+---@param target string
+---@return any
+function BittyDebugNamespace.control(action, target) end
+
+--- Positive stable workspace id (Core creation sequence); survives index shifts and is never reused
+--- for another workspace.
+---@alias BittyWorkspaceId integer
+
+--- Attention flags of one workspace; the host reports every flag false until Core grows a
+--- per-workspace attention source.
+---@class BittyWorkspaceAttention
+---@field bell boolean A bell rang since the workspace was last focused.
+---@field activity boolean Output arrived while the workspace was inactive.
+---@field exited boolean A panel process in the workspace exited.
+
+--- One bitty.workspace.list row: identity, order, and structure only, never terminal content.
+---@class BittyWorkspaceInfo
+---@field id BittyWorkspaceId Stable workspace id.
+---@field name string Display name, truncated to 32 characters.
+---@field active boolean Whether this is the active workspace.
+---@field panel_count integer Number of panels (layout leaves).
+---@field attention BittyWorkspaceAttention Attention flags.
+
+--- Positional bitty.workspace.focus target.
+---@class BittyWorkspaceIndexTarget
+---@field index integer 1-based position, clamped to the last workspace like the Alt+N binding.
+
+--- Workspace domain (L1, ADR 0014): list is gated on workspace.read; every mutation is gated on
+--- workspace.control only (read never implies control), enqueues into a bounded host queue (32
+--- requests per tick), and returns whether it was queued, not applied. Spellings are host
+--- candidates pending OQ-056.
+---@class BittyWorkspaceNamespace
+local BittyWorkspaceNamespace = {}
+
+--- Lists workspaces in order, at most 16 rows (the Core MAX_WORKSPACES bound); names are truncated
+--- to 32 characters and rows never carry terminal content.
+--- Capabilities: workspace.read.
+--- Errors: E_CAPABILITY_DENIED.
+---@return BittyWorkspaceInfo[]
+function BittyWorkspaceNamespace.list() end
+
+--- Queues focusing a workspace by positive stable id or by { index = n } (1-based); an id that no
+--- longer exists at apply time is dropped fail-closed.
+--- Capabilities: workspace.control.
+--- Errors: E_DEF_INVALID, E_CAPABILITY_DENIED.
+---@param target BittyWorkspaceId|BittyWorkspaceIndexTarget
+---@return boolean
+function BittyWorkspaceNamespace.focus(target) end
+
+--- Queues creating a workspace and switching to it, subject to the Core capacity bound.
+--- Capabilities: workspace.control.
+--- Errors: E_CAPABILITY_DENIED.
+---@return boolean
+function BittyWorkspaceNamespace.new() end
+
+--- Queues switching to the next workspace (wraps).
+--- Capabilities: workspace.control.
+--- Errors: E_CAPABILITY_DENIED.
+---@return boolean
+function BittyWorkspaceNamespace.next() end
+
+--- Queues closing a workspace (nil closes the active one) through the kill-confirm gate: idle
+--- workspaces close immediately and live ones arm the user confirmation.
+--- Capabilities: workspace.control.
+--- Errors: E_DEF_INVALID, E_CAPABILITY_DENIED.
+---@param id? BittyWorkspaceId
+---@return boolean
+function BittyWorkspaceNamespace.close(id) end
+
+--- Queues renaming a workspace; name must be a non-blank UTF-8 string without control characters
+--- and at most 256 bytes (E_DEF_LIMIT), and Core truncates accepted names to 32 characters.
+--- Capabilities: workspace.control.
+--- Errors: E_DEF_INVALID, E_DEF_LIMIT, E_CAPABILITY_DENIED.
+---@param id BittyWorkspaceId
+---@param name string
+---@return boolean
+function BittyWorkspaceNamespace.rename(id, name) end
+
+--- Queues moving the focused panel of the active workspace into the workspace with this stable id.
+--- Capabilities: workspace.control.
+--- Errors: E_DEF_INVALID, E_CAPABILITY_DENIED.
+---@param id BittyWorkspaceId
+---@return boolean
+function BittyWorkspaceNamespace.move_panel(id) end
+
 --- Host-injected read-only module table; it is not loaded through require.
 ---@class bitty
 ---@field api_version string Host bridge API version (1.0.0); minor versions are additive only.
@@ -449,4 +640,6 @@ function BittyTimersNamespace.cancel(timer_id) end
 ---@field terminal BittyTerminalNamespace
 ---@field tasks BittyTasksNamespace
 ---@field timers BittyTimersNamespace
+---@field debug BittyDebugNamespace
+---@field workspace BittyWorkspaceNamespace
 bitty = {}

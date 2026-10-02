@@ -9,9 +9,11 @@ generated from the machine-readable surface table
 artifact exists for Plugin API v1. The definitions are frozen on the host-parity
 verdicts of bitty PR #1303 (SDK task `CTX-0053`) as re-wired by bitty PR #1391
 (SDK issue #115): WIRED namespaces generate
-full bindings while the DEFERRED `env` namespace generates typed
-`E_NOT_IMPLEMENTED` stubs (see
-[Host parity and regen-sync](#host-parity-and-regen-sync)).
+full bindings while the DEFERRED `env` namespace and the DEFERRED
+`debug.control` function generate typed `E_NOT_IMPLEMENTED` stubs (see
+[Host parity and regen-sync](#host-parity-and-regen-sync)). SDK task
+`CTX-0063` (issue #133) synced the `bitty.debug` and `bitty.workspace`
+namespaces and the `workspace.*` events at bitty `main` `2cb49afe`.
 
 ## Contract sources
 
@@ -22,11 +24,19 @@ full bindings while the DEFERRED `env` namespace generates typed
   (module root `bitty`, one spelling per concept, the closed v1 event set, the
   L1/L2 split, and the exclusion list).
 - Referenced accepted contracts: ADR 0006 (`bitty.env`), ADR 0007
-  (tasks/timers caps), the Plugin Platform RFC (manifest, capabilities,
+  (tasks/timers caps), ADR 0014 (workspace as a Core mechanism with separate
+  read/control gates; Lua spellings stay host candidates under OQ-056), the
+  Plugin Platform RFC (manifest, capabilities,
   pipeline), the TerminalRegistry and View Lifecycle Contract (identity tuple,
   `TerminalClosed`/`TerminalExited`), the Rich Presentation RFC (`SceneNode`,
   zones), the CLI Contract RFC (JSON Schema limits), and the Configuration
   Model RFC (chord grammar).
+- Host implementation evidence: the `bitty.debug` and `bitty.workspace`
+  spellings, argument shapes, bounds, and error codes are derived from the
+  bitty host source at `2cb49afe` (`crates/bitty-lua/src/host.rs`,
+  `crates/bitty-runtime/src/plugin_runtime/{mod,services,debug}.rs`,
+  `crates/bitty-terminal/src/terminal_app.rs`), not from an accepted
+  spelling contract; they sit outside the ADR 0009 v1 guarantee.
 - Pinned revisions live in `sources` in `surface/bitty-plugin-api-v1.json`;
   the generated header names each contract document by repository and path
   only, so the surface table is the sole revision record.
@@ -107,22 +117,24 @@ Semantics the annotations carry:
 ## Coverage
 
 The surface table covers L1 Control and the minimal L2 UI surface only:
-12 namespaces, 19 functions, and the closed 17-name event set.
+14 namespaces, 30 functions, and the closed 22-name event set.
 
-| Namespace  | Functions          | Level | Capability                                   |
-| ---------- | ------------------ | ----- | -------------------------------------------- |
-| `commands` | `register`         | L1    | none                                         |
-| `events`   | `subscribe`        | L1    | none                                         |
-| `keymaps`  | `suggest`          | L1    | none                                         |
-| `settings` | `get`, `set`       | L1    | none                                         |
-| `store`    | `get`, `set`       | L1    | none (quota-bounded)                         |
-| `notify`   | `show`             | L1    | `platform.notify`                            |
-| `env`      | `get`, `has`       | L1    | `env.read:<KEY>` (namespace optional)        |
-| `services` | `get`, `provide`   | L1    | none                                         |
-| `ui`       | `mount`, `update`  | L2    | `ui.rich`; `ui.overlay` for the overlay slot |
-| `terminal` | `snapshot`         | L2    | `terminal.semantic-read`                     |
-| `tasks`    | `spawn`, `cancel`  | L1    | none (64-task cap)                           |
-| `timers`   | `create`, `cancel` | L1    | none (32-timer cap, one-shot)                |
+| Namespace   | Functions                                                       | Level | Capability                                                    |
+| ----------- | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |
+| `commands`  | `register`                                                      | L1    | none                                                          |
+| `events`    | `subscribe`                                                     | L1    | none                                                          |
+| `keymaps`   | `suggest`                                                       | L1    | none                                                          |
+| `settings`  | `get`, `set`                                                    | L1    | none                                                          |
+| `store`     | `get`, `set`                                                    | L1    | none (quota-bounded)                                          |
+| `notify`    | `show`                                                          | L1    | `platform.notify`                                             |
+| `env`       | `get`, `has`                                                    | L1    | `env.read:<KEY>` (namespace optional)                         |
+| `services`  | `get`, `provide`                                                | L1    | none                                                          |
+| `ui`        | `mount`, `update`                                               | L2    | `ui.rich`; `ui.overlay` for the overlay slot                  |
+| `terminal`  | `snapshot`                                                      | L2    | `terminal.semantic-read`                                      |
+| `tasks`     | `spawn`, `cancel`                                               | L1    | none (64-task cap)                                            |
+| `timers`    | `create`, `cancel`                                              | L1    | none (32-timer cap, one-shot)                                 |
+| `debug`     | `inspect`, `trace`, `trace_get`, `control`                      | L1    | `debug.inspect`; `debug.trace`; `debug.control` (deferred)    |
+| `workspace` | `list`, `focus`, `new`, `next`, `close`, `rename`, `move_panel` | L1    | `workspace.read` for `list`; `workspace.control` for the rest |
 
 The accepted RFC classifies the `services.get` consumer side as cross-cutting
 within v1; the tasks and timers functions were resolved as v1 additions by
@@ -134,8 +146,21 @@ after the #1391 services re-wire) are
 DEFERRED: the surface table records them in the `hostParity` namespace map,
 their functions list exactly `E_NOT_IMPLEMENTED`, and the generator renders
 each as a typed stub (`Host status: deferred ...`) instead of a full binding.
+A single host entry point that always fails closed inside an otherwise wired
+namespace is recorded as a per-function override in `hostParity.functions`
+(today only `debug.control`, whose runtime implementation fails before
+reading the grant or target) and renders the same stub annotation.
 The spellings stay declared, so the freeze is never silent; the stub fails
 closed on the host, so the SDK is never more permissive.
+
+The `debug` and `workspace` namespaces are host-implemented candidates rather
+than ADR 0009 v1 surface: `bitty.workspace.*` and the `workspace.*` events
+follow ADR 0014 (separate `workspace.read`/`workspace.control` gates, read
+never implies control) with spellings pending OQ-056, and `bitty.debug.*`
+has no accepted spelling contract. Workspace mutations only enqueue a bounded
+request and return whether it was queued; the reserved
+`bitty.debug.inspect("panels")` target fails with `E_NOT_IMPLEMENTED` and is
+documented in the function doc rather than the error list.
 
 The `ui.overlay` gate is conditional: the surface table records it as a
 structured `conditionalCapabilities` entry on `ui.mount`
@@ -146,11 +171,11 @@ and carries no slot gate. `tests/conformance.test.ts` checks both the
 unconditional and conditional gates against the mock-host model instead of
 dropping the `:overlay` entry.
 
-| Event class  | Names                                                                                                                                                                              |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lifecycle    | `plugin.activated`, `plugin.suspended`, `plugin.disposed`, `handler.violation`                                                                                                     |
-| Observation  | `terminal.opened`, `terminal.closed`, `terminal.title-changed`, `terminal.cwd-changed`, `terminal.bell`, `focus.changed`, `selection.changed`, `process.exited`, `config.reloaded` |
-| Interception | `intercept.command-dispatch`, `intercept.terminal-spawn`, `intercept.paste`, `intercept.open-url`                                                                                  |
+| Event class  | Names                                                                                                                                                                                                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lifecycle    | `plugin.activated`, `plugin.suspended`, `plugin.disposed`, `handler.violation`                                                                                                                                                                                                             |
+| Observation  | `terminal.opened`, `terminal.closed`, `terminal.title-changed`, `terminal.cwd-changed`, `terminal.bell`, `focus.changed`, `selection.changed`, `process.exited`, `config.reloaded`, `workspace.created`, `workspace.closed`, `workspace.renamed`, `workspace.focused`, `workspace.changed` |
+| Interception | `intercept.command-dispatch`, `intercept.terminal-spawn`, `intercept.paste`, `intercept.open-url`                                                                                                                                                                                          |
 
 ## What is not in v1
 
@@ -177,10 +202,11 @@ just host-parity-check  # surface/model/defs/mock/fixture parity agreement
 ## Host parity and regen-sync
 
 The surface table pins the bitty host revision it was frozen against
-(`hostParity`: repository `bitty`, commit `799f743` re-verified at bitty PR
-1604, PR 1391 as the last verdict move; verdict set provenance #1303) and
-one verdict per namespace: every namespace is `wired` except `env`,
-which is `deferred`. `process.spawn` is v1-OUT and stays excluded.
+(`hostParity`: repository `bitty`, commit `2cb49afe` re-verified at bitty
+`main` after PR 1607, PR 1584 as the last verdict move; verdict set
+provenance #1303) and one verdict per namespace: every namespace is `wired`
+except `env`, which is `deferred`, plus the per-function override
+`debug.control: deferred`. `process.spawn` is v1-OUT and stays excluded.
 `bitty.network` also stays excluded: bitty #1604 (DIR-030) removed the
 embedded Lua network binding from Core, and network access now belongs to
 the out-of-process `net` native component, whose Lua request surface is
@@ -191,13 +217,14 @@ bitty host change flips a namespace verdict or an accepted contract revision
 moves:
 
 1. Update `surface/bitty-plugin-api-v1.json`: the `hostParity` pin (commit,
-   PR, per-namespace verdicts) and, for a contract revision, the `sources`
-   entries. A namespace flipping to `deferred` lists exactly
-   `E_NOT_IMPLEMENTED` in every function `errors`; a namespace flipping to
-   `wired` restores its accepted codes.
+   PR, per-namespace verdicts, per-function `functions` overrides) and, for a
+   contract revision, the `sources` entries. A namespace or function flipping
+   to `deferred` lists exactly `E_NOT_IMPLEMENTED` in every affected function
+   `errors`; flipping to `wired` restores its accepted codes.
 2. Mirror the verdicts in `src/host-surface.ts` (`HOST_PARITY_SOURCE`,
-   `NAMESPACE_HOST_PARITY`); the mock host derives its deferred gate from
-   `DEFERRED_NAMESPACES`, and `src/index.ts` re-exports the model.
+   `NAMESPACE_HOST_PARITY`, `FUNCTION_HOST_PARITY`); the mock host derives its
+   deferred gates from `DEFERRED_NAMESPACES` and `DEFERRED_FUNCTIONS`, and
+   `src/index.ts` re-exports the model.
 3. Run `just lua-defs-write` to regenerate `lua/bitty.d.lua`.
 4. Run `just check`: `just lua-defs-check` fails on drift and
    `just host-parity-check` fails when the surface table, wiring model,

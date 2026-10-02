@@ -88,6 +88,8 @@ const SUPPORTED_STEP_OPS: ReadonlySet<string> = new Set([
   "drain-tasks",
   "set-terminal-snapshot",
   "remove-service",
+  "set-workspaces",
+  "drain-workspace-requests",
 ]);
 
 class CaseFailure extends Error {}
@@ -368,6 +370,36 @@ function callSurface(
       );
     case "timers.cancel":
       return host.bitty.timers.cancel(Number(table.handle));
+    // Debug and workspace arguments pass through uncoerced so fixtures can
+    // exercise the bridge's own argument-shape validation.
+    case "debug.inspect":
+      return host.bitty.debug.inspect(table.target as never);
+    case "debug.trace":
+      return host.bitty.debug.trace(table.opts as never);
+    case "debug.trace_get":
+      return host.bitty.debug.trace_get(table.handle as never);
+    case "debug.control":
+      return host.bitty.debug.control(
+        table.action as never,
+        table.target as never,
+      );
+    case "workspace.list":
+      return host.bitty.workspace.list();
+    case "workspace.focus":
+      return host.bitty.workspace.focus(table.target as never);
+    case "workspace.new":
+      return host.bitty.workspace.new();
+    case "workspace.next":
+      return host.bitty.workspace.next();
+    case "workspace.close":
+      return host.bitty.workspace.close(table.id as never);
+    case "workspace.rename":
+      return host.bitty.workspace.rename(
+        table.id as never,
+        table.name as never,
+      );
+    case "workspace.move_panel":
+      return host.bitty.workspace.move_panel(table.id as never);
     default:
       throw new CaseFailure(`unsupported surface '${surface}'`);
   }
@@ -845,6 +877,29 @@ export async function runConformanceCaseFile(
             detail: `removed ${String(table.interface)}`,
           });
           break;
+        case "set-workspaces":
+          host.setWorkspaces(
+            (Array.isArray(table.workspaces) ? table.workspaces : []) as never,
+          );
+          assertions.push({
+            op: "set-workspaces",
+            detail: "workspace source installed",
+          });
+          break;
+        case "drain-workspace-requests": {
+          const drained = host.drainWorkspaceRequests();
+          const problem = expectProblem(
+            { ok: true, result: drained },
+            table.expect ?? { result: drained },
+            captures,
+          );
+          record(
+            problem === undefined,
+            "drain-workspace-requests",
+            `${drained.length} request(s) ${problem ?? "matched"}`,
+          );
+          break;
+        }
         default:
           throw new CaseFailure(`unsupported step op '${step.op}'`);
       }
