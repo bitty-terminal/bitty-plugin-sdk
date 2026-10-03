@@ -5,9 +5,9 @@
   "output": "lua/bitty.d.lua",
   "hostParity": {
     "repository": "bitty",
-    "commit": "2cb49afed11fcac4a69dd556ff71e576760e063d",
-    "pr": 1584,
-    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe.",
+    "commit": "fb44a8671ea7526c985d8f0ca3f57ef9b82f09e0",
+    "pr": 1641,
+    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe for CTX-0063. Re-verified at bitty main fb44a867 (PR 1641, CTX-0067, W-43): bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and transient input-capture mechanism bitty.ui.overlay.acquire/release/poll (existing ui.overlay grant, no new capability; application wiring tracked as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942, re-scoped minimal per DEC-0085) added thin targeting bindings bitty.ui.targets.* and bitty.ui.labels.* over existing beacon types with no new capability and no Event-Bus exposure; both stay pending per W-120, deferred and not wired into v1 and recorded as explicit exclusions, so no v1 namespace verdict moved.",
     "namespaces": {
       "commands": "wired",
       "events": "wired",
@@ -1580,6 +1580,18 @@
     {
       "path": "bitty.history",
       "reason": "W-139 (CTX-0066) history/search/selection surface is blocked: the delegating W-135 (bitty-terminal-docs search-selection-contract), W-137 (bitty-plugins-docs history-and-storage-policy), and W-138 (bitty-plugins-docs search-copy-mode-policy) contracts are draft and authorize no implementation, and no accepted closed-set capability covers scrollback or history text read. The Plugin Platform RFC fixes the terminal family as terminal.semantic-read/raw-read/input.self/input.all/manage, and the accepted Plugin API v1 Lua Surface RFC states v1 has no scrollback text read path; adding a scrollback/history read capability requires a successor RFC with its own security review. Re-evaluate when an accepted capability and a bitty host entry point exist."
+    },
+    {
+      "path": "bitty.ui.overlay",
+      "reason": "Focusable overlay input-capture mechanism (bitty #1633, W-28, CTX-0941) stays out of v1: the provisional host spellings bitty.ui.overlay.acquire/release/poll are co-owned by W-01/OQ-056, reuse the existing closed-set ui.overlay grant with no new capability identifier, and the application wiring (real key/IME/pointer routing, per-tick expiry, focus-switch and cancel revoke, overlay rendering) is the tracked follow-up CTX-0943 and has not landed. Pending per W-120, deferred and not wired; re-evaluate when an accepted contract authorizes the spellings."
+    },
+    {
+      "path": "bitty.ui.targets",
+      "reason": "Thin targeting mechanism bindings (bitty #1641, W-29, CTX-0942, re-scoped minimal per DEC-0085) stay out of v1: snapshot, register, unregister, session_start, session_cancel, and dispatch over existing beacon types with no new struct, enum, namespace, or capability and no target or annotation Event-Bus exposure. Provisional host candidates pending per W-120, deferred and not wired; re-evaluate when an accepted contract authorizes the spellings."
+    },
+    {
+      "path": "bitty.ui.labels",
+      "reason": "Bounded label operations (bitty #1641, W-29, CTX-0942) stay out of v1: set_policy and assign over existing beacon types with no new capability and no Event-Bus exposure. Provisional host candidates pending per W-120, deferred and not wired; re-evaluate when an accepted contract authorizes the spellings."
     }
   ],
   "excludedArgumentLiterals": [

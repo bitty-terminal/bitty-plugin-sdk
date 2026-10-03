@@ -13,7 +13,11 @@ full bindings while the DEFERRED `env` namespace and the DEFERRED
 `debug.control` function generate typed `E_NOT_IMPLEMENTED` stubs (see
 [Host parity and regen-sync](#host-parity-and-regen-sync)). SDK task
 `CTX-0063` (issue #133) synced the `bitty.debug` and `bitty.workspace`
-namespaces and the `workspace.*` events at bitty `main` `2cb49afe`.
+namespaces and the `workspace.*` events at bitty `main` `2cb49afe`. SDK task
+`CTX-0067` (plan W-43) re-pins the freeze to bitty `main` `fb44a867`
+(PR #1641) with no v1 verdict move: the W-28/W-29 overlay and targeting
+bindings stay pending per W-120, deferred and not wired (see
+[Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067)).
 
 ## Contract sources
 
@@ -36,7 +40,12 @@ namespaces and the `workspace.*` events at bitty `main` `2cb49afe`.
   bitty host source at `2cb49afe` (`crates/bitty-lua/src/host.rs`,
   `crates/bitty-runtime/src/plugin_runtime/{mod,services,debug}.rs`,
   `crates/bitty-terminal/src/terminal_app.rs`), not from an accepted
-  spelling contract; they sit outside the ADR 0009 v1 guarantee.
+  spelling contract; they sit outside the ADR 0009 v1 guarantee. The
+  W-28/W-29 overlay and targeting host evidence at `fb44a867`
+  (`crates/bitty-lua/src/host.rs`,
+  `crates/bitty-runtime/src/plugin_runtime/{mod,services,overlay}.rs`)
+  is recorded as explicit exclusions only (see
+  [Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067)).
 - Pinned revisions live in `sources` in `surface/bitty-plugin-api-v1.json`;
   the generated header names each contract document by repository and path
   only, so the surface table is the sole revision record.
@@ -184,7 +193,9 @@ against the generated file: no `bitty.api` alias, no flat
 `register_command`/`on_event`/`get_terminal_state` spellings, no panel
 providers, no `bitty.fs`/`process`/`network`/`clipboard`/`ipc`/`renderer`/
 `protocol` entry points, no Level 3 presentation namespaces, no singular
-`bitty.task`/`bitty.timer` spellings, and no `scope = "raw"` snapshot.
+`bitty.task`/`bitty.timer` spellings, no `scope = "raw"` snapshot, and no
+provisional `bitty.ui.overlay`/`bitty.ui.targets`/`bitty.ui.labels` sub-tables
+(see [Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067)).
 `tests/lua-defs.test.ts` checks the full list textually on every `just check`;
 the LuaLS negative fixture samples six excluded spellings plus the excluded
 `raw` scope literal and wrong-shape `services.get` calls to verify rejection at
@@ -228,10 +239,41 @@ The `bitty.history` surface path is recorded as an explicit exclusion in
 `surface/bitty-plugin-api-v1.json` with the same blocker. Re-evaluate when an
 accepted capability and a bitty host entry point exist (a successor RFC plus
 `W-146`-style host wiring). The `debug`/`workspace` namespaces remain the only
-host-candidate additions, unchanged by this task.
+host-candidate additions wired into the mock, unchanged by this task.
 
 `selection` and the `terminal` closed-set membership are not touched: no
 `terminal.*` head is added or renamed.
+
+## Pending surface: overlay and targeting (W-28/W-29, CTX-0067)
+
+SDK task `CTX-0067` (plan W-43) re-pins the freeze to bitty `main` `fb44a867`
+(PR #1641, verified as the remote tip) with no v1 verdict move. Two host
+surface changes landed since `2cb49afe` (the remaining commits in range touch
+no Lua v1 verdict):
+
+- W-28 (bitty #1633, CTX-0941): the focusable overlay and transient
+  input-capture host mechanism with provisional spellings
+  `bitty.ui.overlay.acquire`/`release`/`poll`, gated by the existing
+  closed-set `ui.overlay` grant with no new capability identifier and two
+  typed errors (`E_UI_ALREADY_CAPTURED`, `E_UI_NOT_OWNER`). The PR is the
+  mechanism only; routing real key, IME, and pointer events, per-tick expiry,
+  focus-switch and cancel revoke, and overlay rendering are the tracked
+  follow-up CTX-0943 and have not landed.
+- W-29 (bitty #1641, CTX-0942, re-scoped minimal per DEC-0085): thin Lua
+  bindings over the existing beacon mechanism types only
+  (`bitty.ui.targets.snapshot`/`register`/`unregister`/`session_start`/
+  `session_cancel`/`dispatch` and `bitty.ui.labels.set_policy`/`assign`),
+  with no new struct, enum, namespace, or capability and no target or
+  annotation Event-Bus exposure.
+
+Both are provisional host candidates (W-28 co-owned by W-01/OQ-056) and stay
+pending per W-120: deferred and not wired into v1. The SDK records them
+honestly as explicit exclusions (`bitty.ui.overlay`, `bitty.ui.targets`,
+`bitty.ui.labels`) with no new function path, no new capability identifier,
+and no mock method. All 14 v1 namespace verdicts and the `debug.control`
+function override keep their previous values; the pin PR moves to 1641 while
+the last v1 verdict move remains #1584. Re-evaluate when an accepted contract
+authorizes the spellings.
 
 ## Validation
 
@@ -245,15 +287,19 @@ just host-parity-check  # surface/model/defs/mock/fixture parity agreement
 ## Host parity and regen-sync
 
 The surface table pins the bitty host revision it was frozen against
-(`hostParity`: repository `bitty`, commit `2cb49afe` re-verified at bitty
-`main` after PR 1607, PR 1584 as the last verdict move; verdict set
-provenance #1303) and one verdict per namespace: every namespace is `wired`
+(`hostParity`: repository `bitty`, commit `fb44a867` re-verified at bitty
+`main` tip (PR #1641, CTX-0067, W-43); last v1 verdict move PR 1584, verdict
+set provenance #1303) and one verdict per namespace: every namespace is
+`wired`
 except `env`, which is `deferred`, plus the per-function override
 `debug.control: deferred`. `process.spawn` is v1-OUT and stays excluded.
 `bitty.network` also stays excluded: bitty #1604 (DIR-030) removed the
 embedded Lua network binding from Core, and network access now belongs to
 the out-of-process `net` native component, whose Lua request surface is
-deferred and not wired.
+deferred and not wired. The W-28/W-29 `bitty.ui.overlay`, `bitty.ui.targets`,
+and `bitty.ui.labels` sub-tables stay excluded as pending per W-120 (see
+[Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067));
+no v1 verdict moved at `fb44a867`.
 
 The SDK owns regen-sync for these artifacts. Run this trigger whenever a
 bitty host change flips a namespace verdict or an accepted contract revision

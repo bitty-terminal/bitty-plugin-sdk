@@ -403,9 +403,18 @@ export interface NamespaceHostParity {
  * (`inspect`, `trace`, `trace_get`) while `debug.control` stays deferred
  * (see {@link FUNCTION_HOST_PARITY}); bitty #1584 (CTX-0889, ADR-0014) wired
  * `bitty.workspace` and the `workspace.*` observation events. Both landed
- * before #1604 but were synced here only at bitty `main` `2cb49afe`. `commit`
- * is the last re-verified bitty
- * `main`; `pr` is the change that last moved a verdict. Mirrors
+ * before #1604 but were synced here at bitty `main` `2cb49afe` (SDK CTX-0063).
+ * SDK task CTX-0067 (W-43) re-verifies at bitty `main` `fb44a867` (PR 1641):
+ * bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and
+ * transient input-capture mechanism `bitty.ui.overlay.acquire`/`release`/`poll`
+ * (existing `ui.overlay` grant, no new capability; application wiring tracked
+ * as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942) added thin
+ * targeting bindings `bitty.ui.targets.*` and `bitty.ui.labels.*` with no new
+ * capability and no Event-Bus exposure; both stay pending per W-120, deferred
+ * and not wired into v1 (see the surface table exclusions `bitty.ui.overlay`,
+ * `bitty.ui.targets`, `bitty.ui.labels`), so no v1 namespace verdict moved.
+ * `commit` is the last re-verified bitty `main`; `pr` is the pin PR that
+ * carries the re-verification (last v1 verdict move remains #1584). Mirrors
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
  * fails when the two drift apart.
  *
@@ -417,8 +426,8 @@ export interface NamespaceHostParity {
  */
 export const HOST_PARITY_SOURCE = {
   repository: "bitty",
-  commit: "2cb49afed11fcac4a69dd556ff71e576760e063d",
-  pr: 1584,
+  commit: "fb44a8671ea7526c985d8f0ca3f57ef9b82f09e0",
+  pr: 1641,
 } as const;
 
 /**
