@@ -41,6 +41,10 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "terminal.manage",
   "ui.rich",
   "ui.overlay",
+  // W-01 (CTX-0065, accepted overlay-input-capture contract): the single
+  // coupled grant for the focusable overlay plus transient input-capture
+  // session. No separate `input.capture` head, no wildcard, no family grant.
+  "ui.overlay.focus",
   "ui.protocol-register",
   "clipboard.read",
   "clipboard.write",

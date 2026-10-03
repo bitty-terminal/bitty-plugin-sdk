@@ -38,6 +38,9 @@ import {
   INTERCEPTION_KINDS,
   LIFECYCLE_KINDS,
   MOCK_LIMITS,
+  OVERLAY_EVENT_TAGS,
+  OVERLAY_OWNER_RELEASE_REASONS,
+  OVERLAY_RELEASE_REASONS,
   SNAPSHOT_SCOPE_ONLY,
   STORE_KEY_PATTERN,
   UI_SLOTS,
@@ -76,6 +79,14 @@ export interface MockHostOptions {
    * declares an optional dependency and never gates activation.
    */
   readonly toolsGitVersion?: string | null;
+  /**
+   * Safe-mode flag for the W-01 overlay surface (CTX-0065): when true the
+   * mock models `bitty --safe` with zero third-party plugins loaded. Any
+   * `bitty.ui.overlay.acquire` attempt fails with `E_UI_UNAVAILABLE`, no
+   * focusable surface is presented, no capture session starts, and no
+   * `overlay.released` bus event is emitted. Defaults to false.
+   */
+  readonly safeMode?: boolean;
 }
 
 /** Notification payload accepted by `bitty.notify.show`. */
@@ -130,6 +141,28 @@ export interface ServiceGetOptions {
 export interface SnapshotOptions {
   readonly scope?: string;
   readonly terminal_id?: number;
+}
+
+/** Presentation hints accepted by `bitty.ui.overlay.acquire` (W-01). */
+export interface OverlayAcquireSpec {
+  readonly title?: string;
+  readonly placeholder?: string;
+}
+
+/** One queued overlay input event (W-01); field encodings stay parked. */
+export interface OverlayInputEvent {
+  readonly seq: number;
+  readonly type: string;
+  readonly data?: unknown;
+}
+
+/** `bitty.ui.overlay.poll` result envelope (W-01). */
+export interface OverlayPollResult {
+  readonly status: "active" | "released";
+  readonly seq: number;
+  readonly events: readonly OverlayInputEvent[];
+  readonly overflowed: boolean;
+  readonly reason?: string;
 }
 
 /** Result of publishing one event. */
@@ -212,6 +245,21 @@ interface UiBlock {
   component: Record<string, unknown>;
   textBytes: number;
   version: number;
+}
+
+interface OverlaySession {
+  readonly handle: number;
+  readonly ownerPluginId: string;
+  readonly ownerGeneration: number;
+  spec: Record<string, unknown>;
+  scene: Record<string, unknown>;
+  queue: OverlayInputEvent[];
+  nextSeq: number;
+  lastDeliveredSeq: number;
+  overflowed: boolean;
+  status: "active" | "released";
+  reason?: string;
+  lastActivity: number;
 }
 
 interface TaskRecord {
@@ -941,6 +989,12 @@ export class MockHost {
     readonly ui: {
       mount(slot: string, component: Record<string, unknown>): number;
       update(handle: number, component: Record<string, unknown>): boolean;
+      readonly overlay: {
+        acquire(spec?: OverlayAcquireSpec | null): number;
+        update(handle: number, scene: Record<string, unknown>): boolean;
+        poll(handle: number): OverlayPollResult;
+        release(handle: number, reason?: string | null): boolean;
+      };
     };
     readonly terminal: {
       snapshot(opts?: SnapshotOptions): Record<string, unknown>;
@@ -1001,6 +1055,8 @@ export class MockHost {
   private readonly services = new Map<string, ServiceRecord>();
   private readonly schemaValidatingServices: ReadonlySet<string>;
   private readonly toolsGitVersion: string | null | undefined;
+  private readonly safeMode: boolean;
+  private overlaySession: OverlaySession | undefined;
   private terminalSnapshot: Record<string, unknown> = {};
   private deliveringViolation = false;
   private workspaceRows: WorkspaceInfo[] = [];
@@ -1016,6 +1072,7 @@ export class MockHost {
       options.schemaValidatingServices ?? [],
     );
     this.toolsGitVersion = options.toolsGitVersion ?? null;
+    this.safeMode = options.safeMode === true;
     this.environment = Object.freeze({ ...(options.environment ?? {}) });
     const envDeclared = this.declaredEnvCapabilities().length > 0;
 
@@ -1057,6 +1114,15 @@ export class MockHost {
           this.uiMount(slot, component),
         update: (handle: number, component: Record<string, unknown>): boolean =>
           this.uiUpdate(handle, component),
+        overlay: {
+          acquire: (spec?: OverlayAcquireSpec | null): number =>
+            this.overlayAcquire(spec),
+          update: (handle: number, scene: Record<string, unknown>): boolean =>
+            this.overlayUpdate(handle, scene),
+          poll: (handle: number): OverlayPollResult => this.overlayPoll(handle),
+          release: (handle: number, reason?: string | null): boolean =>
+            this.overlayRelease(handle, reason),
+        },
       },
       terminal: {
         snapshot: (opts?: SnapshotOptions): Record<string, unknown> =>
@@ -1252,6 +1318,10 @@ export class MockHost {
         `cannot suspend from state '${this.state}'`,
       );
     }
+    // W-01 (CTX-0065): suspend revokes capture like the Core mechanism. Release
+    // before entering `suspended` so the observation-only `overlay.released`
+    // bus event still delivers (observation deliveries detach once suspended).
+    this.terminateOverlayForCause("unloaded");
     this.state = "suspended";
     this.publishLifecycle("plugin.suspended");
   }
@@ -1270,6 +1340,11 @@ export class MockHost {
         `cannot dispose from state '${this.state}'`,
       );
     }
+    // W-01 (CTX-0065): dispose revokes capture with `unloaded` before the
+    // terminal transition, so the `overlay.released` observation still
+    // delivers. The released session is retained (not cleared) for
+    // generation-fenced stale-handle detection; a new acquire replaces it.
+    this.terminateOverlayForCause("unloaded");
     // Enter the terminal state before publication so a reentrant handler sees
     // a non-disposable state and the event is published at most once, while
     // the accepted event-before-invalidation observation order is preserved:
@@ -1485,6 +1560,10 @@ export class MockHost {
       );
     }
     this.virtualNow += ms;
+    // W-01 (CTX-0065): the same virtual clock drives the 30s overlay idle
+    // timeout; an expired session releases with `timeout` here so a test that
+    // only advances time still observes the terminal cause on its next poll.
+    this.expireOverlayIfIdle();
     const due = [...this.timers.entries()]
       .filter(
         ([, record]) =>
@@ -2230,6 +2309,430 @@ export class MockHost {
     block.textBytes = counts.textBytes;
     block.version += 1;
     return true;
+  }
+
+  /**
+   * W-01 overlay session helpers (CTX-0065, accepted contract).
+   *
+   * Single global owner, generation-fenced handles, bounded 256-event queue
+   * with drop-oldest plus sticky `overflowed`, 4096-byte per-event and
+   * per-call ceilings, v1 scene budgets per update, 30s idle timeout
+   * resetting on input, poll, or update, idempotent release, and safe-mode
+   * `E_UI_UNAVAILABLE` on acquire. All four entry points require the coupled
+   * grant `ui.overlay.focus` (no `input.capture` head); without it every call
+   * fails `E_CAPABILITY_DENIED`.
+   */
+
+  private assertOverlayHandle(handle: unknown): number {
+    if (
+      typeof handle !== "number" ||
+      !Number.isSafeInteger(handle) ||
+      handle <= 0
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_NOT_OWNER,
+        "overlay handle is not owned by this plugin generation",
+      );
+    }
+    return handle;
+  }
+
+  private overlaySpecArg(spec: unknown): Record<string, unknown> {
+    if (spec === undefined || spec === null) return {};
+    if (!isPlainObject(spec)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "overlay spec must be a table with optional title and placeholder",
+      );
+    }
+    const output: Record<string, unknown> = {};
+    for (const field of ["title", "placeholder"] as const) {
+      const value = (spec as Record<string, unknown>)[field];
+      if (value === undefined) continue;
+      if (typeof value !== "string") {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `overlay spec.${field} must be a string`,
+          `spec.${field}`,
+        );
+      }
+      output[field] = value;
+    }
+    // Unknown spec fields are ignored per the v1 rule; only the decided hints
+    // are retained.
+    if (
+      jsonBytes(output, MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES) >
+      MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES
+    ) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        `overlay spec exceeds ${MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES} bytes`,
+        "spec",
+      );
+    }
+    return output;
+  }
+
+  private overlaySceneArg(scene: unknown): Record<string, unknown> {
+    if (!isPlainObject(scene)) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        "overlay scene must be a table",
+        "scene",
+      );
+    }
+    const problem = componentProblem(scene);
+    if (problem !== undefined) {
+      fail("validation", HOST_CODES.UI_COMPONENT_INVALID, problem, "scene");
+    }
+    const counts = countComponentResources(scene);
+    if (counts.nodes > MOCK_LIMITS.UI_MAX_NODES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `overlay scene node count exceeds ${MOCK_LIMITS.UI_MAX_NODES}`,
+        "scene",
+      );
+    }
+    if (counts.textBytes > MOCK_LIMITS.UI_MAX_TEXT_BYTES) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `overlay scene text exceeds ${MOCK_LIMITS.UI_MAX_TEXT_BYTES} bytes`,
+        "scene",
+      );
+    }
+    if (
+      jsonBytes(scene, MOCK_LIMITS.UI_MARSHAL_MAX_BYTES) >
+      MOCK_LIMITS.UI_MARSHAL_MAX_BYTES
+    ) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `overlay scene exceeds ${MOCK_LIMITS.UI_MARSHAL_MAX_BYTES} bytes`,
+        "scene",
+      );
+    }
+    if (
+      jsonBytes(scene, MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES) >
+      MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES
+    ) {
+      fail(
+        "validation",
+        HOST_CODES.UI_COMPONENT_INVALID,
+        `overlay scene exceeds the per-update ${MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES}-byte ceiling`,
+        "scene",
+      );
+    }
+    return scene as Record<string, unknown>;
+  }
+
+  private overlayReleaseReasonArg(reason: unknown): string {
+    if (reason === undefined || reason === null) return "released";
+    if (typeof reason !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "overlay release reason must be submitted, cancelled, or omitted",
+        "reason",
+      );
+    }
+    if (
+      reason === "released" ||
+      OVERLAY_OWNER_RELEASE_REASONS.includes(reason)
+    ) {
+      return reason;
+    }
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      "overlay release reason must be submitted, cancelled, or omitted (defaults to released)",
+      "reason",
+    );
+  }
+
+  private expireOverlayIfIdle(): void {
+    const session = this.overlaySession;
+    if (session === undefined || session.status !== "active") return;
+    if (session.ownerGeneration !== this.generation) return;
+    if (
+      this.virtualNow - session.lastActivity >=
+      MOCK_LIMITS.OVERLAY_IDLE_TIMEOUT_MS
+    ) {
+      this.terminateOverlayForCause("timeout");
+    }
+  }
+
+  private terminateOverlayForCause(reason: string): void {
+    const session = this.overlaySession;
+    if (session === undefined || session.status !== "active") return;
+    if (session.ownerGeneration !== this.generation) return;
+    if (!OVERLAY_RELEASE_REASONS.includes(reason)) return;
+    session.status = "released";
+    session.reason = reason;
+    if (!this.safeMode) {
+      this.deliver("overlay.released", {
+        owner: session.ownerPluginId,
+        reason,
+      });
+    }
+  }
+
+  private overlayAcquire(spec: unknown): number {
+    this.assertAlive();
+    this.assertCapability("bitty.ui.overlay.acquire", "ui.overlay.focus");
+    if (this.safeMode) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_UNAVAILABLE,
+        "bitty.ui.overlay.acquire is unavailable in safe mode",
+      );
+    }
+    this.expireOverlayIfIdle();
+    const active = this.overlaySession;
+    if (
+      active !== undefined &&
+      active.status === "active" &&
+      active.ownerGeneration === this.generation
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_ALREADY_CAPTURED,
+        "an overlay session is already active",
+      );
+    }
+    // A stale released session from a previous generation never blocks a new
+    // acquire; it is replaced below. An active session from another generation
+    // cannot exist (dispose releases), but guard anyway.
+    if (
+      active !== undefined &&
+      active.status === "active" &&
+      active.ownerGeneration !== this.generation
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_ALREADY_CAPTURED,
+        "an overlay session is already active",
+      );
+    }
+    const parsed = this.overlaySpecArg(spec);
+    const handle = this.nextHandle();
+    this.overlaySession = {
+      handle,
+      ownerPluginId: this.manifest.pluginId,
+      ownerGeneration: this.generation,
+      spec: deepFreeze(deepCopy(parsed)),
+      scene: deepFreeze({ kind: "Text", text: "" }),
+      queue: [],
+      nextSeq: 1,
+      lastDeliveredSeq: 0,
+      overflowed: false,
+      status: "active",
+      reason: undefined,
+      lastActivity: this.virtualNow,
+    };
+    return handle;
+  }
+
+  private overlayUpdate(handle: unknown, scene: unknown): boolean {
+    this.assertAlive();
+    this.assertCapability("bitty.ui.overlay.update", "ui.overlay.focus");
+    this.expireOverlayIfIdle();
+    const id = this.assertOverlayHandle(handle);
+    const session = this.overlaySession;
+    if (
+      session === undefined ||
+      session.ownerGeneration !== this.generation ||
+      session.handle !== id ||
+      session.status !== "active"
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_NOT_OWNER,
+        "overlay handle is not owned by this plugin generation",
+      );
+    }
+    const parsed = this.overlaySceneArg(scene);
+    session.scene = deepFreeze(deepCopy(parsed));
+    session.lastActivity = this.virtualNow;
+    return true;
+  }
+
+  private overlayPoll(handle: unknown): OverlayPollResult {
+    this.assertAlive();
+    this.assertCapability("bitty.ui.overlay.poll", "ui.overlay.focus");
+    this.expireOverlayIfIdle();
+    const id = this.assertOverlayHandle(handle);
+    const session = this.overlaySession;
+    if (
+      session === undefined ||
+      session.ownerGeneration !== this.generation ||
+      session.handle !== id
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_NOT_OWNER,
+        "overlay handle is not owned by this plugin generation",
+      );
+    }
+    if (session.status === "active") {
+      session.lastActivity = this.virtualNow;
+    }
+    const drained = session.queue.splice(0, session.queue.length);
+    if (drained.length > 0) {
+      session.lastDeliveredSeq =
+        drained[drained.length - 1]?.seq ?? session.lastDeliveredSeq;
+    }
+    const result: OverlayPollResult = {
+      status: session.status,
+      seq: session.lastDeliveredSeq,
+      events: deepCopy(drained),
+      overflowed: session.overflowed,
+      ...(session.status === "released" && session.reason !== undefined
+        ? { reason: session.reason }
+        : {}),
+    };
+    return deepFreeze(result) as OverlayPollResult;
+  }
+
+  private overlayRelease(handle: unknown, reason: unknown): boolean {
+    this.assertAlive();
+    this.assertCapability("bitty.ui.overlay.release", "ui.overlay.focus");
+    this.expireOverlayIfIdle();
+    const wanted = this.overlayReleaseReasonArg(reason);
+    // Handle shape is ownership: a non-integer handle is never owned.
+    if (
+      typeof handle !== "number" ||
+      !Number.isSafeInteger(handle) ||
+      handle <= 0
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_NOT_OWNER,
+        "overlay handle is not owned by this plugin generation",
+      );
+    }
+    const session = this.overlaySession;
+    if (session === undefined) {
+      // Never-held handle within the owning (current) generation succeeds
+      // idempotently with no state change and no bus event.
+      return true;
+    }
+    if (session.ownerGeneration !== this.generation) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_NOT_OWNER,
+        "overlay handle is not owned by this plugin generation",
+      );
+    }
+    if (session.status === "released") {
+      // Idempotent: already-released handle succeeds without changing the
+      // recorded reason and without re-emitting the bus event. A never-held
+      // handle number in the same generation also succeeds here.
+      return true;
+    }
+    if (session.handle !== handle) {
+      fail(
+        "runtime",
+        HOST_CODES.UI_NOT_OWNER,
+        "overlay handle is not owned by this plugin generation",
+      );
+    }
+    session.status = "released";
+    session.reason = wanted;
+    if (!this.safeMode) {
+      this.deliver("overlay.released", {
+        owner: session.ownerPluginId,
+        reason: wanted,
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Harness-only Core input injection for the overlay queue (not a Lua
+   * surface). Routes one input event into the active session without invoking
+   * Lua, resetting the idle clock. Drops the oldest event with the sticky
+   * `overflowed` flag when the 256-event queue is full; an oversize single
+   * event is rejected before enqueue. A call with no active session is a
+   * no-op (input flows to the terminal) and returns undefined.
+   */
+  injectOverlayInput(event: {
+    readonly type: string;
+    readonly data?: unknown;
+  }): number | undefined {
+    this.assertAlive();
+    const session = this.overlaySession;
+    if (
+      session === undefined ||
+      session.status !== "active" ||
+      session.ownerGeneration !== this.generation
+    ) {
+      return undefined;
+    }
+    const type = event?.type;
+    if (typeof type !== "string" || !OVERLAY_EVENT_TAGS.includes(type)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "overlay input event type must be key, text, pointer, or paste",
+      );
+    }
+    const candidate = {
+      type,
+      ...(event.data === undefined ? {} : { data: event.data }),
+    };
+    if (
+      jsonBytes(candidate, MOCK_LIMITS.OVERLAY_PAYLOAD_MAX_BYTES) >
+      MOCK_LIMITS.OVERLAY_PAYLOAD_MAX_BYTES
+    ) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        `overlay input event exceeds ${MOCK_LIMITS.OVERLAY_PAYLOAD_MAX_BYTES} bytes`,
+      );
+    }
+    const seq = session.nextSeq;
+    session.nextSeq += 1;
+    const stored: OverlayInputEvent = deepFreeze({
+      seq,
+      type,
+      ...(event.data === undefined ? {} : { data: deepCopy(event.data) }),
+    }) as OverlayInputEvent;
+    if (session.queue.length >= MOCK_LIMITS.OVERLAY_QUEUE_MAX) {
+      session.queue.shift();
+      session.overflowed = true;
+    }
+    session.queue.push(stored);
+    session.lastActivity = this.virtualNow;
+    return seq;
+  }
+
+  /**
+   * Harness-only focus-switch revoke (not a Lua surface). Ends the active
+   * session with `focus_switched` and emits the observation bus event.
+   * A call with no active session is a no-op.
+   */
+  simulateOverlayFocusSwitch(): void {
+    this.assertAlive();
+    this.expireOverlayIfIdle();
+    this.terminateOverlayForCause("focus_switched");
+  }
+
+  /**
+   * Harness-only crash revoke (not a Lua surface). Ends the active session
+   * with `crashed` and emits the observation bus event. A call with no active
+   * session is a no-op.
+   */
+  simulateOverlayCrash(): void {
+    this.assertAlive();
+    this.expireOverlayIfIdle();
+    this.terminateOverlayForCause("crashed");
   }
 
   private terminalSnapshotRead(

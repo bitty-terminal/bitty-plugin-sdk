@@ -1,0 +1,208 @@
+{
+  "name": "Focusable overlay and transient input capture",
+  "description": "W-01 overlay surface requires ui.overlay.focus, enforces single owner with E_UI_ALREADY_CAPTURED, drains key/text/pointer/paste with sticky overflowed, validates scenes with v1 budgets, releases idempotently with submitted disposition, observes overlay.released, rejects non-owners with E_UI_NOT_OWNER, and fences stale generations.",
+  "manifest": "manifests/overlay.toml",
+  "tags": ["ui", "overlay", "capability", "deny-by-default"],
+  "grants": [],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "palette" } },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "ui.overlay.focus" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": {
+        "spec": { "title": "palette", "placeholder": "type to filter" }
+      },
+      "capture": "h1"
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "second" } },
+      "expect": {
+        "denial": { "code": "E_UI_ALREADY_CAPTURED", "class": "runtime" }
+      }
+    },
+    { "op": "inject-overlay-input", "type": "key", "data": { "key": "a" } },
+    { "op": "inject-overlay-input", "type": "text", "data": { "text": "hi" } },
+    { "op": "inject-overlay-input", "type": "pointer", "data": { "x": 1 } },
+    {
+      "op": "inject-overlay-input",
+      "type": "paste",
+      "data": { "text": "pasted" }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h1" } },
+      "expect": {
+        "result": {
+          "status": "active",
+          "seq": 4,
+          "events": [
+            { "seq": 1, "type": "key", "data": { "key": "a" } },
+            { "seq": 2, "type": "text", "data": { "text": "hi" } },
+            { "seq": 3, "type": "pointer", "data": { "x": 1 } },
+            { "seq": 4, "type": "paste", "data": { "text": "pasted" } }
+          ],
+          "overflowed": false
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.update",
+      "args": {
+        "handle": { "$ref": "h1" },
+        "scene": { "kind": "Text", "text": "hello" }
+      },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.update",
+      "args": {
+        "handle": { "$ref": "h1" },
+        "scene": { "kind": "Image", "src": "x" }
+      },
+      "expect": {
+        "denial": { "code": "E_UI_COMPONENT_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h1" } },
+      "expect": {
+        "result": {
+          "status": "active",
+          "seq": 4,
+          "events": [],
+          "overflowed": false
+        }
+      }
+    },
+    { "op": "subscribe", "event": "overlay.released", "capture": "ev" },
+    { "op": "end-activation" },
+    {
+      "op": "publish",
+      "event": "overlay.released",
+      "payload": { "owner": "conformance.overlay", "reason": "released" },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.release",
+      "args": { "handle": { "$ref": "h1" }, "reason": "submitted" },
+      "expect": { "result": true }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h1" } },
+      "expect": {
+        "result": {
+          "status": "released",
+          "seq": 4,
+          "events": [],
+          "overflowed": false,
+          "reason": "submitted"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.update",
+      "args": {
+        "handle": { "$ref": "h1" },
+        "scene": { "kind": "Text", "text": "stale" }
+      },
+      "expect": {
+        "denial": { "code": "E_UI_NOT_OWNER", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": 9999 },
+      "expect": {
+        "denial": { "code": "E_UI_NOT_OWNER", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.release",
+      "args": { "handle": { "$ref": "h1" }, "reason": "submitted" },
+      "expect": { "result": true }
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev",
+      "events": [
+        {
+          "kind": "overlay.released",
+          "sequence": 2,
+          "payload": { "owner": "conformance.overlay", "reason": "released" }
+        },
+        {
+          "kind": "overlay.released",
+          "sequence": 3,
+          "payload": { "owner": "conformance.overlay", "reason": "submitted" }
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "second session" } },
+      "capture": "h2"
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.release",
+      "args": { "handle": { "$ref": "h2" }, "reason": "focus_switched" },
+      "expect": {
+        "denial": { "code": "E_DEF_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h2" } },
+      "expect": {
+        "result": {
+          "status": "active",
+          "seq": 0,
+          "events": [],
+          "overflowed": false
+        }
+      }
+    },
+    { "op": "dispose" },
+    { "op": "begin-activation" },
+    { "op": "grant", "capability": "ui.overlay.focus" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h1" } },
+      "expect": {
+        "denial": { "code": "E_UI_NOT_OWNER", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "after reload" } },
+      "capture": "h3"
+    },
+    { "op": "end-activation" }
+  ]
+}

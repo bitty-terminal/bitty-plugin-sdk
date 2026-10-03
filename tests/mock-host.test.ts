@@ -125,15 +125,18 @@ describe("surface", () => {
   });
 
   test("closed v1 event set matches the accepted classes", () => {
-    expect(EVENT_KINDS).toHaveLength(22);
+    expect(EVENT_KINDS).toHaveLength(23);
     const byClass = { lifecycle: 0, observation: 0, interception: 0 };
     for (const spec of EVENT_KINDS) byClass[spec.class] += 1;
-    expect(byClass).toEqual({ lifecycle: 4, observation: 14, interception: 4 });
+    expect(byClass).toEqual({ lifecycle: 4, observation: 15, interception: 4 });
     expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
       "plugin.activated",
     );
     expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
       "intercept.open-url",
+    );
+    expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
+      "overlay.released",
     );
   });
 
@@ -142,6 +145,8 @@ describe("surface", () => {
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.STORE_QUOTA)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.BUDGET_TASK)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_UNAVAILABLE)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_ALREADY_CAPTURED)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_NOT_OWNER)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.REGISTRATION_CLOSED)).toBe(false);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(false);
     expect(MOCK_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(true);
@@ -643,10 +648,14 @@ describe("suspended dispatch", () => {
 
   // Workspace kinds need a granted workspace.read at activation; their
   // suspended detachment is covered by the workspace domain suite below.
+  // Overlay release kinds carry owner/reason payloads and suspend-revoke is
+  // covered by the overlay focusable-surface suite below.
   test.each(
     EVENT_KINDS.filter(
       (spec) =>
-        spec.class !== "lifecycle" && !spec.kind.startsWith("workspace."),
+        spec.class !== "lifecycle" &&
+        !spec.kind.startsWith("workspace.") &&
+        spec.kind !== "overlay.released",
     ),
   )("$kind delivery is detached while suspended", (spec) => {
     const host = makeHost();
@@ -3613,5 +3622,257 @@ describe("debug namespace", () => {
         host.bitty.debug.control("reload_plugin", "conformance.debug"),
       ),
     ).toMatchObject({ class: "runtime", code: HOST_CODES.NOT_IMPLEMENTED });
+  });
+});
+
+const OVERLAY_MANIFEST = `
+[plugin]
+id = "conformance.overlay"
+name = "Conformance Overlay"
+version = "1.0.0"
+description = "Focusable overlay fixture (W-01, CTX-0065)."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+ui.overlay.focus = true
+
+[lazy]
+events = [
+  "overlay.released",
+]
+`;
+
+function overlayHost(
+  grants: readonly string[] = ["ui.overlay.focus"],
+): MockHost {
+  const host = new MockHost({ manifestSource: OVERLAY_MANIFEST });
+  for (const capability of grants) host.grant(capability);
+  return host;
+}
+
+describe("overlay focusable surface (W-01, CTX-0065)", () => {
+  test("requires ui.overlay.focus and never mints input.capture", () => {
+    const host = overlayHost([]);
+    host.beginActivation();
+    expect(
+      denial(() => host.bitty.ui.overlay.acquire({ title: "x" })),
+    ).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    host.grant("ui.overlay.focus");
+    const handle = host.bitty.ui.overlay.acquire({ title: "x" });
+    expect(handle).toBeGreaterThan(0);
+    host.endActivation();
+  });
+
+  test("single owner fails closed with E_UI_ALREADY_CAPTURED", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    const first = host.bitty.ui.overlay.acquire({ title: "one" });
+    expect(
+      denial(() => host.bitty.ui.overlay.acquire({ title: "two" })),
+    ).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.UI_ALREADY_CAPTURED,
+    });
+    expect(host.bitty.ui.overlay.poll(first).status).toBe("active");
+    host.endActivation();
+  });
+
+  test("drains queued input with sticky overflowed and 256-event bound", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    const handle = host.bitty.ui.overlay.acquire({});
+    for (let i = 0; i < MOCK_LIMITS.OVERLAY_QUEUE_MAX + 1; i += 1) {
+      host.injectOverlayInput({ type: "key", data: { n: i } });
+    }
+    const result = host.bitty.ui.overlay.poll(handle);
+    expect(result.status).toBe("active");
+    expect(result.events).toHaveLength(MOCK_LIMITS.OVERLAY_QUEUE_MAX);
+    expect(result.overflowed).toBe(true);
+    expect(result.seq).toBe(MOCK_LIMITS.OVERLAY_QUEUE_MAX + 1);
+    expect(result.events[0]?.seq).toBe(2);
+    // Sticky: a second drain stays overflowed with no new events.
+    const second = host.bitty.ui.overlay.poll(handle);
+    expect(second.events).toHaveLength(0);
+    expect(second.overflowed).toBe(true);
+    expect(second.seq).toBe(MOCK_LIMITS.OVERLAY_QUEUE_MAX + 1);
+    host.endActivation();
+  });
+
+  test("4096-byte ceilings reject oversize spec, scene, and input", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    expect(
+      denial(() => host.bitty.ui.overlay.acquire({ title: "x".repeat(5000) })),
+    ).toMatchObject({ class: "validation", code: HOST_CODES.DEF_INVALID });
+    const handle = host.bitty.ui.overlay.acquire({ title: "ok" });
+    expect(
+      denial(() =>
+        host.bitty.ui.overlay.update(handle, {
+          kind: "Text",
+          text: "x".repeat(5000),
+        }),
+      ),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.UI_COMPONENT_INVALID,
+    });
+    expect(
+      denial(() =>
+        host.injectOverlayInput({
+          type: "paste",
+          data: { text: "x".repeat(5000) },
+        }),
+      ),
+    ).toMatchObject({ class: "validation", code: HOST_CODES.DEF_INVALID });
+    host.endActivation();
+  });
+
+  test("update validates v1 scene budgets and non-owners fail E_UI_NOT_OWNER", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    const handle = host.bitty.ui.overlay.acquire({});
+    expect(
+      host.bitty.ui.overlay.update(handle, { kind: "Text", text: "hi" }),
+    ).toBe(true);
+    expect(
+      denial(() =>
+        host.bitty.ui.overlay.update(handle, { kind: "Image", src: "x" }),
+      ),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.UI_COMPONENT_INVALID,
+    });
+    expect(
+      denial(() =>
+        host.bitty.ui.overlay.update(9999, { kind: "Text", text: "x" }),
+      ),
+    ).toMatchObject({ class: "runtime", code: HOST_CODES.UI_NOT_OWNER });
+    expect(denial(() => host.bitty.ui.overlay.poll(9999))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.UI_NOT_OWNER,
+    });
+    host.endActivation();
+  });
+
+  test("release is idempotent with submitted disposition and observes bus event", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    const seen: unknown[] = [];
+    host.bitty.events.subscribe("overlay.released", (event) => {
+      seen.push(event.payload);
+    });
+    host.endActivation();
+    const handle = host.bitty.ui.overlay.acquire({ title: "x" });
+    expect(host.bitty.ui.overlay.release(handle, "submitted")).toBe(true);
+    expect(host.bitty.ui.overlay.poll(handle)).toMatchObject({
+      status: "released",
+      reason: "submitted",
+    });
+    // Second release succeeds without changing the recorded reason.
+    expect(host.bitty.ui.overlay.release(handle, "cancelled")).toBe(true);
+    expect(host.bitty.ui.overlay.poll(handle).reason).toBe("submitted");
+    expect(seen).toEqual([
+      { owner: "conformance.overlay", reason: "submitted" },
+    ]);
+    // Invalid reason is a validation error with the session unchanged.
+    const second = host.bitty.ui.overlay.acquire({});
+    expect(
+      denial(() => host.bitty.ui.overlay.release(second, "focus_switched")),
+    ).toMatchObject({ class: "validation", code: HOST_CODES.DEF_INVALID });
+    expect(host.bitty.ui.overlay.poll(second).status).toBe("active");
+  });
+
+  test("idle expiry releases with timeout on the virtual clock", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    host.endActivation();
+    const handle = host.bitty.ui.overlay.acquire({});
+    host.injectOverlayInput({ type: "key", data: { key: "a" } });
+    host.advanceTimers(10_000);
+    expect(host.bitty.ui.overlay.poll(handle).status).toBe("active");
+    host.advanceTimers(31_000);
+    expect(host.bitty.ui.overlay.poll(handle)).toMatchObject({
+      status: "released",
+      reason: "timeout",
+    });
+  });
+
+  test("focus switch, crash, and unload revoke with typed reasons", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    const seen: unknown[] = [];
+    host.bitty.events.subscribe("overlay.released", (event) => {
+      seen.push(event.payload);
+    });
+    host.endActivation();
+    const focus = host.bitty.ui.overlay.acquire({});
+    host.simulateOverlayFocusSwitch();
+    expect(host.bitty.ui.overlay.poll(focus)).toMatchObject({
+      status: "released",
+      reason: "focus_switched",
+    });
+    const crash = host.bitty.ui.overlay.acquire({});
+    host.simulateOverlayCrash();
+    expect(host.bitty.ui.overlay.poll(crash)).toMatchObject({
+      status: "released",
+      reason: "crashed",
+    });
+    const unload = host.bitty.ui.overlay.acquire({});
+    host.suspend();
+    expect(host.bitty.ui.overlay.poll(unload)).toMatchObject({
+      status: "released",
+      reason: "unloaded",
+    });
+    expect(seen).toEqual([
+      { owner: "conformance.overlay", reason: "focus_switched" },
+      { owner: "conformance.overlay", reason: "crashed" },
+      { owner: "conformance.overlay", reason: "unloaded" },
+    ]);
+  });
+
+  test("stale generation handles fail E_UI_NOT_OWNER", () => {
+    const host = overlayHost();
+    host.beginActivation();
+    host.endActivation();
+    const handle = host.bitty.ui.overlay.acquire({});
+    host.dispose();
+    host.grant("ui.overlay.focus");
+    host.beginActivation();
+    expect(denial(() => host.bitty.ui.overlay.poll(handle))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.UI_NOT_OWNER,
+    });
+    expect(denial(() => host.bitty.ui.overlay.release(handle))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.UI_NOT_OWNER,
+    });
+    expect(host.bitty.ui.overlay.acquire({})).toBeGreaterThan(handle);
+    host.endActivation();
+  });
+
+  test("safe mode fails acquire with E_UI_UNAVAILABLE and never emits", () => {
+    const host = new MockHost({
+      manifestSource: OVERLAY_MANIFEST,
+      safeMode: true,
+    });
+    host.grant("ui.overlay.focus");
+    host.beginActivation();
+    const seen: unknown[] = [];
+    host.bitty.events.subscribe("overlay.released", (event) => {
+      seen.push(event.payload);
+    });
+    host.endActivation();
+    expect(denial(() => host.bitty.ui.overlay.acquire({}))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.UI_UNAVAILABLE,
+    });
+    expect(seen).toEqual([]);
   });
 });

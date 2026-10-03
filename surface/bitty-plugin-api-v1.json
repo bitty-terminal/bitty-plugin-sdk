@@ -7,7 +7,7 @@
     "repository": "bitty",
     "commit": "fb44a8671ea7526c985d8f0ca3f57ef9b82f09e0",
     "pr": 1641,
-    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe for CTX-0063. Re-verified at bitty main fb44a867 (PR 1641, CTX-0067, W-43): bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and transient input-capture mechanism bitty.ui.overlay.acquire/release/poll (existing ui.overlay grant, no new capability; application wiring tracked as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942, re-scoped minimal per DEC-0085) added thin targeting bindings bitty.ui.targets.* and bitty.ui.labels.* over existing beacon types with no new capability and no Event-Bus exposure; both stay pending per W-120, deferred and not wired into v1 and recorded as explicit exclusions, so no v1 namespace verdict moved.",
+    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe for CTX-0063. Re-verified at bitty main fb44a867 (PR 1641, CTX-0067, W-43): bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and transient input-capture mechanism bitty.ui.overlay.acquire/release/poll (existing ui.overlay grant, no new capability; application wiring tracked as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942, re-scoped minimal per DEC-0085) added thin targeting bindings bitty.ui.targets.* and bitty.ui.labels.* over existing beacon types with no new capability and no Event-Bus exposure; the thin targeting bindings stay pending per W-120, deferred and not wired into v1 and recorded as explicit exclusions, while the W-28 overlay mechanism is now the accepted W-01 surface (CTX-0065, ui.overlay.focus with bitty.ui.overlay.acquire/update/poll/release plus overlay.released) living under the already-wired ui namespace, so no v1 namespace verdict moved.",
     "namespaces": {
       "commands": "wired",
       "events": "wired",
@@ -46,6 +46,12 @@
       "path": "docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md",
       "status": "accepted",
       "revision": "5f8892e0d7898b3f8b8dc8ba3f336bdb888c71d6"
+    },
+    {
+      "repository": "bitty-docs",
+      "path": "docs/development/overlay-input-capture-contract.md",
+      "status": "accepted",
+      "revision": "4ab950588899aed5a995a58b092e7f43a0786071"
     },
     {
       "repository": "bitty-terminal-docs",
@@ -163,7 +169,7 @@
     {
       "name": "BittyEventName",
       "kind": "alias",
-      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"workspace.created\"|\"workspace.closed\"|\"workspace.renamed\"|\"workspace.focused\"|\"workspace.changed\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
+      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"workspace.created\"|\"workspace.closed\"|\"workspace.renamed\"|\"workspace.focused\"|\"workspace.changed\"|\"overlay.released\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
       "doc": "Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error, and declaring any workspace.* name requires a granted workspace.read capability at activation."
     },
     {
@@ -359,7 +365,7 @@
     {
       "name": "BittyEventPayload",
       "kind": "alias",
-      "type": "BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyInterceptPayload",
+      "type": "BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyOverlayReleasedPayload|BittyInterceptPayload",
       "doc": "Union of the closed v1 event payload shapes."
     },
     {
@@ -520,7 +526,117 @@
     {
       "name": "BittyUiNamespace",
       "kind": "class",
-      "doc": "Declarative UI contribution surface (L2); rich content requires ui.rich and the overlay slot requires ui.overlay."
+      "doc": "Declarative UI contribution surface (L2); rich content requires ui.rich, the overlay slot requires ui.overlay, and the focusable overlay session requires ui.overlay.focus.",
+      "fields": [
+        {
+          "name": "overlay",
+          "type": "BittyUiOverlayNamespace",
+          "doc": "Focusable overlay and transient input-capture sub-table (W-01); requires ui.overlay.focus."
+        }
+      ]
+    },
+    {
+      "name": "BittyOverlayHandle",
+      "kind": "alias",
+      "type": "integer",
+      "doc": "Opaque generation-owned handle returned by bitty.ui.overlay.acquire; invalid after generation disposal."
+    },
+    {
+      "name": "BittyOverlaySpec",
+      "kind": "class",
+      "doc": "Presentation hints for bitty.ui.overlay.acquire; every field is optional and unknown fields are ignored.",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "optional": true,
+          "doc": "Bounded overlay title text."
+        },
+        {
+          "name": "placeholder",
+          "type": "string",
+          "optional": true,
+          "doc": "Bounded placeholder text."
+        }
+      ]
+    },
+    {
+      "name": "BittyOverlayEvent",
+      "kind": "class",
+      "doc": "One queued input event with a decided type tag; field-level key, pointer, and IME encodings stay parked.",
+      "fields": [
+        {
+          "name": "seq",
+          "type": "integer",
+          "doc": "Monotonic event sequence within the session."
+        },
+        {
+          "name": "type",
+          "type": "\"key\"|\"text\"|\"pointer\"|\"paste\"",
+          "doc": "Decided input-event tag."
+        },
+        {
+          "name": "data",
+          "type": "table",
+          "optional": true,
+          "doc": "Opaque tag payload within the per-event byte ceiling."
+        }
+      ]
+    },
+    {
+      "name": "BittyOverlayPollResult",
+      "kind": "class",
+      "doc": "Owner-initiated drain of already-queued input events; never a Core-driven callback.",
+      "fields": [
+        {
+          "name": "status",
+          "type": "\"active\"|\"released\"",
+          "doc": "Whether the session holds capture or is terminal per handle."
+        },
+        {
+          "name": "seq",
+          "type": "integer",
+          "doc": "Monotonic sequence of the last event delivered to this owner in this session."
+        },
+        {
+          "name": "events",
+          "type": "BittyOverlayEvent[]",
+          "doc": "Input events in order; empty when there is nothing new."
+        },
+        {
+          "name": "overflowed",
+          "type": "boolean",
+          "doc": "Sticky flag; true once queue overflow has dropped an older event."
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "optional": true,
+          "doc": "Present only with released; one of released, submitted, cancelled, focus_switched, unloaded, crashed, timeout."
+        }
+      ]
+    },
+    {
+      "name": "BittyOverlayReleasedPayload",
+      "kind": "class",
+      "doc": "overlay.released payload; observation only, never intercepted.",
+      "fields": [
+        {
+          "name": "owner",
+          "type": "string",
+          "doc": "Owning plugin id."
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "doc": "Terminal reason: released, submitted, cancelled, focus_switched, unloaded, crashed, or timeout."
+        }
+      ]
+    },
+    {
+      "name": "BittyUiOverlayNamespace",
+      "kind": "class",
+      "doc": "Focusable overlay and transient input-capture surface (L2, W-01); the single coupled grant ui.overlay.focus covers acquire, update, poll, and release."
     },
     {
       "name": "BittySnapshotOpts",
@@ -1230,6 +1346,59 @@
       "returns": [{ "type": "boolean" }]
     },
     {
+      "path": "ui.overlay.acquire",
+      "level": "L2",
+      "capabilities": ["ui.overlay.focus"],
+      "errors": [
+        "E_CAPABILITY_DENIED",
+        "E_UI_ALREADY_CAPTURED",
+        "E_UI_UNAVAILABLE",
+        "E_DEF_INVALID"
+      ],
+      "doc": "Requests the focusable overlay and the single transient input-capture session in one Core-owned switch; spec carries optional bounded title and placeholder hints with unknown fields ignored. Without ui.overlay.focus fails E_CAPABILITY_DENIED, a second acquire while active fails E_UI_ALREADY_CAPTURED, and safe mode fails E_UI_UNAVAILABLE.",
+      "params": [
+        { "name": "spec", "type": "BittyOverlaySpec", "optional": true }
+      ],
+      "returns": [{ "type": "BittyOverlayHandle" }]
+    },
+    {
+      "path": "ui.overlay.update",
+      "level": "L2",
+      "capabilities": ["ui.overlay.focus"],
+      "errors": [
+        "E_CAPABILITY_DENIED",
+        "E_UI_NOT_OWNER",
+        "E_UI_COMPONENT_INVALID"
+      ],
+      "doc": "Replaces the overlay content for a session the caller owns; the scene uses the accepted v1 node set under the v1 scene budgets. An update on a handle the caller does not own, or on a released handle, fails E_UI_NOT_OWNER and keeps the previous content.",
+      "params": [
+        { "name": "handle", "type": "BittyOverlayHandle" },
+        { "name": "scene", "type": "BittySceneNode" }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "ui.overlay.poll",
+      "level": "L2",
+      "capabilities": ["ui.overlay.focus"],
+      "errors": ["E_CAPABILITY_DENIED", "E_UI_NOT_OWNER"],
+      "doc": "Drains the session queue as an owner-initiated synchronous read of already-queued events; never a Core-driven callback and never on the input hot path. Returns status, seq, ordered events, sticky overflowed, and reason only with released.",
+      "params": [{ "name": "handle", "type": "BittyOverlayHandle" }],
+      "returns": [{ "type": "BittyOverlayPollResult" }]
+    },
+    {
+      "path": "ui.overlay.release",
+      "level": "L2",
+      "capabilities": ["ui.overlay.focus"],
+      "errors": ["E_CAPABILITY_DENIED", "E_UI_NOT_OWNER", "E_DEF_INVALID"],
+      "doc": "Ends a session the caller owns; idempotent on an already-released handle within the owning generation. The optional reason is submitted or cancelled and defaults to released; an invalid reason is E_DEF_INVALID and Core-reported reasons overwrite on involuntary terminal causes.",
+      "params": [
+        { "name": "handle", "type": "BittyOverlayHandle" },
+        { "name": "reason", "type": "string", "optional": true }
+      ],
+      "returns": [{ "type": "boolean" }]
+    },
+    {
       "path": "terminal.snapshot",
       "level": "L2",
       "capabilities": ["terminal.semantic-read"],
@@ -1484,6 +1653,11 @@
       "payload": "BittyWorkspaceEventPayload"
     },
     {
+      "name": "overlay.released",
+      "class": "Observation",
+      "payload": "BittyOverlayReleasedPayload"
+    },
+    {
       "name": "intercept.command-dispatch",
       "class": "Interception",
       "payload": "BittyInterceptPayload"
@@ -1580,10 +1754,6 @@
     {
       "path": "bitty.history",
       "reason": "W-139 (CTX-0066) history/search/selection surface is blocked: the delegating W-135 (bitty-terminal-docs search-selection-contract), W-137 (bitty-plugins-docs history-and-storage-policy), and W-138 (bitty-plugins-docs search-copy-mode-policy) contracts are draft and authorize no implementation, and no accepted closed-set capability covers scrollback or history text read. The Plugin Platform RFC fixes the terminal family as terminal.semantic-read/raw-read/input.self/input.all/manage, and the accepted Plugin API v1 Lua Surface RFC states v1 has no scrollback text read path; adding a scrollback/history read capability requires a successor RFC with its own security review. Re-evaluate when an accepted capability and a bitty host entry point exist."
-    },
-    {
-      "path": "bitty.ui.overlay",
-      "reason": "Focusable overlay input-capture mechanism (bitty #1633, W-28, CTX-0941) stays out of v1: the provisional host spellings bitty.ui.overlay.acquire/release/poll are co-owned by W-01/OQ-056, reuse the existing closed-set ui.overlay grant with no new capability identifier, and the application wiring (real key/IME/pointer routing, per-tick expiry, focus-switch and cancel revoke, overlay rendering) is the tracked follow-up CTX-0943 and has not landed. Pending per W-120, deferred and not wired; re-evaluate when an accepted contract authorizes the spellings."
     },
     {
       "path": "bitty.ui.targets",

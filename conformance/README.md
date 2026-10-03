@@ -28,13 +28,17 @@ expectations on `services.*` and `workspace.*` steps.
 
 Cases `16-workspace-gates.json` and `17-workspace-events.json` cover the
 `bitty.workspace` domain and the `workspace.*` events (bitty PR #1584, ADR 0014) with `manifests/workspace.toml`; case `18-debug-namespace.json` covers
-`bitty.debug` (bitty PR #1573) with `manifests/debug.toml`.
+`bitty.debug` (bitty PR #1573) with `manifests/debug.toml`. Cases
+`19-overlay-focus.json`, `20-overlay-safe-mode.json`, and
+`21-overlay-timeout-focus.json` cover the accepted W-01 focusable overlay
+and transient input capture (`bitty.ui.overlay.*` plus `overlay.released`)
+with `manifests/overlay.toml`, including the `safeMode` fixture flag that
+models `bitty --safe`.
 
-The W-28/W-29 overlay and targeting bindings (`bitty.ui.overlay`,
-`bitty.ui.targets`, `bitty.ui.labels`; bitty PRs #1633/#1641) have no
-conformance cases: they are provisional host candidates pending per W-120,
-deferred and not wired into v1, recorded as explicit surface exclusions with
-no mock method.
+The thin W-29 targeting bindings (`bitty.ui.targets`, `bitty.ui.labels`;
+bitty PR #1641) have no conformance cases: they are provisional host
+candidates pending per W-120, deferred and not wired into v1, recorded as
+explicit surface exclusions with no mock method.
 
 The W-139 history/search/selection surface has no conformance cases: it is
 blocked (the delegating contracts are draft, and no accepted closed-set

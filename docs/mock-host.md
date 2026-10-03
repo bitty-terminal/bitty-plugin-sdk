@@ -56,10 +56,12 @@ conformance tests can run deterministically on Bun only.
   `debug` and `workspace` are WIRED, while `debug.control` is a DEFERRED
   function inside the wired `debug` namespace. Re-verified against bitty
   `main` `fb44a867` (PR #1641, SDK CTX-0067, W-43): bitty #1633 (W-28,
-  CTX-0941) and bitty #1641 (W-29, CTX-0942) moved no v1 verdict; the
-  provisional `bitty.ui.overlay`, `bitty.ui.targets`, and `bitty.ui.labels`
-  bindings stay pending per W-120, deferred and not wired, recorded as
-  explicit surface exclusions with no mock method.
+  CTX-0941) and bitty #1641 (W-29, CTX-0942) moved no v1 verdict; at that pin
+  the provisional `bitty.ui.overlay`, `bitty.ui.targets`, and
+  `bitty.ui.labels` bindings stayed pending per W-120, deferred and not
+  wired. SDK task `CTX-0065` (W-120) now wires the accepted W-01 overlay
+  surface; only the thin `bitty.ui.targets` and `bitty.ui.labels` bindings
+  stay pending with no mock method.
   The SDK freeze in
   `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
   (`NAMESPACE_HOST_PARITY`, `FUNCTION_HOST_PARITY`), and
@@ -185,26 +187,30 @@ in `tests/mock-host.test.ts`.
 
 ## Surface model
 
-| Namespace   | Modeled behavior                                                                                                                                                                                                                                                                                                                                                                                          |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commands`  | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch; 128-byte title / 1024-byte description bounds                                                                                                                                                                                                                                                       |
-| `events`    | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                                                                                                                                                                                                                                                                       |
-| `keymaps`   | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target                                                                                                                                                                                                                                                |
-| `settings`  | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                                                                                                                                                                                                                                                                      |
-| `store`     | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                                                                                                                         |
-| `notify`    | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                                                                                                                |
-| `env`       | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                                                                                                                     |
-| `ui`        | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; unhosted `tabline`/`overlay`/`terminal` then fail `E_UI_UNAVAILABLE`; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                                            |
-| `terminal`  | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                                                                                                                                                                                                                                                                   |
-| `services`  | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears                                                                                                 |
-| `tasks`     | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                                                                                                                                                                                                                                                                            |
-| `timers`    | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                                                                                                                                                                                                                                                                            |
-| `debug`     | WIRED (bitty #1573): `inspect` (`debug.inspect`) serves sanitized sorted `plugins`/`commands`/`events`/`grants` rows capped at 1024 and fails `E_NOT_IMPLEMENTED` on `panels`; `trace`/`trace_get` (`debug.trace`) open at most 4 traces, record only declared kinds matching the filter while active, redact for the owner's grants, bound payloads at 4096 bytes, and drain once; `control` is DEFERRED |
-| `workspace` | WIRED (bitty #1584): `list` (`workspace.read`) serves at most 16 rows with names cut to 32 characters; `focus`/`new`/`next`/`close`/`rename`/`move_panel` (`workspace.control`) validate arguments first, then enqueue into a 32-request queue and return whether it was queued; `workspace.*` events reach only `workspace.read` holders                                                                 |
+| Namespace    | Modeled behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `commands`   | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch; 128-byte title / 1024-byte description bounds                                                                                                                                                                                                                                                                                                                                                                                        |
+| `events`     | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `keymaps`    | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target                                                                                                                                                                                                                                                                                                                                                                                 |
+| `settings`   | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `store`      | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `notify`     | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `env`        | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                                                                                                                                                                                                                                                      |
+| `ui`         | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; unhosted `tabline`/`overlay`/`terminal` then fail `E_UI_UNAVAILABLE`; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                                                                                                                                                                             |
+| `ui.overlay` | W-01 (CTX-0065): `ui.overlay.focus` coupled grant for `acquire`/`update`/`poll`/`release`; single global owner (`E_UI_ALREADY_CAPTURED`); 256-event queue with drop-oldest plus sticky `overflowed`; 4096-byte per-event and per-call ceilings plus v1 scene budgets; 30s idle timeout on the virtual clock; idempotent release (`submitted`/`cancelled`, defaults to `released`); non-owners and stale handles fail `E_UI_NOT_OWNER`; safe mode fails `E_UI_UNAVAILABLE` with no bus event; `overlay.released` observation-only bus event |
+| `terminal`   | `terminal.semantic-read` gate; `scope` defaults to `"semantic"`; 256 KiB snapshot bound; read-only copy                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `services`   | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears                                                                                                                                                                                                                                  |
+| `tasks`      | Activation-only creation; 64 live-task cap; cooperative cancellation; generation-owned handles                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `timers`     | Activation-only creation; 32 live-timer cap; one-shot virtual timers; generation-owned handles                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `debug`      | WIRED (bitty #1573): `inspect` (`debug.inspect`) serves sanitized sorted `plugins`/`commands`/`events`/`grants` rows capped at 1024 and fails `E_NOT_IMPLEMENTED` on `panels`; `trace`/`trace_get` (`debug.trace`) open at most 4 traces, record only declared kinds matching the filter while active, redact for the owner's grants, bound payloads at 4096 bytes, and drain once; `control` is DEFERRED                                                                                                                                  |
+| `workspace`  | WIRED (bitty #1584): `list` (`workspace.read`) serves at most 16 rows with names cut to 32 characters; `focus`/`new`/`next`/`close`/`rename`/`move_panel` (`workspace.control`) validate arguments first, then enqueue into a 32-request queue and return whether it was queued; `workspace.*` events reach only `workspace.read` holders                                                                                                                                                                                                  |
 
 Capability gates follow the accepted mapping: `bitty.notify.show` requires
 `platform.notify`, `bitty.ui.mount`/`bitty.ui.update` require `ui.rich`
-(plus `ui.overlay` for the overlay slot), and `bitty.terminal.snapshot`
+(plus `ui.overlay` for the overlay slot),
+`bitty.ui.overlay.acquire`/`update`/`poll`/`release` require the single
+coupled grant `ui.overlay.focus` (W-01; no `input.capture` head), and
+`bitty.terminal.snapshot`
 requires `terminal.semantic-read`. `bitty.debug.inspect` requires
 `debug.inspect`, `bitty.debug.trace`/`trace_get` require `debug.trace`, and
 `bitty.debug.control` is mapped to `debug.control` (it fails closed with
@@ -315,8 +321,10 @@ bitty `main` `2cb49afe`, then re-pinned at bitty `main` `fb44a867`
 function inside the wired `debug` namespace (`hostParity.functions`,
 `FUNCTION_HOST_PARITY`); `process.spawn` is
 v1-OUT and stays in the surface-table
-`exclusions`. The provisional W-28/W-29 `bitty.ui.overlay`,
-`bitty.ui.targets`, and `bitty.ui.labels` bindings stay pending per W-120,
+`exclusions`. The accepted W-01 `bitty.ui.overlay.*` surface (CTX-0065) lives
+under the already-wired `ui` namespace with the coupled grant
+`ui.overlay.focus`, so no namespace verdict moves; the thin W-29
+`bitty.ui.targets` and `bitty.ui.labels` bindings stay pending per W-120,
 deferred and not wired, and stay in `exclusions` with no mock method.
 WIRED namespaces generate full bindings; DEFERRED namespaces and
 functions stay present but generate typed `E_NOT_IMPLEMENTED` stubs, so the
@@ -485,27 +493,30 @@ run; observation and interception deliveries are detached entirely (see
 
 ## Bounds
 
-| Bound                              | Value                     | Source                                      |
-| ---------------------------------- | ------------------------- | ------------------------------------------- |
-| Event payload                      | 8 KiB                     | `EVENT_MAX_BYTES` (reference host)          |
-| Env value                          | 4 KiB                     | ADR 0006                                    |
-| Store value / quota                | 8 KiB / 256 KiB           | ADR 0009 LUA-OQ-6                           |
-| Store depth / nodes                | 8 / 1024                  | ADR 0009 LUA-OQ-6                           |
-| Snapshot                           | 256 KiB                   | ADR 0009 LUA-OQ-4                           |
-| Command schema                     | 16 KiB / depth 16         | ADR 0009 LUA-OQ-3                           |
-| Command title / description        | 128 / 1024 bytes          | `bitty-lua` `host.rs` (HOST-002)            |
-| Bridge value depth / nodes / bytes | 8 / 1024 / 8 KiB          | `bitty-lua` `host.rs` (bridge contract A.3) |
-| UI nodes / text per component      | 2048 / 256 KiB            | `bitty-lua` `ui.rs` (`SCN-1`/`SCN-3`)       |
-| UI blocks / aggregate text         | 64 / 2 MiB per generation | `bitty-lua` `ui.rs` (`SCN-5`/`SCN-4`)       |
-| `process.exited.exit_code`         | signed `i32`              | `bitty-runtime` `registry.rs`               |
-| Live tasks / timers                | 64 / 32                   | ADR 0007 (RC-4)                             |
-| Workspace list rows / name chars   | 16 / 32                   | `bitty-lua` `host.rs` (CTX-0889)            |
-| Workspace rename name              | 256 bytes (`E_DEF_LIMIT`) | `bitty-lua` `host.rs` (CTX-0889)            |
-| Workspace request queue            | 32 requests               | `bitty-runtime` `plugin_runtime` (CTX-0889) |
-| Debug inspect items                | 1024                      | `bitty-runtime` `debug.rs` (CTX-0897)       |
-| Debug traces / events per trace    | 4 / 1..10000 (1000)       | `bitty-runtime` `debug.rs` (CTX-0897)       |
-| Debug trace payload / buffer       | 4096 bytes / 1 MiB        | `bitty-runtime` `debug.rs` (CTX-0897)       |
-| Debug trace filter                 | 1..128 printable ASCII    | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Bound                              | Value                         | Source                                      |
+| ---------------------------------- | ----------------------------- | ------------------------------------------- |
+| Event payload                      | 8 KiB                         | `EVENT_MAX_BYTES` (reference host)          |
+| Env value                          | 4 KiB                         | ADR 0006                                    |
+| Store value / quota                | 8 KiB / 256 KiB               | ADR 0009 LUA-OQ-6                           |
+| Store depth / nodes                | 8 / 1024                      | ADR 0009 LUA-OQ-6                           |
+| Snapshot                           | 256 KiB                       | ADR 0009 LUA-OQ-4                           |
+| Command schema                     | 16 KiB / depth 16             | ADR 0009 LUA-OQ-3                           |
+| Command title / description        | 128 / 1024 bytes              | `bitty-lua` `host.rs` (HOST-002)            |
+| Bridge value depth / nodes / bytes | 8 / 1024 / 8 KiB              | `bitty-lua` `host.rs` (bridge contract A.3) |
+| UI nodes / text per component      | 2048 / 256 KiB                | `bitty-lua` `ui.rs` (`SCN-1`/`SCN-3`)       |
+| UI blocks / aggregate text         | 64 / 2 MiB per generation     | `bitty-lua` `ui.rs` (`SCN-5`/`SCN-4`)       |
+| `process.exited.exit_code`         | signed `i32`                  | `bitty-runtime` `registry.rs`               |
+| Live tasks / timers                | 64 / 32                       | ADR 0007 (RC-4)                             |
+| Workspace list rows / name chars   | 16 / 32                       | `bitty-lua` `host.rs` (CTX-0889)            |
+| Workspace rename name              | 256 bytes (`E_DEF_LIMIT`)     | `bitty-lua` `host.rs` (CTX-0889)            |
+| Workspace request queue            | 32 requests                   | `bitty-runtime` `plugin_runtime` (CTX-0889) |
+| Debug inspect items                | 1024                          | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Debug traces / events per trace    | 4 / 1..10000 (1000)           | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Debug trace payload / buffer       | 4096 bytes / 1 MiB            | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Debug trace filter                 | 1..128 printable ASCII        | `bitty-runtime` `debug.rs` (CTX-0897)       |
+| Overlay queue depth                | 256 events per session        | W-01 overlay contract (CTX-0065)            |
+| Overlay per-event / per-call       | 4096 bytes serialized         | W-01 overlay contract (CTX-0065)            |
+| Overlay idle timeout               | 30s without input/poll/update | W-01 overlay contract (CTX-0065)            |
 
 ## Diagnostics
 
@@ -522,6 +533,8 @@ exported as `ACCEPTED_HOST_CODES`:
 | `E_STORE_QUOTA`          | `budget`     | ADR 0009                                                                                           |
 | `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                                                                           |
 | `E_UI_UNAVAILABLE`       | `runtime`    | Plugin API v1 frozen vocabulary (OQ-056); bitty `bitty_lua::host::E_UI_UNAVAILABLE`                |
+| `E_UI_ALREADY_CAPTURED`  | `runtime`    | W-01 overlay contract (CTX-0065)                                                                   |
+| `E_UI_NOT_OWNER`         | `runtime`    | W-01 overlay contract (CTX-0065)                                                                   |
 | `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                                                                           |
 | `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                                                                           |
 | `E_SERVICE_GONE`         | `runtime`    | ADR 0009                                                                                           |

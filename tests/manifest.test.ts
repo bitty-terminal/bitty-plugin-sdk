@@ -511,6 +511,22 @@ terminal.everything = true
     expect(codes(result)).toContain("capabilities.unknown");
   });
 
+  test("ui.overlay.focus is accepted with no parameter; input.capture stays out", () => {
+    const accepted = lint(`
+[capabilities]
+ui.overlay.focus = true
+`);
+    expect(accepted.valid).toBe(true);
+    expect(accepted.diagnostics).toEqual([]);
+    for (const head of ["input.capture", "ui.overlay.focus:extra", "ui.*"]) {
+      const result = lint(`
+[capabilities]
+${JSON.stringify(head)} = true
+`);
+      expect(result.valid).toBe(false);
+    }
+  });
+
   test("wildcard capability is rejected", () => {
     const result = lint(`
 [capabilities]

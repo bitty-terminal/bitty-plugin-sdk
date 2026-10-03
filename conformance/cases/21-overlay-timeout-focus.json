@@ -1,0 +1,89 @@
+{
+  "name": "Overlay idle timeout and focus-switch revoke",
+  "description": "Thirty seconds without input or owner calls releases with timeout and moving focus releases with focus_switched; the owner observes both on poll and via overlay.released.",
+  "manifest": "manifests/overlay.toml",
+  "tags": ["ui", "overlay"],
+  "grants": ["ui.overlay.focus"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "timeout" } },
+      "capture": "h1"
+    },
+    { "op": "subscribe", "event": "overlay.released", "capture": "ev" },
+    { "op": "end-activation" },
+    { "op": "inject-overlay-input", "type": "key", "data": { "key": "a" } },
+    { "op": "advance-time", "ms": 10000 },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h1" } },
+      "expect": {
+        "result": {
+          "status": "active",
+          "seq": 1,
+          "events": [{ "seq": 1, "type": "key", "data": { "key": "a" } }],
+          "overflowed": false
+        }
+      }
+    },
+    { "op": "advance-time", "ms": 31000 },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h1" } },
+      "expect": {
+        "result": {
+          "status": "released",
+          "seq": 1,
+          "events": [],
+          "overflowed": false,
+          "reason": "timeout"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "focus" } },
+      "capture": "h2"
+    },
+    { "op": "inject-overlay-input", "type": "text", "data": { "text": "hi" } },
+    { "op": "overlay-focus-switch" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": { "$ref": "h2" } },
+      "expect": {
+        "result": {
+          "status": "released",
+          "seq": 1,
+          "events": [{ "seq": 1, "type": "text", "data": { "text": "hi" } }],
+          "overflowed": false,
+          "reason": "focus_switched"
+        }
+      }
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev",
+      "events": [
+        {
+          "kind": "overlay.released",
+          "sequence": 2,
+          "payload": { "owner": "conformance.overlay", "reason": "timeout" }
+        },
+        {
+          "kind": "overlay.released",
+          "sequence": 3,
+          "payload": {
+            "owner": "conformance.overlay",
+            "reason": "focus_switched"
+          }
+        }
+      ]
+    }
+  ]
+}

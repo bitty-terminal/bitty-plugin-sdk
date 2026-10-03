@@ -33,6 +33,10 @@ const EXPECTED_FUNCTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ["L1", "services.provide", "BittyServiceHandle"],
   ["L2", "ui.mount", "BittyBlockHandle"],
   ["L2", "ui.update", "boolean"],
+  ["L2", "ui.overlay.acquire", "BittyOverlayHandle"],
+  ["L2", "ui.overlay.update", "boolean"],
+  ["L2", "ui.overlay.poll", "BittyOverlayPollResult"],
+  ["L2", "ui.overlay.release", "boolean"],
   ["L2", "terminal.snapshot", "BittyTerminalSnapshot"],
   ["L1", "tasks.spawn", "BittyTaskHandle"],
   ["L1", "tasks.cancel", "boolean"],
@@ -70,6 +74,7 @@ const EXPECTED_EVENTS: ReadonlyArray<readonly [string, string, string]> = [
   ["workspace.renamed", "Observation", "BittyWorkspaceNamedEventPayload"],
   ["workspace.focused", "Observation", "BittyWorkspaceEventPayload"],
   ["workspace.changed", "Observation", "BittyWorkspaceEventPayload"],
+  ["overlay.released", "Observation", "BittyOverlayReleasedPayload"],
   ["intercept.command-dispatch", "Interception", "BittyInterceptPayload"],
   ["intercept.terminal-spawn", "Interception", "BittyInterceptPayload"],
   ["intercept.paste", "Interception", "BittyInterceptPayload"],
@@ -134,6 +139,10 @@ describe("surface table", () => {
     expect(gates.get("env.has")).toEqual(["env.read:<KEY>"]);
     expect(gates.get("ui.mount")).toEqual(["ui.rich"]);
     expect(gates.get("ui.update")).toEqual(["ui.rich"]);
+    expect(gates.get("ui.overlay.acquire")).toEqual(["ui.overlay.focus"]);
+    expect(gates.get("ui.overlay.update")).toEqual(["ui.overlay.focus"]);
+    expect(gates.get("ui.overlay.poll")).toEqual(["ui.overlay.focus"]);
+    expect(gates.get("ui.overlay.release")).toEqual(["ui.overlay.focus"]);
     expect(gates.get("terminal.snapshot")).toEqual(["terminal.semantic-read"]);
     expect(gates.get("debug.inspect")).toEqual(["debug.inspect"]);
     expect(gates.get("debug.trace")).toEqual(["debug.trace"]);
@@ -159,6 +168,10 @@ describe("surface table", () => {
           "env.has",
           "ui.mount",
           "ui.update",
+          "ui.overlay.acquire",
+          "ui.overlay.update",
+          "ui.overlay.poll",
+          "ui.overlay.release",
           "terminal.snapshot",
         ].includes(fn.path) &&
         !fn.path.startsWith("debug.") &&
@@ -278,8 +291,13 @@ describe("generated definitions", () => {
     }));
     expect(parsed.length).toBe(surface.functions.length);
     for (const fn of surface.functions) {
-      const [prefix, name] = fn.path.split(".");
-      const namespaceType = `Bitty${capitalized(prefix ?? "")}Namespace`;
+      // W-01 nested `ui.overlay.*` renders under `BittyUiOverlayNamespace`.
+      const segments = fn.path.split(".");
+      const name = segments[segments.length - 1] ?? "";
+      const namespaceType =
+        fn.path.startsWith("ui.overlay.") === true
+          ? "BittyUiOverlayNamespace"
+          : `Bitty${capitalized(segments[0] ?? "")}Namespace`;
       const found = parsed.find(
         (entry) => entry.namespace === namespaceType && entry.name === name,
       );
