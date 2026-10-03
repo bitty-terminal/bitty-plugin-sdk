@@ -181,6 +181,20 @@ function namespacePrefix(typeName: string): string | undefined {
   return stem.charAt(0).toLowerCase() + stem.slice(1);
 }
 
+/**
+ * Dot path for a namespace type, supporting the single nested `ui.overlay`
+ * sub-namespace (W-01, CTX-0065): `BittyUiNamespace` maps to `ui` while
+ * `BittyUiOverlayNamespace` maps to `ui.overlay`. Top-level namespaces map
+ * as before; only `ui.overlay` may contain a dot.
+ */
+function namespaceDotPath(typeName: string): string | undefined {
+  const match = /^Bitty([A-Z][A-Za-z0-9]*)Namespace$/.exec(typeName);
+  if (match === null) return undefined;
+  const stem = match[1] ?? "";
+  if (stem === "UiOverlay") return "ui.overlay";
+  return stem.charAt(0).toLowerCase() + stem.slice(1);
+}
+
 function typeTokens(type: string): string[] {
   const withoutLiterals = type.replace(/"[^"]*"/g, " ");
   return [...withoutLiterals.matchAll(/[A-Za-z_][A-Za-z0-9_]*/g)].map(
@@ -294,7 +308,7 @@ export function validateSurface(surface: Surface): string[] {
 
   const namespaceTypes = new Map<string, string>();
   for (const type of surface.types) {
-    const prefix = namespacePrefix(type.name);
+    const prefix = namespaceDotPath(type.name) ?? namespacePrefix(type.name);
     if (prefix === undefined) {
       if (type.optional === true) {
         problems.push(`${type.name}: only namespace classes may be optional`);
@@ -310,24 +324,57 @@ export function validateSurface(surface: Surface): string[] {
   const functionPaths = new Set<string>();
   const prefixesWithFunctions = new Set<string>();
   for (const fn of surface.functions) {
-    const [prefix, ...rest] = fn.path.split(".");
-    const name = rest.join(".");
-    if (prefix === undefined || name === "" || rest.length !== 1) {
-      problems.push(`function path must be <namespace>.<name>: ${fn.path}`);
+    const segments = fn.path.split(".");
+    let prefix: string | undefined;
+    let name: string | undefined;
+    if (segments.length === 2) {
+      prefix = segments[0];
+      name = segments[1];
+    } else if (
+      segments.length === 3 &&
+      segments[0] === "ui" &&
+      segments[1] === "overlay"
+    ) {
+      // W-01 nested sub-namespace (CTX-0065): `ui.overlay.acquire` and kin.
+      // Only this prefix may carry three segments; no other nesting exists.
+      prefix = "ui.overlay";
+      name = segments[2];
+    } else {
+      problems.push(
+        `function path must be <namespace>.<name> (or ui.overlay.<name>): ${fn.path}`,
+      );
       continue;
     }
-    if (!/^[a-z][a-z0-9_]*$/.test(prefix) || !/^[a-z][a-z0-9_]*$/.test(name)) {
+    if (
+      prefix === undefined ||
+      name === undefined ||
+      name === "" ||
+      !/^[a-z][a-z0-9_]*$/.test(name)
+    ) {
       problems.push(`function path has invalid segments: ${fn.path}`);
+      continue;
+    }
+    for (const segment of prefix.split(".")) {
+      if (!/^[a-z][a-z0-9_]*$/.test(segment)) {
+        problems.push(`function path has invalid segments: ${fn.path}`);
+        break;
+      }
     }
     if (functionPaths.has(fn.path)) {
       problems.push(`duplicate function: ${fn.path}`);
     }
     functionPaths.add(fn.path);
+    // Track the top-level namespace for hostParity coverage (`ui` for
+    // `ui.overlay.*`, matching the wired `ui` verdict) plus the full dot
+    // path so the nested `ui.overlay` namespace counts as having functions.
+    prefixesWithFunctions.add(fn.path.split(".")[0] ?? "");
     prefixesWithFunctions.add(prefix);
     if (!namespaceTypes.has(prefix)) {
-      problems.push(
-        `${fn.path}: no Bitty${prefix.charAt(0).toUpperCase()}${prefix.slice(1)}Namespace type`,
-      );
+      const expected =
+        prefix === "ui.overlay"
+          ? "BittyUiOverlayNamespace"
+          : `Bitty${prefix.charAt(0).toUpperCase() ?? ""}${prefix.slice(1)}Namespace`;
+      problems.push(`${fn.path}: no ${expected} type`);
     }
     if (fn.level !== "L1" && fn.level !== "L2") {
       problems.push(`${fn.path}: level must be L1 or L2`);
@@ -654,7 +701,8 @@ function renderFunction(
   for (const result of fn.returns) {
     lines.push(`---@return ${result.type}`);
   }
-  const name = fn.path.split(".")[1] ?? "";
+  const segments = fn.path.split(".");
+  const name = segments[segments.length - 1] ?? "";
   const params = fn.params.map((param) => param.name).join(", ");
   lines.push(`function ${namespaceType}.${name}(${params}) end`);
   return lines;
@@ -687,26 +735,36 @@ export function renderDefinitions(surface: Surface): string {
 
   const namespaceByPrefix = new Map<string, SurfaceType>();
   for (const type of surface.types) {
-    const prefix = namespacePrefix(type.name);
+    const prefix = namespaceDotPath(type.name) ?? namespacePrefix(type.name);
     if (prefix !== undefined) namespaceByPrefix.set(prefix, type);
   }
   for (const type of surface.types) {
     lines.push(...renderType(type));
-    const prefix = namespacePrefix(type.name);
+    const prefix = namespaceDotPath(type.name) ?? namespacePrefix(type.name);
     if (prefix !== undefined) {
       lines.push(`local ${type.name} = {}`);
       lines.push("");
+      const prefixDepth = prefix.split(".").length;
       for (const fn of surface.functions) {
-        if (fn.path.startsWith(`${prefix}.`)) {
-          lines.push(
-            ...renderFunction(
-              fn,
-              type.name,
-              functionHostStatus(surface.hostParity, fn.path) === "deferred",
-            ),
-          );
-          lines.push("");
+        const segments = fn.path.split(".");
+        // Match exactly one more segment than the namespace dot path, so
+        // `ui.overlay.acquire` renders under `BittyUiOverlayNamespace` only
+        // and never under `BittyUiNamespace`.
+        if (
+          fn.path === prefix ||
+          !fn.path.startsWith(`${prefix}.`) ||
+          segments.length !== prefixDepth + 1
+        ) {
+          continue;
         }
+        lines.push(
+          ...renderFunction(
+            fn,
+            type.name,
+            functionHostStatus(surface.hostParity, fn.path) === "deferred",
+          ),
+        );
+        lines.push("");
       }
     } else {
       lines.push("");
@@ -721,8 +779,11 @@ export function renderDefinitions(surface: Surface): string {
     `---@field api_version string Host bridge API version (${surface.api_version}); minor versions are additive only.`,
   );
   for (const type of surface.types) {
-    const prefix = namespacePrefix(type.name);
+    const prefix = namespaceDotPath(type.name) ?? namespacePrefix(type.name);
     if (prefix === undefined) continue;
+    // Nested sub-namespaces (dot paths) are fields of their parent, not of
+    // the module root; only top-level namespaces appear on `bitty`.
+    if (prefix.includes(".")) continue;
     const field = type.optional === true ? `${prefix}?` : prefix;
     lines.push(`---@field ${field} ${type.name}`);
   }

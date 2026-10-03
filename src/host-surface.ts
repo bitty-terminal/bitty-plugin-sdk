@@ -43,6 +43,9 @@ export const EVENT_KINDS: readonly EventKindSpec[] = [
   { kind: "workspace.renamed", class: "observation", coalescable: false },
   { kind: "workspace.focused", class: "observation", coalescable: false },
   { kind: "workspace.changed", class: "observation", coalescable: false },
+  // CTX-0065 (W-01 accepted): focusable-overlay lifecycle observation. Any
+  // subscriber may observe it; no phase may intercept or veto it.
+  { kind: "overlay.released", class: "observation", coalescable: false },
   {
     kind: "intercept.command-dispatch",
     class: "interception",
@@ -99,6 +102,10 @@ export const CAPABILITY_GATED_SURFACE: readonly CapabilityGate[] = [
   { surface: "bitty.ui.mount", capability: "ui.rich" },
   { surface: "bitty.ui.update", capability: "ui.rich" },
   { surface: "bitty.ui.mount:overlay", capability: "ui.overlay" },
+  { surface: "bitty.ui.overlay.acquire", capability: "ui.overlay.focus" },
+  { surface: "bitty.ui.overlay.update", capability: "ui.overlay.focus" },
+  { surface: "bitty.ui.overlay.poll", capability: "ui.overlay.focus" },
+  { surface: "bitty.ui.overlay.release", capability: "ui.overlay.focus" },
   { surface: "bitty.terminal.snapshot", capability: "terminal.semantic-read" },
   { surface: "bitty.env.get", capability: "env.read:<KEY>" },
   { surface: "bitty.env.has", capability: "env.read:<KEY>" },
@@ -137,6 +144,10 @@ export const V1_SURFACE_FUNCTIONS: readonly string[] = [
   "services.provide",
   "ui.mount",
   "ui.update",
+  "ui.overlay.acquire",
+  "ui.overlay.update",
+  "ui.overlay.poll",
+  "ui.overlay.release",
   "terminal.snapshot",
   "tasks.spawn",
   "tasks.cancel",
@@ -297,7 +308,42 @@ export const MOCK_LIMITS = {
   DEBUG_TRACE_PAYLOAD_MAX_BYTES: 4096,
   DEBUG_TRACE_FILTER_MAX_BYTES: 128,
   DEBUG_TRACE_BUFFER_MAX_BYTES: 1024 * 1024,
+  // W-01 overlay bounds (CTX-0065, accepted): 256-event queue depth,
+  // 4096-byte per-event and per-call ceilings, 30s idle timeout, single
+  // global owner. Scene content reuses the v1 UI node/text/marshal budgets.
+  OVERLAY_QUEUE_MAX: 256,
+  OVERLAY_PAYLOAD_MAX_BYTES: 4096,
+  OVERLAY_CALL_MAX_BYTES: 4096,
+  OVERLAY_IDLE_TIMEOUT_MS: 30_000,
 } as const;
+
+/** Decided overlay input-event tags (W-01); field encodings stay parked. */
+export const OVERLAY_EVENT_TAGS: readonly string[] = [
+  "key",
+  "text",
+  "pointer",
+  "paste",
+];
+
+/** Full release-reason vocabulary (W-01); only `submitted`/`cancelled` are owner-suppliable. */
+export const OVERLAY_RELEASE_REASONS: readonly string[] = [
+  "released",
+  "submitted",
+  "cancelled",
+  "focus_switched",
+  "unloaded",
+  "crashed",
+  "timeout",
+];
+
+/** Owner-suppliable release dispositions (W-01); omitted defaults to `released`. */
+export const OVERLAY_OWNER_RELEASE_REASONS: readonly string[] = [
+  "submitted",
+  "cancelled",
+];
+
+/** Poll statuses (W-01): `active` holds capture, `released` is terminal per handle. */
+export const OVERLAY_POLL_STATUSES: readonly string[] = ["active", "released"];
 
 /** Command id grammar from the accepted surface. */
 export const COMMAND_ID_PATTERN = "^[a-z][a-z0-9-]{0,63}$";
@@ -350,6 +396,10 @@ export const EVENT_PAYLOAD_FIELDS: Readonly<
   ],
   "workspace.focused": [{ name: "id", type: "integer" }],
   "workspace.changed": [{ name: "id", type: "integer" }],
+  "overlay.released": [
+    { name: "owner", type: "string" },
+    { name: "reason", type: "string" },
+  ],
   "intercept.command-dispatch": [
     { name: "action", type: "string" },
     { name: "origin", type: "string" },
@@ -410,9 +460,16 @@ export interface NamespaceHostParity {
  * (existing `ui.overlay` grant, no new capability; application wiring tracked
  * as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942) added thin
  * targeting bindings `bitty.ui.targets.*` and `bitty.ui.labels.*` with no new
- * capability and no Event-Bus exposure; both stay pending per W-120, deferred
- * and not wired into v1 (see the surface table exclusions `bitty.ui.overlay`,
- * `bitty.ui.targets`, `bitty.ui.labels`), so no v1 namespace verdict moved.
+ * capability and no Event-Bus exposure; both stayed pending per W-120 at that
+ * pin, deferred and not wired into v1, so no v1 namespace verdict moved.
+ * SDK task CTX-0065 (W-120) now wires the accepted W-01 contract: the
+ * `bitty.ui.overlay.acquire`/`update`/`poll`/`release` spellings plus the
+ * `overlay.released` bus event under the single coupled grant
+ * `ui.overlay.focus` (no `input.capture` head) live under the already-wired
+ * `ui` namespace, so no namespace verdict moves; the thin `bitty.ui.targets`
+ * and `bitty.ui.labels` bindings stay pending per W-120, deferred and not
+ * wired (see the surface table exclusions `bitty.ui.targets`,
+ * `bitty.ui.labels`).
  * `commit` is the last re-verified bitty `main`; `pr` is the pin PR that
  * carries the re-verification (last v1 verdict move remains #1584). Mirrors
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`

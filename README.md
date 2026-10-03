@@ -128,9 +128,11 @@ declared. There is no
 `bitty.network` namespace: it is a v1 surface exclusion, bitty #1604
 (DIR-030) removed Core's embedded Lua network binding, and the Lua request
 surface of the out-of-process `net` native component is deferred, not wired.
-The W-28/W-29 `bitty.ui.overlay`, `bitty.ui.targets`, and `bitty.ui.labels`
-bindings (bitty #1633/#1641) are provisional host candidates pending per
-W-120, deferred and not wired, recorded as explicit exclusions with no new
+The accepted W-01 `bitty.ui.overlay.*` focusable surface plus
+`overlay.released` (CTX-0065) is wired under the coupled grant
+`ui.overlay.focus`. The thin W-29 `bitty.ui.targets` and `bitty.ui.labels`
+bindings (bitty #1641) stay provisional host candidates pending per W-120,
+deferred and not wired, recorded as explicit exclusions with no new
 capability. The parity pin is bitty `main` `fb44a867` (PR #1641, CTX-0067,
 W-43) with no v1 verdict move. LuaLS conformance runs
 locally only: CI has no `lua-language-server`, so that check skips there.

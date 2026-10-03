@@ -1,0 +1,18 @@
+[plugin]
+id = "conformance.overlay"
+name = "Conformance Overlay"
+version = "1.0.0"
+description = "Focusable overlay and input-capture manifest (W-01, CTX-0065) for mock-host conformance."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+ui.overlay.focus = true
+
+[lazy]
+events = [
+  "overlay.released",
+]

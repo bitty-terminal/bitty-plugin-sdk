@@ -34,6 +34,8 @@ export const HOST_CODES = {
   UI_BLOCK_BUDGET: "E_UI_BLOCK_BUDGET",
   UI_CLAIM_REQUIRED: "E_UI_CLAIM_REQUIRED",
   UI_UNAVAILABLE: "E_UI_UNAVAILABLE",
+  UI_ALREADY_CAPTURED: "E_UI_ALREADY_CAPTURED",
+  UI_NOT_OWNER: "E_UI_NOT_OWNER",
   SNAPSHOT_TOO_LARGE: "E_SNAPSHOT_TOO_LARGE",
   SNAPSHOT_SCOPE_UNSUPPORTED: "E_SNAPSHOT_SCOPE_UNSUPPORTED",
   SERVICE_RESOLUTION: "E_SERVICE_RESOLUTION",
@@ -76,9 +78,11 @@ export type HostCode = (typeof HOST_CODES)[keyof typeof HOST_CODES];
  * Plugin API v1 RFC (`E_CAPABILITY_DENIED`, `E_STORE_VALUE_INVALID`,
  * `E_STORE_QUOTA`, `E_UI_COMPONENT_INVALID`, `E_SNAPSHOT_TOO_LARGE`,
  * `E_SERVICE_RESOLUTION`, `E_SERVICE_GONE`, `E_BUDGET_TASK`,
- * `E_BUDGET_TIMER`), and the OQ-056-frozen v1 vocabulary
+ * `E_BUDGET_TIMER`), the OQ-056-frozen v1 vocabulary
  * (`E_UI_UNAVAILABLE`, class `runtime`: bitty `bitty_lua::host::E_UI_UNAVAILABLE`,
- * raised for an accepted slot the host does not present, CTX-0923).
+ * raised for an accepted slot the host does not present, CTX-0923), and the
+ * accepted W-01 overlay-input-capture contract (`E_UI_ALREADY_CAPTURED`,
+ * `E_UI_NOT_OWNER`, class `runtime`, CTX-0065).
  */
 export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
   HOST_CODES.CAPABILITY_DENIED,
@@ -88,6 +92,8 @@ export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
   HOST_CODES.STORE_QUOTA,
   HOST_CODES.UI_COMPONENT_INVALID,
   HOST_CODES.UI_UNAVAILABLE,
+  HOST_CODES.UI_ALREADY_CAPTURED,
+  HOST_CODES.UI_NOT_OWNER,
   HOST_CODES.SNAPSHOT_TOO_LARGE,
   HOST_CODES.SERVICE_RESOLUTION,
   HOST_CODES.SERVICE_GONE,

@@ -1,7 +1,7 @@
 --- Bitty Plugin API v1 LuaLS definitions.
 --- GENERATED FILE - DO NOT EDIT.
 --- Source: surface/bitty-plugin-api-v1.json
---- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md
+--- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md + bitty-docs:docs/development/overlay-input-capture-contract.md
 --- Referenced (not authority): bitty-terminal-docs:specifications/search-selection-contract.md (draft) + bitty-plugins-docs:extensibility/history-and-storage-policy.md (draft) + bitty-plugins-docs:specifications/search-copy-mode-policy.md (draft)
 --- Regenerate: bun scripts/generate-lua-defs.ts --write
 --- Verify: just lua-defs-check
@@ -58,7 +58,7 @@ function BittyCommandsNamespace.register(def) end
 
 --- Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error,
 --- and declaring any workspace.* name requires a granted workspace.read capability at activation.
----@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"workspace.created"|"workspace.closed"|"workspace.renamed"|"workspace.focused"|"workspace.changed"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
+---@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"workspace.created"|"workspace.closed"|"workspace.renamed"|"workspace.focused"|"workspace.changed"|"overlay.released"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
 
 --- Event payload with no fields for lifecycle, signal, and coalescable observation events.
 ---@class BittyEmptyPayload
@@ -121,7 +121,7 @@ function BittyCommandsNamespace.register(def) end
 ---@field preview string Bounded sanitized preview; intercept.paste never carries paste text without clipboard.read.
 
 --- Union of the closed v1 event payload shapes.
----@alias BittyEventPayload BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyInterceptPayload
+---@alias BittyEventPayload BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyOverlayReleasedPayload|BittyInterceptPayload
 
 --- Immutable bounded event envelope delivered to subscribed handlers.
 ---@class BittyEvent
@@ -293,9 +293,10 @@ function BittyServicesNamespace.provide(iface, impl) end
 --- Presentation RFC.
 ---@alias BittySceneNode table
 
---- Declarative UI contribution surface (L2); rich content requires ui.rich and the overlay slot
---- requires ui.overlay.
+--- Declarative UI contribution surface (L2); rich content requires ui.rich, the overlay slot
+--- requires ui.overlay, and the focusable overlay session requires ui.overlay.focus.
 ---@class BittyUiNamespace
+---@field overlay BittyUiOverlayNamespace Focusable overlay and transient input-capture sub-table (W-01); requires ui.overlay.focus.
 local BittyUiNamespace = {}
 
 --- Mounts declarative component content into an accepted semantic slot; rich content requires
@@ -321,6 +322,80 @@ function BittyUiNamespace.mount(slot, component) end
 ---@param component BittySceneNode
 ---@return boolean
 function BittyUiNamespace.update(handle, component) end
+
+--- Opaque generation-owned handle returned by bitty.ui.overlay.acquire; invalid after generation
+--- disposal.
+---@alias BittyOverlayHandle integer
+
+--- Presentation hints for bitty.ui.overlay.acquire; every field is optional and unknown fields are
+--- ignored.
+---@class BittyOverlaySpec
+---@field title? string Bounded overlay title text.
+---@field placeholder? string Bounded placeholder text.
+
+--- One queued input event with a decided type tag; field-level key, pointer, and IME encodings stay
+--- parked.
+---@class BittyOverlayEvent
+---@field seq integer Monotonic event sequence within the session.
+---@field type "key"|"text"|"pointer"|"paste" Decided input-event tag.
+---@field data? table Opaque tag payload within the per-event byte ceiling.
+
+--- Owner-initiated drain of already-queued input events; never a Core-driven callback.
+---@class BittyOverlayPollResult
+---@field status "active"|"released" Whether the session holds capture or is terminal per handle.
+---@field seq integer Monotonic sequence of the last event delivered to this owner in this session.
+---@field events BittyOverlayEvent[] Input events in order; empty when there is nothing new.
+---@field overflowed boolean Sticky flag; true once queue overflow has dropped an older event.
+---@field reason? string Present only with released; one of released, submitted, cancelled, focus_switched, unloaded, crashed, timeout.
+
+--- overlay.released payload; observation only, never intercepted.
+---@class BittyOverlayReleasedPayload
+---@field owner string Owning plugin id.
+---@field reason string Terminal reason: released, submitted, cancelled, focus_switched, unloaded, crashed, or timeout.
+
+--- Focusable overlay and transient input-capture surface (L2, W-01); the single coupled grant
+--- ui.overlay.focus covers acquire, update, poll, and release.
+---@class BittyUiOverlayNamespace
+local BittyUiOverlayNamespace = {}
+
+--- Requests the focusable overlay and the single transient input-capture session in one Core-owned
+--- switch; spec carries optional bounded title and placeholder hints with unknown fields ignored.
+--- Without ui.overlay.focus fails E_CAPABILITY_DENIED, a second acquire while active fails
+--- E_UI_ALREADY_CAPTURED, and safe mode fails E_UI_UNAVAILABLE.
+--- Capabilities: ui.overlay.focus.
+--- Errors: E_CAPABILITY_DENIED, E_UI_ALREADY_CAPTURED, E_UI_UNAVAILABLE, E_DEF_INVALID.
+---@param spec? BittyOverlaySpec
+---@return BittyOverlayHandle
+function BittyUiOverlayNamespace.acquire(spec) end
+
+--- Replaces the overlay content for a session the caller owns; the scene uses the accepted v1 node
+--- set under the v1 scene budgets. An update on a handle the caller does not own, or on a released
+--- handle, fails E_UI_NOT_OWNER and keeps the previous content.
+--- Capabilities: ui.overlay.focus.
+--- Errors: E_CAPABILITY_DENIED, E_UI_NOT_OWNER, E_UI_COMPONENT_INVALID.
+---@param handle BittyOverlayHandle
+---@param scene BittySceneNode
+---@return boolean
+function BittyUiOverlayNamespace.update(handle, scene) end
+
+--- Drains the session queue as an owner-initiated synchronous read of already-queued events; never
+--- a Core-driven callback and never on the input hot path. Returns status, seq, ordered events,
+--- sticky overflowed, and reason only with released.
+--- Capabilities: ui.overlay.focus.
+--- Errors: E_CAPABILITY_DENIED, E_UI_NOT_OWNER.
+---@param handle BittyOverlayHandle
+---@return BittyOverlayPollResult
+function BittyUiOverlayNamespace.poll(handle) end
+
+--- Ends a session the caller owns; idempotent on an already-released handle within the owning
+--- generation. The optional reason is submitted or cancelled and defaults to released; an invalid
+--- reason is E_DEF_INVALID and Core-reported reasons overwrite on involuntary terminal causes.
+--- Capabilities: ui.overlay.focus.
+--- Errors: E_CAPABILITY_DENIED, E_UI_NOT_OWNER, E_DEF_INVALID.
+---@param handle BittyOverlayHandle
+---@param reason? string
+---@return boolean
+function BittyUiOverlayNamespace.release(handle, reason) end
 
 --- Terminal snapshot options; only the semantic scope is accepted in v1.
 ---@class BittySnapshotOpts

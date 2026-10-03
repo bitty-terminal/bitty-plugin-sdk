@@ -15,9 +15,12 @@ full bindings while the DEFERRED `env` namespace and the DEFERRED
 `CTX-0063` (issue #133) synced the `bitty.debug` and `bitty.workspace`
 namespaces and the `workspace.*` events at bitty `main` `2cb49afe`. SDK task
 `CTX-0067` (plan W-43) re-pins the freeze to bitty `main` `fb44a867`
-(PR #1641) with no v1 verdict move: the W-28/W-29 overlay and targeting
-bindings stay pending per W-120, deferred and not wired (see
-[Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067)).
+(PR #1641) with no v1 verdict move: the W-28 overlay mechanism and the W-29
+targeting bindings stay pending per W-120 at that pin, deferred and not
+wired (see [Pending surface](#pending-surface-targeting-w-29-ctx-0067)).
+SDK task `CTX-0065` (plan W-120) then wires the accepted W-01 overlay
+surface (see
+[Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065)).
 
 ## Contract sources
 
@@ -41,11 +44,13 @@ bindings stay pending per W-120, deferred and not wired (see
   `crates/bitty-runtime/src/plugin_runtime/{mod,services,debug}.rs`,
   `crates/bitty-terminal/src/terminal_app.rs`), not from an accepted
   spelling contract; they sit outside the ADR 0009 v1 guarantee. The
-  W-28/W-29 overlay and targeting host evidence at `fb44a867`
+  W-29 targeting host evidence at `fb44a867`
   (`crates/bitty-lua/src/host.rs`,
   `crates/bitty-runtime/src/plugin_runtime/{mod,services,overlay}.rs`)
   is recorded as explicit exclusions only (see
-  [Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067)).
+  [Pending surface](#pending-surface-targeting-w-29-ctx-0067)). The W-28
+  overlay mechanism is now covered by the accepted W-01 surface (see
+  [Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065)).
 - Pinned revisions live in `sources` in `surface/bitty-plugin-api-v1.json`;
   the generated header names each contract document by repository and path
   only, so the surface table is the sole revision record.
@@ -125,25 +130,27 @@ Semantics the annotations carry:
 
 ## Coverage
 
-The surface table covers L1 Control and the minimal L2 UI surface only:
-14 namespaces, 30 functions, and the closed 22-name event set.
+The surface table covers L1 Control and the minimal L2 UI surface plus the
+accepted W-01 overlay surface: 14 namespaces, 34 functions, and the closed
+23-name event set.
 
-| Namespace   | Functions                                                       | Level | Capability                                                    |
-| ----------- | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |
-| `commands`  | `register`                                                      | L1    | none                                                          |
-| `events`    | `subscribe`                                                     | L1    | none                                                          |
-| `keymaps`   | `suggest`                                                       | L1    | none                                                          |
-| `settings`  | `get`, `set`                                                    | L1    | none                                                          |
-| `store`     | `get`, `set`                                                    | L1    | none (quota-bounded)                                          |
-| `notify`    | `show`                                                          | L1    | `platform.notify`                                             |
-| `env`       | `get`, `has`                                                    | L1    | `env.read:<KEY>` (namespace optional)                         |
-| `services`  | `get`, `provide`                                                | L1    | none                                                          |
-| `ui`        | `mount`, `update`                                               | L2    | `ui.rich`; `ui.overlay` for the overlay slot                  |
-| `terminal`  | `snapshot`                                                      | L2    | `terminal.semantic-read`                                      |
-| `tasks`     | `spawn`, `cancel`                                               | L1    | none (64-task cap)                                            |
-| `timers`    | `create`, `cancel`                                              | L1    | none (32-timer cap, one-shot)                                 |
-| `debug`     | `inspect`, `trace`, `trace_get`, `control`                      | L1    | `debug.inspect`; `debug.trace`; `debug.control` (deferred)    |
-| `workspace` | `list`, `focus`, `new`, `next`, `close`, `rename`, `move_panel` | L1    | `workspace.read` for `list`; `workspace.control` for the rest |
+| Namespace    | Functions                                                       | Level | Capability                                                    |
+| ------------ | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |
+| `commands`   | `register`                                                      | L1    | none                                                          |
+| `events`     | `subscribe`                                                     | L1    | none                                                          |
+| `keymaps`    | `suggest`                                                       | L1    | none                                                          |
+| `settings`   | `get`, `set`                                                    | L1    | none                                                          |
+| `store`      | `get`, `set`                                                    | L1    | none (quota-bounded)                                          |
+| `notify`     | `show`                                                          | L1    | `platform.notify`                                             |
+| `env`        | `get`, `has`                                                    | L1    | `env.read:<KEY>` (namespace optional)                         |
+| `services`   | `get`, `provide`                                                | L1    | none                                                          |
+| `ui`         | `mount`, `update`                                               | L2    | `ui.rich`; `ui.overlay` for the overlay slot                  |
+| `ui.overlay` | `acquire`, `update`, `poll`, `release`                          | L2    | `ui.overlay.focus` (single coupled grant, W-01)               |
+| `terminal`   | `snapshot`                                                      | L2    | `terminal.semantic-read`                                      |
+| `tasks`      | `spawn`, `cancel`                                               | L1    | none (64-task cap)                                            |
+| `timers`     | `create`, `cancel`                                              | L1    | none (32-timer cap, one-shot)                                 |
+| `debug`      | `inspect`, `trace`, `trace_get`, `control`                      | L1    | `debug.inspect`; `debug.trace`; `debug.control` (deferred)    |
+| `workspace`  | `list`, `focus`, `new`, `next`, `close`, `rename`, `move_panel` | L1    | `workspace.read` for `list`; `workspace.control` for the rest |
 
 The accepted RFC classifies the `services.get` consumer side as cross-cutting
 within v1; the tasks and timers functions were resolved as v1 additions by
@@ -194,8 +201,10 @@ against the generated file: no `bitty.api` alias, no flat
 providers, no `bitty.fs`/`process`/`network`/`clipboard`/`ipc`/`renderer`/
 `protocol` entry points, no Level 3 presentation namespaces, no singular
 `bitty.task`/`bitty.timer` spellings, no `scope = "raw"` snapshot, and no
-provisional `bitty.ui.overlay`/`bitty.ui.targets`/`bitty.ui.labels` sub-tables
-(see [Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067)).
+provisional `bitty.ui.targets`/`bitty.ui.labels` sub-tables (the
+`bitty.ui.overlay` focusable surface is now accepted via W-01; see
+[Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065) and
+[Pending surface](#pending-surface-targeting-w-29-ctx-0067)).
 `tests/lua-defs.test.ts` checks the full list textually on every `just check`;
 the LuaLS negative fixture samples six excluded spellings plus the excluded
 `raw` scope literal and wrong-shape `services.get` calls to verify rejection at
@@ -238,13 +247,38 @@ function path:
 The `bitty.history` surface path is recorded as an explicit exclusion in
 `surface/bitty-plugin-api-v1.json` with the same blocker. Re-evaluate when an
 accepted capability and a bitty host entry point exist (a successor RFC plus
-`W-146`-style host wiring). The `debug`/`workspace` namespaces remain the only
-host-candidate additions wired into the mock, unchanged by this task.
+`W-146`-style host wiring). The `debug`/`workspace` namespaces plus the
+accepted W-01 `ui.overlay` surface are the wired host-candidate additions;
+no other candidate is wired by this task.
 
 `selection` and the `terminal` closed-set membership are not touched: no
-`terminal.*` head is added or renamed.
+`terminal.*` head is added or renamed, and no scrollback or history text read
+is added (DEC-0004).
 
-## Pending surface: overlay and targeting (W-28/W-29, CTX-0067)
+## Accepted overlay surface (W-01, CTX-0065)
+
+SDK task `CTX-0065` (plan W-120) wires the accepted W-01
+overlay-input-capture contract
+(`bitty-docs` `docs/development/overlay-input-capture-contract.md`,
+`status: accepted`): the single coupled grant `ui.overlay.focus` (no
+`input.capture` head, no wildcard), the `bitty.ui.overlay.acquire`/`update`/
+`poll`/`release` spellings plus the observation-only `overlay.released` bus
+event, the `{status, seq, events[], overflowed, reason?}` poll envelope with
+`key|text|pointer|paste` tags (field encodings parked), the 256-queue /
+4096-payload / 4096-call / 30s-idle bounds with v1 scene budgets per update,
+the typed `E_UI_ALREADY_CAPTURED` / `E_UI_NOT_OWNER` codes (reused
+`E_UI_UNAVAILABLE`, `E_CAPABILITY_DENIED`, and `E_VALUE_*`), Core single-owner
+arbitration, safe-mode `E_UI_UNAVAILABLE`, and additive versioning. The four
+functions live under the already-wired `ui` namespace, so no namespace
+verdict moves; the mock host enforces deny-by-default, the bounded queue with
+drop-oldest plus sticky `overflowed`, the byte ceilings, the idle expiry on
+the virtual clock, single ownership with idempotent release, and safe mode.
+Conformance cases `19-overlay-focus.json`, `20-overlay-safe-mode.json`, and
+`21-overlay-timeout-focus.json` cover the lifecycle. Field encodings, richer
+node types, submit-to-PTY, and mechanism internals stay parked with their
+owners per the contract.
+
+## Pending surface: targeting (W-29, CTX-0067)
 
 SDK task `CTX-0067` (plan W-43) re-pins the freeze to bitty `main` `fb44a867`
 (PR #1641, verified as the remote tip) with no v1 verdict move. Two host
@@ -258,7 +292,8 @@ no Lua v1 verdict):
   typed errors (`E_UI_ALREADY_CAPTURED`, `E_UI_NOT_OWNER`). The PR is the
   mechanism only; routing real key, IME, and pointer events, per-tick expiry,
   focus-switch and cancel revoke, and overlay rendering are the tracked
-  follow-up CTX-0943 and have not landed.
+  follow-up CTX-0943 and have not landed. The spellings are now superseded by
+  the accepted W-01 `bitty.ui.overlay.*` surface above (CTX-0065).
 - W-29 (bitty #1641, CTX-0942, re-scoped minimal per DEC-0085): thin Lua
   bindings over the existing beacon mechanism types only
   (`bitty.ui.targets.snapshot`/`register`/`unregister`/`session_start`/
@@ -266,14 +301,14 @@ no Lua v1 verdict):
   with no new struct, enum, namespace, or capability and no target or
   annotation Event-Bus exposure.
 
-Both are provisional host candidates (W-28 co-owned by W-01/OQ-056) and stay
-pending per W-120: deferred and not wired into v1. The SDK records them
-honestly as explicit exclusions (`bitty.ui.overlay`, `bitty.ui.targets`,
-`bitty.ui.labels`) with no new function path, no new capability identifier,
-and no mock method. All 14 v1 namespace verdicts and the `debug.control`
-function override keep their previous values; the pin PR moves to 1641 while
-the last v1 verdict move remains #1584. Re-evaluate when an accepted contract
-authorizes the spellings.
+The thin targeting bindings stay provisional host candidates pending per
+W-120: deferred and not wired into v1. The SDK records them honestly as
+explicit exclusions (`bitty.ui.targets`, `bitty.ui.labels`) with no new
+function path, no new capability identifier, and no mock method. All 14 v1
+namespace verdicts and the `debug.control` function override keep their
+previous values; the pin PR stays 1641 while the last v1 verdict move
+remains PR 1584. Re-evaluate when an accepted contract authorizes the
+spellings.
 
 ## Validation
 
@@ -296,10 +331,12 @@ except `env`, which is `deferred`, plus the per-function override
 `bitty.network` also stays excluded: bitty #1604 (DIR-030) removed the
 embedded Lua network binding from Core, and network access now belongs to
 the out-of-process `net` native component, whose Lua request surface is
-deferred and not wired. The W-28/W-29 `bitty.ui.overlay`, `bitty.ui.targets`,
-and `bitty.ui.labels` sub-tables stay excluded as pending per W-120 (see
-[Pending surface](#pending-surface-overlay-and-targeting-w-28w-29-ctx-0067));
-no v1 verdict moved at `fb44a867`.
+deferred and not wired. The W-29 `bitty.ui.targets` and `bitty.ui.labels`
+sub-tables stay excluded as pending per W-120 (see
+[Pending surface](#pending-surface-targeting-w-29-ctx-0067)); the W-28
+overlay mechanism is now the accepted W-01 surface (see
+[Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065)). No v1
+verdict moved at `fb44a867`.
 
 The SDK owns regen-sync for these artifacts. Run this trigger whenever a
 bitty host change flips a namespace verdict or an accepted contract revision

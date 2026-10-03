@@ -37,6 +37,12 @@ export interface ConformanceCase {
    * absent (fail-closed default for `required = true` declarations).
    */
   readonly toolsGitVersion?: string | null;
+  /**
+   * Safe-mode flag for W-01 overlay cases (CTX-0065): when true the mock
+   * models `bitty --safe` and every acquire fails `E_UI_UNAVAILABLE`.
+   * Omitted means false.
+   */
+  readonly safeMode?: boolean;
   readonly steps: readonly ConformanceStep[];
 }
 
@@ -90,6 +96,9 @@ const SUPPORTED_STEP_OPS: ReadonlySet<string> = new Set([
   "remove-service",
   "set-workspaces",
   "drain-workspace-requests",
+  "inject-overlay-input",
+  "overlay-focus-switch",
+  "overlay-crash",
 ]);
 
 class CaseFailure extends Error {}
@@ -194,6 +203,10 @@ function parseCase(source: string, file: string): ConformanceCase {
   ) {
     throw new CaseFailure("case.toolsGitVersion must be a string or null");
   }
+  const safeMode = parsed.safeMode;
+  if (safeMode !== undefined && typeof safeMode !== "boolean") {
+    throw new CaseFailure("case.safeMode must be a boolean");
+  }
   return {
     name,
     description,
@@ -225,6 +238,7 @@ function parseCase(source: string, file: string): ConformanceCase {
     ...(toolsGitVersion === undefined
       ? {}
       : { toolsGitVersion: toolsGitVersion as string | null }),
+    ...(safeMode === undefined ? {} : { safeMode }),
     steps: steps as ConformanceStep[],
   };
 }
@@ -323,6 +337,20 @@ function callSurface(
       return host.bitty.ui.update(
         Number(table.handle),
         (table.component ?? {}) as Record<string, unknown>,
+      );
+    case "ui.overlay.acquire":
+      return host.bitty.ui.overlay.acquire((table.spec ?? undefined) as never);
+    case "ui.overlay.update":
+      return host.bitty.ui.overlay.update(
+        Number(table.handle),
+        (table.scene ?? table.component ?? {}) as Record<string, unknown>,
+      );
+    case "ui.overlay.poll":
+      return host.bitty.ui.overlay.poll(Number(table.handle));
+    case "ui.overlay.release":
+      return host.bitty.ui.overlay.release(
+        Number(table.handle),
+        (table.reason ?? undefined) as never,
       );
     case "terminal.snapshot":
       return host.bitty.terminal.snapshot(table as never);
@@ -491,6 +519,9 @@ export async function runConformanceCaseFile(
       ...(conformanceCase.toolsGitVersion === undefined
         ? {}
         : { toolsGitVersion: conformanceCase.toolsGitVersion }),
+      ...(conformanceCase.safeMode === undefined
+        ? {}
+        : { safeMode: conformanceCase.safeMode }),
     });
     activeHost = host;
     for (const capability of conformanceCase.grants ?? []) {
@@ -900,6 +931,46 @@ export async function runConformanceCaseFile(
           );
           break;
         }
+        case "inject-overlay-input": {
+          let outcome: { ok: boolean; result?: unknown; error?: HostError };
+          try {
+            outcome = {
+              ok: true,
+              result:
+                host.injectOverlayInput({
+                  type: String(table.type),
+                  ...(table.data === undefined ? {} : { data: table.data }),
+                }) ?? null,
+            };
+          } catch (cause) {
+            if (!(cause instanceof HostError)) throw cause;
+            outcome = { ok: false, error: cause };
+          }
+          if (typeof table.capture === "string" && outcome.ok) {
+            captures.set(table.capture, outcome.result);
+          }
+          const problem = expectProblem(outcome, table.expect ?? {}, captures);
+          record(
+            problem === undefined,
+            "inject-overlay-input",
+            `${String(table.type)} ${problem ?? "matched"}`,
+          );
+          break;
+        }
+        case "overlay-focus-switch":
+          host.simulateOverlayFocusSwitch();
+          assertions.push({
+            op: "overlay-focus-switch",
+            detail: "focus switch revoked capture",
+          });
+          break;
+        case "overlay-crash":
+          host.simulateOverlayCrash();
+          assertions.push({
+            op: "overlay-crash",
+            detail: "crash revoked capture",
+          });
+          break;
         default:
           throw new CaseFailure(`unsupported step op '${step.op}'`);
       }

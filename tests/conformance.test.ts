@@ -373,6 +373,7 @@ describe("accepted surface agreement", () => {
       "workspace.renamed",
       "workspace.focused",
       "workspace.changed",
+      "overlay.released",
       "intercept.command-dispatch",
       "intercept.terminal-spawn",
       "intercept.paste",
@@ -392,6 +393,10 @@ describe("accepted surface agreement", () => {
     expect(MOCK_LIMITS.SNAPSHOT_MAX_BYTES).toBe(256 * 1024);
     expect(MOCK_LIMITS.COMMAND_SCHEMA_MAX_BYTES).toBe(16 * 1024);
     expect(MOCK_LIMITS.COMMAND_SCHEMA_MAX_DEPTH).toBe(16);
+    expect(MOCK_LIMITS.OVERLAY_QUEUE_MAX).toBe(256);
+    expect(MOCK_LIMITS.OVERLAY_PAYLOAD_MAX_BYTES).toBe(4096);
+    expect(MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES).toBe(4096);
+    expect(MOCK_LIMITS.OVERLAY_IDLE_TIMEOUT_MS).toBe(30_000);
   });
 
   test("R-SDK-1 surface table agrees with the mock host model", () => {

@@ -289,7 +289,7 @@ validation instead of being ignored. Parameterized heads must carry a
 | Family      | Identifiers                                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------------------------- |
 | `terminal`  | `terminal.semantic-read`, `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`, `terminal.manage` |
-| `ui`        | `ui.rich`, `ui.overlay`, `ui.protocol-register`                                                               |
+| `ui`        | `ui.rich`, `ui.overlay`, `ui.overlay.focus`, `ui.protocol-register`                                           |
 | `clipboard` | `clipboard.read`, `clipboard.write`                                                                           |
 | `fs`        | `fs.read:PATTERN`, `fs.write:PATTERN`                                                                         |
 | `process`   | `process.spawn:CONSTRAINT`                                                                                    |
@@ -313,6 +313,13 @@ workspaces and observes the `workspace.*` events (no terminal content), and
 panels. Neither implies the other, neither takes a parameter, and the host
 does not classify either as high-risk. Declaring a `workspace.*` event in
 `[lazy].events` requires a granted `workspace.read` at activation.
+
+The `ui.overlay.focus` head (W-01, CTX-0065) is the single coupled grant for
+the focusable overlay plus the transient input-capture session. It is
+distinct from v1 `ui.overlay` (presentation-only, non-focusable), takes no
+parameter, and has no wildcard or family-wide form. There is no separate
+`input.capture` head. Without the grant every `bitty.ui.overlay.*` call
+fails `E_CAPABILITY_DENIED`.
 
 A flat `fs.read:PATTERN` / `fs.write:PATTERN` capability applies the same
 pattern rules as the structured `[[capabilities.filesystem]]` form (relative

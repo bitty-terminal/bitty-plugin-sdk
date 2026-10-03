@@ -1,0 +1,56 @@
+{
+  "name": "Overlay safe mode stays clean",
+  "description": "bitty --safe presents no focusable surface: acquire fails E_UI_UNAVAILABLE with the grant and E_CAPABILITY_DENIED without it, no session starts, and no overlay.released is emitted.",
+  "manifest": "manifests/overlay.toml",
+  "tags": ["ui", "overlay", "capability"],
+  "grants": [],
+  "safeMode": true,
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "palette" } },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "ui.overlay.focus" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "palette" } },
+      "expect": {
+        "denial": { "code": "E_UI_UNAVAILABLE", "class": "runtime" }
+      }
+    },
+    { "op": "subscribe", "event": "overlay.released", "capture": "ev" },
+    { "op": "end-activation" },
+    {
+      "op": "call",
+      "surface": "ui.overlay.poll",
+      "args": { "handle": 1 },
+      "expect": {
+        "denial": { "code": "E_UI_NOT_OWNER", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.update",
+      "args": {
+        "handle": 1,
+        "scene": { "kind": "Text", "text": "x" }
+      },
+      "expect": {
+        "denial": { "code": "E_UI_NOT_OWNER", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.release",
+      "args": { "handle": 1 },
+      "expect": { "result": true }
+    },
+    { "op": "expect-event", "capture": "ev", "events": [] }
+  ]
+}
