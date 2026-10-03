@@ -172,7 +172,7 @@ describe("surface table", () => {
   test("pins host parity with wired keymaps/tasks/services and deferred env", () => {
     expect(surface.hostParity.repository).toBe("bitty");
     expect(surface.hostParity.commit).toMatch(/^[0-9a-f]{40}$/);
-    expect(surface.hostParity.pr).toBe(1584);
+    expect(surface.hostParity.pr).toBe(1641);
     // bitty #1604 (DIR-030) removed Core's embedded Lua network binding, so
     // bitty.network must stay excluded rather than gain a namespace verdict.
     expect(surface.hostParity.commit).toBe(HOST_PARITY_SOURCE.commit);

@@ -54,7 +54,12 @@ conformance tests can run deterministically on Bun only.
   `bitty.workspace` domain with its `workspace.*` events (#1584, CTX-0889,
   ADR 0014) had already landed before #1604 and are now modeled:
   `debug` and `workspace` are WIRED, while `debug.control` is a DEFERRED
-  function inside the wired `debug` namespace.
+  function inside the wired `debug` namespace. Re-verified against bitty
+  `main` `fb44a867` (PR #1641, SDK CTX-0067, W-43): bitty #1633 (W-28,
+  CTX-0941) and bitty #1641 (W-29, CTX-0942) moved no v1 verdict; the
+  provisional `bitty.ui.overlay`, `bitty.ui.targets`, and `bitty.ui.labels`
+  bindings stay pending per W-120, deferred and not wired, recorded as
+  explicit surface exclusions with no mock method.
   The SDK freeze in
   `surface/bitty-plugin-api-v1.json` (`hostParity`), `src/host-surface.ts`
   (`NAMESPACE_HOST_PARITY`, `FUNCTION_HOST_PARITY`), and
@@ -303,12 +308,17 @@ verdict regardless of traversal order or where it was first validated.
 (`NAMESPACE_HOST_PARITY`), the generated `lua/bitty.d.lua` annotations, the
 mock host, and the conformance fixtures are frozen on the bitty #1303
 (CTX-0707) verdict set as re-wired by bitty #1391 (CTX-0767) and extended at
-bitty `main` `2cb49afe`: `keymaps`, `tasks`, `services`, `debug`, and
+bitty `main` `2cb49afe`, then re-pinned at bitty `main` `fb44a867`
+(CTX-0067, W-43) with no verdict move: `keymaps`, `tasks`, `services`,
+`debug`, and
 `workspace` are WIRED; `env` is DEFERRED; `debug.control` is a DEFERRED
 function inside the wired `debug` namespace (`hostParity.functions`,
 `FUNCTION_HOST_PARITY`); `process.spawn` is
 v1-OUT and stays in the surface-table
-`exclusions`. WIRED namespaces generate full bindings; DEFERRED namespaces and
+`exclusions`. The provisional W-28/W-29 `bitty.ui.overlay`,
+`bitty.ui.targets`, and `bitty.ui.labels` bindings stay pending per W-120,
+deferred and not wired, and stay in `exclusions` with no mock method.
+WIRED namespaces generate full bindings; DEFERRED namespaces and
 functions stay present but generate typed `E_NOT_IMPLEMENTED` stubs, so the
 freeze is never silent and never more permissive than the host.
 
@@ -695,7 +705,8 @@ explicitly.
   and the 64-byte bound).
 - **Workspace and debug host candidates.** `bitty.workspace.*`, the
   `workspace.*` events, and `bitty.debug.*` are modeled from the bitty host
-  implementation at `2cb49afe`. ADR 0014 accepts the workspace mechanism and
+  implementation at `2cb49afe` and re-verified at `fb44a867` (CTX-0067, W-43)
+  with no behavior change. ADR 0014 accepts the workspace mechanism and
   its separate read/control gates, but its Lua, event, and command spellings
   stay host candidates under OQ-056, and no accepted contract fixes the
   `bitty.debug` Lua spellings; both namespaces are outside the ADR 0009 v1
@@ -710,6 +721,14 @@ explicitly.
   revoked). Queued
   workspace requests are recorded for `drainWorkspaceRequests()` and never
   applied, matching the bridge, which only enqueues.
+- **Overlay and targeting candidates (pending per W-120).** The W-28
+  `bitty.ui.overlay.acquire`/`release`/`poll` mechanism (bitty #1633) and the
+  W-29 `bitty.ui.targets.*` and `bitty.ui.labels.*` bindings (bitty #1641)
+  are provisional host candidates with no new capability identifier and no
+  Event-Bus exposure. They stay deferred and not wired into v1, recorded as
+  explicit surface exclusions with no mock method; the mock `ui.mount`
+  behavior for the overlay slot is unchanged (granted overlay still fails
+  `E_UI_UNAVAILABLE` until the W-28 application wiring lands).
 - **High-risk capabilities.** The lint-side escalation set is documented in
   [`docs/manifest.md`](manifest.md); the mock does not re-derive it.
 - **Version-range structural grammar.** The mock and the linter share one

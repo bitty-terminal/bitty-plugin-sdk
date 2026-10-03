@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Re-pin host parity to bitty `main` `fb44a867` (PR #1641, CTX-0067, W-43;
+  verified as the remote tip): bitty #1633 (W-28, CTX-0941) and bitty #1641
+  (W-29, CTX-0942) moved no v1 verdict. The provisional
+  `bitty.ui.overlay.acquire`/`release`/`poll` mechanism and the thin
+  `bitty.ui.targets.*` / `bitty.ui.labels.*` bindings stay pending per W-120,
+  deferred and not wired, recorded as explicit surface exclusions with no new
+  function path, no new capability identifier, and no mock method. All 14 v1
+  namespace verdicts and the `debug.control` override keep their previous
+  values; `hostParity.pr` moves to 1641 while the last v1 verdict move
+  remains #1584. `lua/bitty.d.lua` is regenerated with no drift.
 - Record the W-139 (CTX-0066, issue #138) history/storage/search/selection
   public-API task as **blocked**, with no accepted surface added.
   The three delegating contracts are **draft**, not accepted, and each says it
