@@ -7,7 +7,7 @@
     "repository": "bitty",
     "commit": "fb44a8671ea7526c985d8f0ca3f57ef9b82f09e0",
     "pr": 1641,
-    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe for CTX-0063. Re-verified at bitty main fb44a867 (PR 1641, CTX-0067, W-43): bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and transient input-capture mechanism bitty.ui.overlay.acquire/release/poll (existing ui.overlay grant, no new capability; application wiring tracked as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942, re-scoped minimal per DEC-0085) added thin targeting bindings bitty.ui.targets.* and bitty.ui.labels.* over existing beacon types with no new capability and no Event-Bus exposure; the thin targeting bindings stay pending per W-120, deferred and not wired into v1 and recorded as explicit exclusions, while the W-28 overlay mechanism is now the accepted W-01 surface (CTX-0065, ui.overlay.focus with bitty.ui.overlay.acquire/update/poll/release plus overlay.released) living under the already-wired ui namespace, so no v1 namespace verdict moved.",
+    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe for CTX-0063. Re-verified at bitty main fb44a867 (PR 1641, CTX-0067, W-43): bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and transient input-capture mechanism bitty.ui.overlay.acquire/release/poll (existing ui.overlay grant, no new capability; application wiring tracked as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942, re-scoped minimal per DEC-0085) added thin targeting bindings bitty.ui.targets.* and bitty.ui.labels.* over existing beacon types with no new capability and no Event-Bus exposure; the thin targeting bindings stay pending per W-120, deferred and not wired into v1 and recorded as explicit exclusions, while the W-28 overlay mechanism is now the accepted W-01 surface (CTX-0065, ui.overlay.focus with bitty.ui.overlay.acquire/update/poll/release plus overlay.released) living under the already-wired ui namespace, so no v1 namespace verdict moved. CTX-0068 (W-103 S-2) wires the accepted W-82 composer operations additively: bitty.terminal.submit under the already-wired terminal namespace (no verdict move) and bitty.process.editor.start under a newly recorded wired process namespace verdict (editor round trip only; unconstrained process.spawn stays v1-OUT, see exclusions), with the additive v2 capabilities terminal.input.submit and process.editor and typed outcomes mirroring the Core mechanism evidence at bitty #1661 (CTX-0929, 1df0459e) and #1654 (CTX-0941, 2f49934d); api_version stays 1.0.0 (additive only) and the pin stays fb44a867 (#1641).",
     "namespaces": {
       "commands": "wired",
       "events": "wired",
@@ -22,7 +22,8 @@
       "tasks": "wired",
       "timers": "wired",
       "debug": "wired",
-      "workspace": "wired"
+      "workspace": "wired",
+      "process": "wired"
     },
     "functions": {
       "debug.control": "deferred"
@@ -52,6 +53,12 @@
       "path": "docs/development/overlay-input-capture-contract.md",
       "status": "accepted",
       "revision": "4ab950588899aed5a995a58b092e7f43a0786071"
+    },
+    {
+      "repository": "bitty-terminal-docs",
+      "path": "specifications/composer-architecture.md",
+      "status": "accepted",
+      "revision": "8246ef683e6e850217477385e3f2c735dd240e5f"
     },
     {
       "repository": "bitty-terminal-docs",
@@ -933,7 +940,169 @@
     {
       "name": "BittyTerminalNamespace",
       "kind": "class",
-      "doc": "Read-only terminal observation surface (L2) gated by terminal.semantic-read; there is no write path to grid, cursor, modes, or scrollback in v1."
+      "doc": "Terminal observation plus the capability-gated PTY submit path (L2); submit writes only through the Core paste pipeline and never touches grid, cursor, modes, or scrollback."
+    },
+    {
+      "name": "BittySubmitStatus",
+      "kind": "alias",
+      "type": "\"accepted\"|\"denied\"|\"unavailable\"",
+      "doc": "terminal.submit outcome tag; mirrors TerminalSubmitOutcome at bitty 1df0459e (CTX-0929, W-103 S-1b)."
+    },
+    {
+      "name": "BittySubmitDeny",
+      "kind": "alias",
+      "type": "\"too-large\"|\"lease-denied\"|\"budget-exceeded\"",
+      "doc": "terminal.submit denial detail; mirrors SubmitDeny at bitty 1df0459e (CTX-0929, W-103 S-1b) and never carries payload."
+    },
+    {
+      "name": "BittySubmitUnavailableReason",
+      "kind": "alias",
+      "type": "\"no-focused-view\"|\"buffered-only\"",
+      "doc": "terminal.submit unavailability detail; mirrors TerminalSubmitUnavailable at bitty 1df0459e (CTX-0929, W-103 S-1b)."
+    },
+    {
+      "name": "BittySubmitOutcome",
+      "kind": "class",
+      "doc": "terminal.submit typed outcome; mirrors TerminalSubmitOutcome at bitty 1df0459e (CTX-0929, W-103 S-1b): denials emit nothing and leave the budget untouched.",
+      "fields": [
+        {
+          "name": "status",
+          "type": "BittySubmitStatus",
+          "doc": "Outcome tag."
+        },
+        {
+          "name": "bytes",
+          "type": "integer",
+          "optional": true,
+          "doc": "Present only with accepted; framed bytes delivered in one PTY write."
+        },
+        {
+          "name": "deny",
+          "type": "BittySubmitDeny",
+          "optional": true,
+          "doc": "Present only with denied."
+        },
+        {
+          "name": "wanted",
+          "type": "integer",
+          "optional": true,
+          "doc": "Present only with denied too-large; content bytes refused."
+        },
+        {
+          "name": "used",
+          "type": "integer",
+          "optional": true,
+          "doc": "Present only with denied budget-exceeded; window bytes already charged."
+        },
+        {
+          "name": "cap",
+          "type": "integer",
+          "optional": true,
+          "doc": "Present only with denied budget-exceeded; per-plugin window cap in bytes."
+        },
+        {
+          "name": "reason",
+          "type": "BittySubmitUnavailableReason",
+          "optional": true,
+          "doc": "Present only with unavailable."
+        }
+      ]
+    },
+    {
+      "name": "BittyProcessNamespace",
+      "kind": "class",
+      "doc": "Constrained process surface (L2); only the allowlisted external-editor round trip is wired and unconstrained process.spawn stays v1-OUT.",
+      "fields": [
+        {
+          "name": "editor",
+          "type": "BittyProcessEditorNamespace",
+          "doc": "Allowlisted external-editor round trip (W-82); requires process.editor."
+        }
+      ]
+    },
+    {
+      "name": "BittyProcessEditorNamespace",
+      "kind": "class",
+      "doc": "Allowlisted external-editor round trip (L2, W-82); the single grant process.editor covers start and the temp file never leaves Core."
+    },
+    {
+      "name": "BittyEditorStartOpts",
+      "kind": "class",
+      "doc": "Options for bitty.process.editor.start; every field is optional and unknown fields are ignored.",
+      "fields": [
+        {
+          "name": "draft",
+          "type": "string",
+          "optional": true,
+          "doc": "Initial draft text handed to the editor; defaults to empty and past the 64 KiB bound the round trip is unavailable with the file removed."
+        },
+        {
+          "name": "timeout_ms",
+          "type": "integer",
+          "optional": true,
+          "doc": "Bounded editor wait in milliseconds; defaults to 120000 and larger requests clamp to 300000."
+        }
+      ]
+    },
+    {
+      "name": "BittyEditorStatus",
+      "kind": "alias",
+      "type": "\"edited\"|\"cancelled\"|\"denied\"|\"timeout\"|\"spawn-failed\"|\"non-zero\"|\"unavailable\"",
+      "doc": "process.editor.start outcome tag; mirrors EditorOutcome at bitty 1df0459e (CTX-0929, W-103 S-1b) minus the hosted-only Signal variant, which has no Lua spelling."
+    },
+    {
+      "name": "BittyEditorDeny",
+      "kind": "alias",
+      "type": "\"no-editor\"|\"not-allowed\"",
+      "doc": "process.editor.start denial detail; mirrors EditorDeny at bitty 1df0459e (CTX-0929, W-103 S-1b): no-editor when neither $VISUAL nor $EDITOR names an editor, not-allowed off the bare-name allowlist."
+    },
+    {
+      "name": "BittyEditorUnavailableReason",
+      "kind": "alias",
+      "type": "\"temp-unavailable\"|\"read-unavailable\"|\"too-large\"|\"invalid-utf8\"|\"wait-unavailable\"",
+      "doc": "process.editor.start unavailability detail; SDK kebab-case projection of the static EditorOutcome::Unavailable reasons at bitty 1df0459e (CTX-0929, W-103 S-1b), never a path or payload."
+    },
+    {
+      "name": "BittyEditorOutcome",
+      "kind": "class",
+      "doc": "process.editor.start typed outcome; mirrors EditorOutcome at bitty 1df0459e (CTX-0929, W-103 S-1b): denials land before any temp file or child and failures preserve the previous draft.",
+      "fields": [
+        {
+          "name": "status",
+          "type": "BittyEditorStatus",
+          "doc": "Outcome tag."
+        },
+        {
+          "name": "content",
+          "type": "string",
+          "optional": true,
+          "doc": "Present only with edited; bounded UTF-8 text read back from the removed temp file."
+        },
+        {
+          "name": "deny",
+          "type": "BittyEditorDeny",
+          "optional": true,
+          "doc": "Present only with denied."
+        },
+        {
+          "name": "detail",
+          "type": "string",
+          "optional": true,
+          "doc": "Present only with spawn-failed; bounded host detail, never a path."
+        },
+        {
+          "name": "code",
+          "type": "integer",
+          "optional": true,
+          "doc": "Present only with non-zero and only when the exit code is known."
+        },
+        {
+          "name": "reason",
+          "type": "BittyEditorUnavailableReason",
+          "optional": true,
+          "doc": "Present only with unavailable."
+        }
+      ]
     },
     {
       "name": "BittyTasksNamespace",
@@ -1408,6 +1577,15 @@
       "returns": [{ "type": "BittyTerminalSnapshot" }]
     },
     {
+      "path": "terminal.submit",
+      "level": "L2",
+      "capabilities": ["terminal.input.submit"],
+      "errors": ["E_CAPABILITY_DENIED", "E_DEF_INVALID"],
+      "doc": "Submits text to the focused panel PTY through the capability-gated paste pipeline as one byte-exact bracketed-paste frame; over-cap, lease, and budget refusals return a denied outcome and emit nothing, and a frame that only buffers reports unavailable without charging the budget.",
+      "params": [{ "name": "text", "type": "string" }],
+      "returns": [{ "type": "BittySubmitOutcome" }]
+    },
+    {
       "path": "tasks.spawn",
       "level": "L1",
       "capabilities": [],
@@ -1559,6 +1737,17 @@
       "doc": "Queues moving the focused panel of the active workspace into the workspace with this stable id.",
       "params": [{ "name": "id", "type": "BittyWorkspaceId" }],
       "returns": [{ "type": "boolean" }]
+    },
+    {
+      "path": "process.editor.start",
+      "level": "L2",
+      "capabilities": ["process.editor"],
+      "errors": ["E_CAPABILITY_DENIED", "E_DEF_INVALID"],
+      "doc": "Runs one allowlisted external-editor round trip (nvim, vim, or vi matched exactly from $VISUAL then $EDITOR with no fallback) on a Core-owned 0600 temp file that is always removed; returns the typed outcome and never the temp path.",
+      "params": [
+        { "name": "opts", "type": "BittyEditorStartOpts", "optional": true }
+      ],
+      "returns": [{ "type": "BittyEditorOutcome" }]
     }
   ],
   "events": [
@@ -1704,8 +1893,8 @@
       "reason": "No filesystem entry point in v1; fs.* grants remain a separate capability path."
     },
     {
-      "path": "bitty.process",
-      "reason": "No process entry point in v1."
+      "path": "bitty.process.spawn",
+      "reason": "Unconstrained process spawn stays v1-OUT; only the allowlisted external-editor round trip bitty.process.editor.start (W-82, CTX-0068) is wired under the process namespace."
     },
     {
       "path": "bitty.network",

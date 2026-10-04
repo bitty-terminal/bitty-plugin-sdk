@@ -286,25 +286,25 @@ Deny by default, no wildcards, closed identifier set. An unknown head fails
 validation instead of being ignored. Parameterized heads must carry a
 `:PARAMETER`; all others must not.
 
-| Family      | Identifiers                                                                                                   |
-| ----------- | ------------------------------------------------------------------------------------------------------------- |
-| `terminal`  | `terminal.semantic-read`, `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`, `terminal.manage` |
-| `ui`        | `ui.rich`, `ui.overlay`, `ui.overlay.focus`, `ui.protocol-register`                                           |
-| `clipboard` | `clipboard.read`, `clipboard.write`                                                                           |
-| `fs`        | `fs.read:PATTERN`, `fs.write:PATTERN`                                                                         |
-| `process`   | `process.spawn:CONSTRAINT`                                                                                    |
-| `network`   | `network.connect:DESTINATION`                                                                                 |
-| `runtime`   | `runtime.inspect`, `runtime.configure`, `runtime.plugin-manage`                                               |
-| `debug`     | `debug.inspect`, `debug.trace`, `debug.control`                                                               |
-| `platform`  | `platform.notify`, `platform.open-url`, `platform.image-file`                                                 |
-| `protocol`  | `protocol.register`                                                                                           |
-| `panel`     | `panel.provider`, `panel.create`, `panel.focus`, `panel.overlay`                                              |
-| `browser`   | `browser.embed`, `browser.navigation`, `browser.file-url`, `browser.storage`                                  |
-| `agent`     | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`                                 |
-| `env`       | `env.read:KEY`, `env.read:PREFIX_*`                                                                           |
-| `mcp`       | `mcp.invoke:TOOL`                                                                                             |
-| `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                        |
-| `workspace` | `workspace.read`, `workspace.control`                                                                         |
+| Family      | Identifiers                                                                                                                            |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `terminal`  | `terminal.semantic-read`, `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`, `terminal.manage`, `terminal.input.submit` |
+| `ui`        | `ui.rich`, `ui.overlay`, `ui.overlay.focus`, `ui.protocol-register`                                                                    |
+| `clipboard` | `clipboard.read`, `clipboard.write`                                                                                                    |
+| `fs`        | `fs.read:PATTERN`, `fs.write:PATTERN`                                                                                                  |
+| `process`   | `process.spawn:CONSTRAINT`, `process.editor`                                                                                           |
+| `network`   | `network.connect:DESTINATION`                                                                                                          |
+| `runtime`   | `runtime.inspect`, `runtime.configure`, `runtime.plugin-manage`                                                                        |
+| `debug`     | `debug.inspect`, `debug.trace`, `debug.control`                                                                                        |
+| `platform`  | `platform.notify`, `platform.open-url`, `platform.image-file`                                                                          |
+| `protocol`  | `protocol.register`                                                                                                                    |
+| `panel`     | `panel.provider`, `panel.create`, `panel.focus`, `panel.overlay`                                                                       |
+| `browser`   | `browser.embed`, `browser.navigation`, `browser.file-url`, `browser.storage`                                                           |
+| `agent`     | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`                                                          |
+| `env`       | `env.read:KEY`, `env.read:PREFIX_*`                                                                                                    |
+| `mcp`       | `mcp.invoke:TOOL`                                                                                                                      |
+| `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                                                 |
+| `workspace` | `workspace.read`, `workspace.control`                                                                                                  |
 
 The `workspace` family mirrors the host closed set (`bitty-package`
 `CLOSED_CAPABILITY_HEADS`, ADR 0014, bitty CTX-0889): `workspace.read` lists
@@ -321,6 +321,18 @@ parameter, and has no wildcard or family-wide form. There is no separate
 `input.capture` head. Without the grant every `bitty.ui.overlay.*` call
 fails `E_CAPABILITY_DENIED`.
 
+The `terminal.input.submit` and `process.editor` heads (W-82, CTX-0068) are
+the additive v2 composer grants: `terminal.input.submit` gates bounded
+buffer submission to the focused panel's PTY through the paste path, and
+`process.editor` gates the allowlisted external-editor round trip
+(`nvim`/`vim`/`vi` only, `argv`-first, Core-owned temp file that never
+leaves Core and grants no general `fs.write` authority). Both take no
+parameter, have no wildcard or family-wide form, and are consent-distinct
+(high-risk): submit writes caller bytes into the user's PTY and the editor
+executes a program with temp-file access. Without the grants
+`bitty.terminal.submit` and `bitty.process.editor.start` fail
+`E_CAPABILITY_DENIED`.
+
 A flat `fs.read:PATTERN` / `fs.write:PATTERN` capability applies the same
 pattern rules as the structured `[[capabilities.filesystem]]` form (relative
 only, no `..` segment, no sensitive location, at most 512 bytes); both share
@@ -333,6 +345,7 @@ for capabilities that reach beyond presentation:
 | ---------------------- | ------------------------------------------------------------------------------------------------------------ |
 | Host management        | `terminal.manage`, `runtime.plugin-manage`, `debug.control`                                                  |
 | Sensitive input reads  | `terminal.raw-read`, `terminal.input.all`, `clipboard.read`                                                  |
+| PTY write / execution  | `terminal.input.submit`, `process.editor`                                                                    |
 | Execution / write      | `fs.write:PATTERN`, `process.spawn:CONSTRAINT`, `ui.protocol-register`, `protocol.register`, `browser.embed` |
 | Outbound network       | `network.connect:DESTINATION`                                                                                |
 | Agent / external calls | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`, `mcp.invoke:TOOL`             |

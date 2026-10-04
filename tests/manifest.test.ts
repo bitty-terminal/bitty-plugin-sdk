@@ -643,6 +643,30 @@ layout.provider = true
     expect(codes(result)).toContain("capabilities.unknown");
   });
 
+  test("W-82 composer capabilities are valid, closed, and high-risk", () => {
+    for (const head of ["terminal.input.submit", "process.editor"]) {
+      const result = lint(`
+[capabilities]
+${head} = true
+`);
+      expect(result.valid).toBe(true);
+      expect(codes(result)).toContain("capabilities.high-risk");
+    }
+    // No wildcard, no family grant, no parameter on either head.
+    for (const head of [
+      "terminal.input.*",
+      "process.*",
+      "terminal.input.submit:pty",
+      "process.editor:nvim",
+    ]) {
+      const result = lint(`
+[capabilities]
+${head} = true
+`);
+      expect(result.valid).toBe(false);
+    }
+  });
+
   test("high-risk capability is valid but warned", () => {
     const result = lint(`
 [capabilities]

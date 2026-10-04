@@ -110,6 +110,7 @@ describe("conformance fixtures", () => {
       "pending-host",
       "workspace",
       "debug",
+      "process",
     ]) {
       expect(tags.has(required)).toBe(true);
     }
@@ -175,6 +176,27 @@ describe("conformance fixtures", () => {
     }
     expect(workspaceCalls).toBeGreaterThan(0);
     expect(controlCalls).toBeGreaterThan(0);
+  });
+
+  test("first-party/third-party parity cases run identical steps", () => {
+    // W-103 S-2 parity proof: the two parity legs differ only in the bound
+    // manifest (first-party vs third-party principal). Identical steps with
+    // identical expectations passing under both manifests proves the same
+    // operation is denied identically for both principals.
+    const first = JSON.parse(
+      readFileSync(
+        join(CASES_DIR, "26-parity-denial-first-party.json"),
+        "utf8",
+      ),
+    ) as RawCase & { manifest?: string };
+    const third = JSON.parse(
+      readFileSync(
+        join(CASES_DIR, "27-parity-denial-third-party.json"),
+        "utf8",
+      ),
+    ) as RawCase & { manifest?: string };
+    expect(first.manifest).not.toBe(third.manifest);
+    expect(first.steps).toEqual(third.steps);
   });
 
   test("oversized fixture manifests are rejected before being read", async () => {
@@ -397,6 +419,10 @@ describe("accepted surface agreement", () => {
     expect(MOCK_LIMITS.OVERLAY_PAYLOAD_MAX_BYTES).toBe(4096);
     expect(MOCK_LIMITS.OVERLAY_CALL_MAX_BYTES).toBe(4096);
     expect(MOCK_LIMITS.OVERLAY_IDLE_TIMEOUT_MS).toBe(30_000);
+    expect(MOCK_LIMITS.COMPOSER_MAX_BYTES).toBe(64 * 1024);
+    expect(MOCK_LIMITS.SUBMIT_FRAME_OVERHEAD_BYTES).toBe(13);
+    expect(MOCK_LIMITS.EDITOR_TIMEOUT_DEFAULT_MS).toBe(120_000);
+    expect(MOCK_LIMITS.EDITOR_TIMEOUT_MAX_MS).toBe(300_000);
   });
 
   test("R-SDK-1 surface table agrees with the mock host model", () => {

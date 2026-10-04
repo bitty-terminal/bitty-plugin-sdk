@@ -1,0 +1,14 @@
+[plugin]
+id = "example.composer-future"
+name = "Conformance Composer Compat Mismatch"
+version = "1.0.0"
+description = "Compat-mismatch manifest (W-82, CTX-0068): requires a Plugin API the host does not provide, so activation must fail closed with a diagnostic and no partial activation."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^99.0"
+
+[capabilities]
+terminal.input.submit = true
+process.editor = true

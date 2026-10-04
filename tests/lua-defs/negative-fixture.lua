@@ -9,6 +9,7 @@ local legacy = bitty.on_event
 local raw_scope = bitty.terminal.snapshot({ scope = "raw" })
 local singular = bitty.task.spawn
 local protocol = bitty.protocol
+local unconstrained_spawn = bitty.process.spawn
 
 local missing_opts = bitty.services.get("bitty.example")
 local missing_version = bitty.services.get("bitty.example", {})
@@ -24,6 +25,7 @@ print(
   raw_scope,
   singular,
   protocol,
+  unconstrained_spawn,
   missing_opts,
   missing_version,
   missing_version_with_optional

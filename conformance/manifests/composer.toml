@@ -1,0 +1,20 @@
+[plugin]
+id = "bitty.composer"
+name = "Conformance Composer (first-party)"
+version = "1.0.0"
+description = "First-party composer manifest (W-82, CTX-0068) for mock-host conformance: terminal.submit, process.editor, and overlay capture over the same public API as any third-party extension."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+terminal.input.submit = true
+process.editor = true
+ui.overlay.focus = true
+
+[lazy]
+events = [
+  "overlay.released",
+]

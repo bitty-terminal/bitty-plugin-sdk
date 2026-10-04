@@ -39,6 +39,10 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "terminal.input.self",
   "terminal.input.all",
   "terminal.manage",
+  // W-82 (CTX-0068, accepted composer architecture): bounded buffer
+  // submission to the focused panel's PTY through the paste path. Additive v2
+  // head in the closed terminal family; no wildcard, no family grant.
+  "terminal.input.submit",
   "ui.rich",
   "ui.overlay",
   // W-01 (CTX-0065, accepted overlay-input-capture contract): the single
@@ -52,6 +56,11 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "fs.read",
   "fs.write",
   "process.spawn",
+  // W-82 (CTX-0068, accepted composer architecture): launch the allowlisted
+  // external editor (bare nvim/vim/vi only, argv-first, no shell) and manage
+  // its owned PID tree. Additive v2 head; distinct from unconstrained
+  // process.spawn, which stays v1-OUT.
+  "process.editor",
   "network.connect",
   "runtime.inspect",
   "runtime.configure",
@@ -121,6 +130,11 @@ export const HIGH_RISK_HEADS: ReadonlySet<string> = new Set([
   "terminal.input.all",
   "terminal.raw-read",
   "terminal.manage",
+  // W-82 (CTX-0068): submit writes caller bytes into the user's PTY and the
+  // editor executes a program with temp-file access, so consent presents both
+  // distinctly even though both are allowlisted/gated by Core.
+  "terminal.input.submit",
+  "process.editor",
   "ui.protocol-register",
   "clipboard.read",
   "fs.write",

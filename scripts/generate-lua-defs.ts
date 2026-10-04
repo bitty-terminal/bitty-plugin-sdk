@@ -182,16 +182,20 @@ function namespacePrefix(typeName: string): string | undefined {
 }
 
 /**
- * Dot path for a namespace type, supporting the single nested `ui.overlay`
- * sub-namespace (W-01, CTX-0065): `BittyUiNamespace` maps to `ui` while
- * `BittyUiOverlayNamespace` maps to `ui.overlay`. Top-level namespaces map
- * as before; only `ui.overlay` may contain a dot.
+ * Dot path for a namespace type, supporting the nested `ui.overlay`
+ * sub-namespace (W-01, CTX-0065) and the nested `process.editor`
+ * sub-namespace (W-82, CTX-0068): `BittyUiNamespace` maps to `ui` while
+ * `BittyUiOverlayNamespace` maps to `ui.overlay`, and `BittyProcessNamespace`
+ * maps to `process` while `BittyProcessEditorNamespace` maps to
+ * `process.editor`. Top-level namespaces map as before; only `ui.overlay`
+ * and `process.editor` may contain a dot.
  */
 function namespaceDotPath(typeName: string): string | undefined {
   const match = /^Bitty([A-Z][A-Za-z0-9]*)Namespace$/.exec(typeName);
   if (match === null) return undefined;
   const stem = match[1] ?? "";
   if (stem === "UiOverlay") return "ui.overlay";
+  if (stem === "ProcessEditor") return "process.editor";
   return stem.charAt(0).toLowerCase() + stem.slice(1);
 }
 
@@ -332,16 +336,17 @@ export function validateSurface(surface: Surface): string[] {
       name = segments[1];
     } else if (
       segments.length === 3 &&
-      segments[0] === "ui" &&
-      segments[1] === "overlay"
+      ((segments[0] === "ui" && segments[1] === "overlay") ||
+        (segments[0] === "process" && segments[1] === "editor"))
     ) {
-      // W-01 nested sub-namespace (CTX-0065): `ui.overlay.acquire` and kin.
-      // Only this prefix may carry three segments; no other nesting exists.
-      prefix = "ui.overlay";
+      // Nested sub-namespaces: `ui.overlay.acquire` and kin (W-01, CTX-0065),
+      // `process.editor.start` (W-82, CTX-0068). Only these prefixes may carry
+      // three segments; no other nesting exists.
+      prefix = `${segments[0]}.${segments[1]}`;
       name = segments[2];
     } else {
       problems.push(
-        `function path must be <namespace>.<name> (or ui.overlay.<name>): ${fn.path}`,
+        `function path must be <namespace>.<name> (or ui.overlay.<name> or process.editor.<name>): ${fn.path}`,
       );
       continue;
     }
@@ -373,7 +378,9 @@ export function validateSurface(surface: Surface): string[] {
       const expected =
         prefix === "ui.overlay"
           ? "BittyUiOverlayNamespace"
-          : `Bitty${prefix.charAt(0).toUpperCase() ?? ""}${prefix.slice(1)}Namespace`;
+          : prefix === "process.editor"
+            ? "BittyProcessEditorNamespace"
+            : `Bitty${prefix.charAt(0).toUpperCase() ?? ""}${prefix.slice(1)}Namespace`;
       problems.push(`${fn.path}: no ${expected} type`);
     }
     if (fn.level !== "L1" && fn.level !== "L2") {

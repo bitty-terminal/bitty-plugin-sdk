@@ -1,0 +1,102 @@
+{
+  "name": "External-editor round trip with typed outcomes",
+  "description": "W-82 process.editor.start requires process.editor, validates the opts shape, resolves nvim from the host environment, defaults to the safe cancelled seed, and returns the exact seeded outcome tables (edited, non-zero with and without code, spawn-failed, timeout, unavailable) with no temp path anywhere.",
+  "manifest": "manifests/composer.toml",
+  "tags": ["process", "capability", "deny-by-default", "round-trip"],
+  "grants": [],
+  "environment": { "VISUAL": "nvim" },
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "process.editor" },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": { "opts": { "draft": 7 } },
+      "expect": {
+        "denial": { "code": "E_DEF_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": { "opts": { "timeout_ms": 0 } },
+      "expect": {
+        "denial": { "code": "E_DEF_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": { "result": { "status": "cancelled" } }
+    },
+    {
+      "op": "set-editor-result",
+      "result": { "kind": "edited", "content": "edited text" }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": { "opts": { "draft": "hello" } },
+      "expect": { "result": { "status": "edited", "content": "edited text" } }
+    },
+    {
+      "op": "set-editor-result",
+      "result": { "kind": "non-zero", "code": 1 }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": { "result": { "status": "non-zero", "code": 1 } }
+    },
+    {
+      "op": "set-editor-result",
+      "result": { "kind": "non-zero", "code": null }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": { "result": { "status": "non-zero" } }
+    },
+    {
+      "op": "set-editor-result",
+      "result": { "kind": "spawn-failed", "detail": "boom" }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": { "result": { "status": "spawn-failed", "detail": "boom" } }
+    },
+    { "op": "set-editor-result", "result": { "kind": "timeout" } },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": { "opts": { "timeout_ms": 999999 } },
+      "expect": { "result": { "status": "timeout" } }
+    },
+    {
+      "op": "set-editor-result",
+      "result": { "kind": "unavailable", "reason": "read-unavailable" }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": {
+        "result": { "status": "unavailable", "reason": "read-unavailable" }
+      }
+    },
+    { "op": "end-activation" }
+  ]
+}
