@@ -4570,4 +4570,43 @@ clipboard.write = true
     ).toMatchObject({ code: HOST_CODES.CAPABILITY_DENIED });
     host.endActivation();
   });
+
+  test("truncation walks back split multi-byte characters without U+FFFD", () => {
+    const host = historyHost();
+    host.grant("history.transcript.read");
+    host.setHistoryCapture("transcript", true);
+    // 255 ASCII bytes plus U+00E9 (2 bytes in UTF-8): 257 bytes against the
+    // 256-byte row cap, with the cut splitting the multi-byte character.
+    const split = `${"a".repeat(255)}é`;
+    expect(Buffer.byteLength(split, "utf8")).toBe(257);
+    host.setHistoryRows("transcript", [
+      { panel: "pane-a", workspace: "ws-1", seq: 0, body: split },
+    ]);
+    const page = host.bitty.history.transcript.query(
+      queryOpts({ panel: "pane-a", workspace: "ws-1" }),
+    );
+    expect(page.records).toHaveLength(1);
+    expect(page.records[0]?.truncated).toBe(true);
+    expect(page.records[0]?.body).toBe("a".repeat(255));
+    expect(page.records[0]?.body.includes("�")).toBe(false);
+    expect(
+      Buffer.byteLength(page.records[0]?.body ?? "", "utf8"),
+    ).toBeLessThanOrEqual(MOCK_LIMITS.HISTORY_MAX_BYTES_PER_ROW);
+    host.endActivation();
+
+    const copier = historyHost();
+    copier.grant("clipboard.write");
+    // 8191 ASCII bytes plus U+00E9: 8193 bytes against the 8192-byte copy
+    // cap, with the cut splitting the multi-byte tail.
+    const long = `${"b".repeat(8191)}é`;
+    expect(Buffer.byteLength(long, "utf8")).toBe(8193);
+    const outcome = copier.bitty.selection.copy({ text: long });
+    expect(outcome.truncated).toBe(true);
+    expect(outcome.text).toBe("b".repeat(8191));
+    expect(outcome.text.includes("�")).toBe(false);
+    expect(Buffer.byteLength(outcome.text, "utf8")).toBeLessThanOrEqual(
+      MOCK_LIMITS.SELECTION_COPY_MAX_BYTES,
+    );
+    copier.endActivation();
+  });
 });

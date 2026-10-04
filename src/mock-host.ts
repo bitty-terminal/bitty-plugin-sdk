@@ -549,14 +549,21 @@ function boundedWorkspaceName(name: string): string {
 }
 
 /**
- * Truncate host detail to a byte ceiling (W-82, CTX-0068). Mirrors the Core
- * 256-byte truncation of editor spawn/wait detail (`truncate_err`,
- * composer.rs:1324 at bitty 1df0459e): over-long detail is cut
- * at the byte boundary and undecodable tails decode leniently.
+ * Truncate to a byte ceiling at a UTF-8 character boundary (W-82, CTX-0068;
+ * reused by W-139, CTX-0066). Mirrors the Core truncation semantics
+ * (`truncate_err`, composer.rs:1324 at bitty 1df0459e; W-143
+ * `truncate_to_clipboard_bytes`): when the cut splits a multi-byte
+ * character, walk back to its lead byte so the result never exceeds the cap
+ * and never contains a U+FFFD replacement character from the cut.
  */
 function truncateBytes(value: string, maxBytes: number): string {
-  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
-  return Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
+  const buf = Buffer.from(value, "utf8");
+  if (buf.length <= maxBytes) return value;
+  let end = maxBytes;
+  // buf[end] is the first excluded byte; a continuation byte means the
+  // character straddles the cut, so move back to its lead byte.
+  while (end > 0 && ((buf[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return buf.subarray(0, end).toString("utf8");
 }
 
 /** Parse a trace topic filter (bitty `TraceFilter::parse`). */
@@ -3801,8 +3808,9 @@ export class MockHost {
       const raw = row.body ?? "";
       const cap = MOCK_LIMITS.HISTORY_MAX_BYTES_PER_ROW;
       // Truncation mirrors Core walking back to a UTF-8 char boundary (the
-      // mock `truncateBytes` cuts bytes and re-decodes, never panicking on
-      // multi-byte text); over-long bodies are marked, never silently kept.
+      // mock `truncateBytes` walks back continuation bytes, so the result
+      // never exceeds the cap and never gains a U+FFFD from the cut);
+      // over-long bodies are marked, never silently kept.
       const body = utf8Bytes(raw) > cap ? truncateBytes(raw, cap) : raw;
       const truncated = utf8Bytes(raw) > cap;
       pageBytes += utf8Bytes(body);

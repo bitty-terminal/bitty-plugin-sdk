@@ -1477,13 +1477,13 @@
           "name": "panel",
           "type": "string",
           "optional": true,
-          "doc": "Panel extent; required with workspace for transcript/commands, forbidden for kv."
+          "doc": "Panel extent; transcript/commands need panel and/or workspace, forbidden for kv."
         },
         {
           "name": "workspace",
           "type": "string",
           "optional": true,
-          "doc": "Workspace extent; required with panel for transcript/commands, forbidden for kv."
+          "doc": "Workspace extent; transcript/commands need panel and/or workspace, forbidden for kv."
         }
       ]
     },

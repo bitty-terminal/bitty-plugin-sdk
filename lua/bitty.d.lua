@@ -839,8 +839,8 @@ function BittyHistoryKvNamespace.query(opts) end
 --- Explicit query scope (source plus panel/workspace extent); no wildcard or all default,
 --- intersect-or-deny.
 ---@class BittyHistoryScope
----@field panel? string Panel extent; required with workspace for transcript/commands, forbidden for kv.
----@field workspace? string Workspace extent; required with panel for transcript/commands, forbidden for kv.
+---@field panel? string Panel extent; transcript/commands need panel and/or workspace, forbidden for kv.
+---@field workspace? string Workspace extent; transcript/commands need panel and/or workspace, forbidden for kv.
 
 --- Bounded snapshot query over already-persisted state; over-bound requests deny, Core never clamps
 --- silently.
