@@ -1,0 +1,16 @@
+[plugin]
+id = "example.history-clone"
+name = "Conformance History Clone (third-party)"
+version = "1.0.0"
+description = "Third-party history-clone manifest (W-139, CTX-0066) for parity-denial conformance: identical grants and steps to the first-party history manifest, proving the same operation is denied identically for both principals."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+history.transcript.read = true
+history.commands.read = true
+history.kv.read = true
+clipboard.write = true

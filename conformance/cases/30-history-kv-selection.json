@@ -1,0 +1,101 @@
+{
+  "name": "Own-namespace KV plus selection export gate",
+  "description": "W-139 KV reads require history.kv.read, carry no panel/workspace extent (caller namespace only), return only own-namespace rows with cross-plugin rows never collected, and never imply clipboard authority: selection.copy needs the separate clipboard.write grant, is bounded to 8192 bytes with a truncated flag, and history delivery stays VM-only.",
+  "manifest": "manifests/history.toml",
+  "tags": ["history", "selection", "capability", "deny-by-default"],
+  "grants": ["history.kv.read"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "set-history-rows",
+      "source": "kv",
+      "rows": [
+        {
+          "seq": 0,
+          "body": "own value",
+          "recorded_at": 40,
+          "owner": "bitty.history-keeper"
+        },
+        {
+          "seq": 1,
+          "body": "foreign bytes never cross",
+          "recorded_at": 41,
+          "owner": "example.history-clone"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "surface": "history.kv.query",
+      "args": {
+        "opts": { "row_count": 4, "max_bytes": 4096, "op": "list" }
+      },
+      "expect": {
+        "result": {
+          "records": [
+            {
+              "seq": 0,
+              "body": "own value",
+              "truncated": false,
+              "redacted": true,
+              "attribution": {
+                "panel": "",
+                "workspace": "",
+                "recorded_at": 40
+              },
+              "label": "untrusted-observation"
+            }
+          ],
+          "total_in_scope": 1,
+          "freshness": "point-in-time-no-guarantee"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.kv.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_DEF_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_MISSING_GRANT", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "selection.copy",
+      "args": { "opts": { "text": "own value" } },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "clipboard.write" },
+    {
+      "op": "call",
+      "surface": "selection.copy",
+      "args": { "opts": { "text": "own value" } },
+      "expect": { "result": { "text": "own value", "truncated": false } }
+    },
+    { "op": "end-activation" }
+  ]
+}

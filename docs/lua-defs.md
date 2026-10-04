@@ -27,7 +27,12 @@ with the additive v2 capabilities `terminal.input.submit` and
 `process.editor` (see
 [Accepted submit/editor surface](#accepted-submiteditor-surface-w-82-ctx-0068));
 `api_version` stays `1.0.0` (additive only) and the host pin stays `fb44a867`
-(#1641).
+(#1641). SDK task `CTX-0066` (plan W-139) wires the accepted RFC-0004
+history-read family `bitty.history.*.query` plus `bitty.selection.copy` with
+the additive v2 capabilities `history.transcript.read`,
+`history.commands.read`, and `history.kv.read` (see
+[Accepted history/search/selection surface](#accepted-historysearchselection-surface-w-139-ctx-0066));
+`api_version` stays `1.0.0` (additive only, precedent #141).
 
 ## Contract sources
 
@@ -66,6 +71,15 @@ with the additive v2 capabilities `terminal.input.submit` and
   `2f49934d` as mechanism evidence, not as the spelling authority (Core has
   no Lua wiring for submit/editor yet; see
   [Accepted submit/editor surface](#accepted-submiteditor-surface-w-82-ctx-0068)).
+  The W-139 history/search/selection spellings, grant shapes, denial
+  taxonomy, and budget shapes are derived from the accepted RFC-0004
+  history-read surface, the accepted W-135 search-selection contract, and
+  the accepted W-131/W-137 storage boundary/policy plus the open Core host
+  PR bitty#1673 (`c01a9772`, CTX-0955) and merged Core W-143 `0d50b436`
+  (CTX-0936, #1640) as mechanism evidence, not as the spelling authority
+  (Core has no Lua wiring for history yet; Lua spellings are minted by this
+  SDK task under the NEW root, see
+  [Accepted history/search/selection surface](#accepted-historysearchselection-surface-w-139-ctx-0066)).
 - Pinned revisions live in `sources` in `surface/bitty-plugin-api-v1.json`;
   the generated header names each contract document by repository and path
   only, so the surface table is the sole revision record.
@@ -146,27 +160,32 @@ Semantics the annotations carry:
 ## Coverage
 
 The surface table covers L1 Control and the minimal L2 UI surface plus the
-accepted W-01 overlay surface and the accepted W-82 composer operations: 15
-namespaces, 36 functions, and the closed 23-name event set.
+accepted W-01 overlay surface, the accepted W-82 composer operations, and the
+accepted W-139 history-read family: 17 namespaces, 40 functions, and the
+closed 23-name event set.
 
-| Namespace        | Functions                                                       | Level | Capability                                                    |
-| ---------------- | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |
-| `commands`       | `register`                                                      | L1    | none                                                          |
-| `events`         | `subscribe`                                                     | L1    | none                                                          |
-| `keymaps`        | `suggest`                                                       | L1    | none                                                          |
-| `settings`       | `get`, `set`                                                    | L1    | none                                                          |
-| `store`          | `get`, `set`                                                    | L1    | none (quota-bounded)                                          |
-| `notify`         | `show`                                                          | L1    | `platform.notify`                                             |
-| `env`            | `get`, `has`                                                    | L1    | `env.read:<KEY>` (namespace optional)                         |
-| `services`       | `get`, `provide`                                                | L1    | none                                                          |
-| `ui`             | `mount`, `update`                                               | L2    | `ui.rich`; `ui.overlay` for the overlay slot                  |
-| `ui.overlay`     | `acquire`, `update`, `poll`, `release`                          | L2    | `ui.overlay.focus` (single coupled grant, W-01)               |
-| `terminal`       | `snapshot`, `submit`                                            | L2    | `terminal.semantic-read`; `terminal.input.submit` (W-82)      |
-| `tasks`          | `spawn`, `cancel`                                               | L1    | none (64-task cap)                                            |
-| `timers`         | `create`, `cancel`                                              | L1    | none (32-timer cap, one-shot)                                 |
-| `debug`          | `inspect`, `trace`, `trace_get`, `control`                      | L1    | `debug.inspect`; `debug.trace`; `debug.control` (deferred)    |
-| `workspace`      | `list`, `focus`, `new`, `next`, `close`, `rename`, `move_panel` | L1    | `workspace.read` for `list`; `workspace.control` for the rest |
-| `process.editor` | `start`                                                         | L2    | `process.editor` (single grant, W-82)                         |
+| Namespace            | Functions                                                       | Level | Capability                                                    |
+| -------------------- | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |
+| `commands`           | `register`                                                      | L1    | none                                                          |
+| `events`             | `subscribe`                                                     | L1    | none                                                          |
+| `keymaps`            | `suggest`                                                       | L1    | none                                                          |
+| `settings`           | `get`, `set`                                                    | L1    | none                                                          |
+| `store`              | `get`, `set`                                                    | L1    | none (quota-bounded)                                          |
+| `notify`             | `show`                                                          | L1    | `platform.notify`                                             |
+| `env`                | `get`, `has`                                                    | L1    | `env.read:<KEY>` (namespace optional)                         |
+| `services`           | `get`, `provide`                                                | L1    | none                                                          |
+| `ui`                 | `mount`, `update`                                               | L2    | `ui.rich`; `ui.overlay` for the overlay slot                  |
+| `ui.overlay`         | `acquire`, `update`, `poll`, `release`                          | L2    | `ui.overlay.focus` (single coupled grant, W-01)               |
+| `terminal`           | `snapshot`, `submit`                                            | L2    | `terminal.semantic-read`; `terminal.input.submit` (W-82)      |
+| `tasks`              | `spawn`, `cancel`                                               | L1    | none (64-task cap)                                            |
+| `timers`             | `create`, `cancel`                                              | L1    | none (32-timer cap, one-shot)                                 |
+| `debug`              | `inspect`, `trace`, `trace_get`, `control`                      | L1    | `debug.inspect`; `debug.trace`; `debug.control` (deferred)    |
+| `workspace`          | `list`, `focus`, `new`, `next`, `close`, `rename`, `move_panel` | L1    | `workspace.read` for `list`; `workspace.control` for the rest |
+| `process.editor`     | `start`                                                         | L2    | `process.editor` (single grant, W-82)                         |
+| `history.transcript` | `query`                                                         | L2    | `history.transcript.read` (per-source scoped grant, W-139)    |
+| `history.commands`   | `query`                                                         | L2    | `history.commands.read` (per-source scoped grant, W-139)      |
+| `history.kv`         | `query`                                                         | L2    | `history.kv.read` (own namespace only, W-139)                 |
+| `selection`          | `copy`                                                          | L2    | `clipboard.write` (existing grant, no new capability, W-143)  |
 
 The accepted RFC classifies the `services.get` consumer side as cross-cutting
 within v1; the tasks and timers functions were resolved as v1 additions by
@@ -219,60 +238,61 @@ providers, no `bitty.fs`/`network`/`clipboard`/`ipc`/`renderer`/
 allowlisted `bitty.process.editor.start` is wired; see
 [Accepted submit/editor surface](#accepted-submiteditor-surface-w-82-ctx-0068)),
 no Level 3 presentation namespaces, no singular
-`bitty.task`/`bitty.timer` spellings, no `scope = "raw"` snapshot, and no
-provisional `bitty.ui.targets`/`bitty.ui.labels` sub-tables (the
-`bitty.ui.overlay` focusable surface is now accepted via W-01; see
+`bitty.task`/`bitty.timer` spellings, no `scope = "raw"` snapshot, no
+`bitty.terminal.history` (NEW history root, never `terminal.*`), no live
+`bitty.search` binding or `bitty.selection.get` handles (Core-owned deferred
+pending W-01 + W-138; only `selection.copy` is wired), no
+`bitty.history.session` snapshots (Core-only), no `bitty.history.export`
+bundled path (separate grants only), and no provisional
+`bitty.ui.targets`/`bitty.ui.labels` sub-tables (the `bitty.ui.overlay`
+focusable surface is now accepted via W-01; see
 [Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065) and
 [Pending surface](#pending-surface-targeting-w-29-ctx-0067)).
 `tests/lua-defs.test.ts` checks the full list textually on every `just check`;
-the LuaLS negative fixture samples seven excluded spellings plus the excluded
+the LuaLS negative fixture samples eleven excluded spellings plus the excluded
 `raw` scope literal and wrong-shape `services.get` calls to verify rejection at
 author time.
 
-## Blocked surface: history, search, and selection (W-139, CTX-0066)
+## Accepted history/search/selection surface (W-139, CTX-0066)
 
-SDK task `CTX-0066` (issue #138, plan key W-139) owns the plugin-facing
-history/storage/search/selection public APIs delegated by three **draft**
-contracts:
+SDK task `CTX-0066` (plan W-139) mints the exact capability identifiers and
+Lua spellings the accepted RFC-0004 parked to W-139: the NEW read-only
+`history` family beside `terminal.*` (never an extension of it) with
+`bitty.history.transcript.query`, `bitty.history.commands.query`, and
+`bitty.history.kv.query` under the additive v2 capabilities
+`history.transcript.read`, `history.commands.read`, and `history.kv.read`,
+plus `bitty.selection.copy` under the existing `clipboard.write` (no new
+capability per Core W-143). `api_version` stays `1.0.0` (additive only,
+precedent #141) and the host pin stays `fb44a867` (#1641).
 
-- `bitty-terminal-docs` `specifications/search-selection-contract.md` (W-135,
-  `status: draft`).
-- `bitty-plugins-docs` `extensibility/history-and-storage-policy.md` (W-137,
-  `status: draft`).
-- `bitty-plugins-docs` `specifications/search-copy-mode-policy.md` (W-138,
-  `status: draft`).
+Derivation (strict, derived never invented): the family shape, source table,
+grant/scope/migration rules, snapshot bounds, secrecy treatment, and
+8-category denial taxonomy come from accepted RFC-0004 plus the threat-model
+matrix cells and P0-AC-035/030/024/013 scope notes; storage/KV ceilings reuse
+accepted W-131/W-137 (published `bitty.store` ceilings unchanged);
+search/selection mechanism derives from the accepted W-135 contract plus
+merged Core W-143 `0d50b436` (CTX-0936, #1640) with live per-view binding,
+viewport navigation, and selection lifecycles staying Core-owned deferred
+pending W-01 + W-138 (draft policy, requirements only). Open Core host PR
+bitty#1673 (CTX-0955, `c01a9772`) aligns on the `history.*.read` heads and
+the gate shape (RFC wins on conflict; no delta found).
 
-These documents are recorded in the surface table `sources` with `status:
-draft` for traceability, but **none authorizes implementation** and each
-delegates the exact SDK spellings to W-139. They are therefore a source record,
-not surface authority. The task is **blocked** and adds no accepted
-function path:
-
-- **No accepted capability authorizes the read.** The Plugin Platform RFC fixes
-  the `terminal` capability family as a closed set (`terminal.semantic-read`,
-  `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`,
-  `terminal.manage`), and the accepted Plugin API v1 Lua Surface RFC states v1
-  has no scrollback text read path. The accepted `terminal.semantic-read`
-  gates the bounded visible-viewport snapshot only. W-137/W-138 park the exact
-  identifier to W-139 but require that a capability absent from the closed set
-  be added only by a **successor RFC with its own security review**; W-139 does
-  not hold that authority, so it does not widen the closed set and does not add
-  `terminal.scrollback-read` or any history-read head.
-- **No host entry point exists.** W-135's implementation-status section states
-  there is no snapshot surface, no generation-stamped result handle, and no
-  public navigation or clipboard host operation; the search/copy-mode package
-  (`CTX-0003`) and the Core integration (`W-143`/`W-144`) are separate tasks.
-
-The `bitty.history` surface path is recorded as an explicit exclusion in
-`surface/bitty-plugin-api-v1.json` with the same blocker. Re-evaluate when an
-accepted capability and a bitty host entry point exist (a successor RFC plus
-`W-146`-style host wiring). The `debug`/`workspace` namespaces plus the
-accepted W-01 `ui.overlay` surface are the wired host-candidate additions;
-no other candidate is wired by this task.
-
-`selection` and the `terminal` closed-set membership are not touched: no
-`terminal.*` head is added or renamed, and no scrollback or history text read
-is added (DEC-0004).
+Family invariants obeyed: NEW root (never `bitty.terminal.*`),
+per-plugin per-source scoped grants with explicit scope params plus no
+wildcard plus intersect-or-deny, 8-category typed denials oracle-tight,
+VM-only delivery plus separate export grants plus argv-first, Core-attached
+untrusted label, TerminalOutput-only trust (L0-L3 admit, L4 deny),
+rate/aggregate budget SHAPE normative with mock placeholders (never wire
+truth). Projections (documented here and in code, like CTX-0068): Lua
+`query` opts shape with `op` list/tail/search collapses Core `QueryOp`
+(mint, not Core spelling); history budget numbers are harness placeholders
+mirroring bitty#1673 test caps; grant-scope narrowing is Core-owned (W-146,
+mock returns only in-scope rows); L3 per-request and L4 per-invocation
+grants are parked (mock denies L3/L4 fail-closed); redaction format is
+parked to W-137 (mock seeds already-redacted bodies); live search binding,
+navigation, and selection lifecycles are deferred with explicit exclusions
+(`bitty.search`, `bitty.selection.get`, `bitty.history.session`,
+`bitty.history.export`, `bitty.terminal.history`).
 
 ## Accepted overlay surface (W-01, CTX-0065)
 

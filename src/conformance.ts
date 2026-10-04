@@ -49,6 +49,13 @@ export interface ConformanceCase {
    * the mock-owned harness default.
    */
   readonly submitBudgetBytes?: number;
+  /**
+   * Trust level for W-139 history cases (CTX-0066): L1/L2 with standing
+   * grants is the normal plugin path; L3/L4/L0/unknown deny with
+   * `E_HISTORY_TRUST_DENIED` (L3 per-request and L4 per-invocation grants
+   * parked to Core W-146). Omitted means L2.
+   */
+  readonly trustLevel?: string;
   readonly steps: readonly ConformanceStep[];
 }
 
@@ -108,6 +115,8 @@ const SUPPORTED_STEP_OPS: ReadonlySet<string> = new Set([
   "set-submit-delivery",
   "set-submit-lease",
   "set-editor-result",
+  "set-history-capture",
+  "set-history-rows",
 ]);
 
 class CaseFailure extends Error {}
@@ -226,6 +235,10 @@ function parseCase(source: string, file: string): ConformanceCase {
       "case.submitBudgetBytes must be a non-negative safe integer",
     );
   }
+  const trustLevel = parsed.trustLevel;
+  if (trustLevel !== undefined && typeof trustLevel !== "string") {
+    throw new CaseFailure("case.trustLevel must be a string");
+  }
   return {
     name,
     description,
@@ -261,6 +274,7 @@ function parseCase(source: string, file: string): ConformanceCase {
     ...(submitBudgetBytes === undefined
       ? {}
       : { submitBudgetBytes: submitBudgetBytes as number }),
+    ...(trustLevel === undefined ? {} : { trustLevel: trustLevel as string }),
     steps: steps as ConformanceStep[],
   };
 }
@@ -384,6 +398,14 @@ function callSurface(
       // The opts table passes through uncoerced for the same reason; an
       // omitted opts resolves to the start defaults.
       return host.bitty.process.editor.start(table.opts as never);
+    case "history.transcript.query":
+      return host.bitty.history.transcript.query(table.opts as never);
+    case "history.commands.query":
+      return host.bitty.history.commands.query(table.opts as never);
+    case "history.kv.query":
+      return host.bitty.history.kv.query(table.opts as never);
+    case "selection.copy":
+      return host.bitty.selection.copy(table.opts as never);
     case "services.get":
       return (
         host.bitty.services.get(String(table.iface), table.opts as never) ??
@@ -555,6 +577,9 @@ export async function runConformanceCaseFile(
       ...(conformanceCase.submitBudgetBytes === undefined
         ? {}
         : { submitBudgetBytes: conformanceCase.submitBudgetBytes }),
+      ...(conformanceCase.trustLevel === undefined
+        ? {}
+        : { trustLevel: conformanceCase.trustLevel }),
     });
     activeHost = host;
     for (const capability of conformanceCase.grants ?? []) {
@@ -1049,6 +1074,52 @@ export async function runConformanceCaseFile(
           assertions.push({
             op: "set-editor-result",
             detail: `seeded ${String((table.result as Record<string, unknown>).kind)}`,
+          });
+          break;
+        }
+        case "set-history-capture": {
+          if (
+            typeof table.source !== "string" ||
+            typeof table.enabled !== "boolean"
+          ) {
+            throw new CaseFailure(
+              "set-history-capture requires string source and boolean enabled",
+            );
+          }
+          try {
+            host.setHistoryCapture(table.source, table.enabled);
+          } catch (cause) {
+            if (!(cause instanceof HostError)) throw cause;
+            throw new CaseFailure(
+              `set-history-capture rejected: ${cause.message}`,
+            );
+          }
+          assertions.push({
+            op: "set-history-capture",
+            detail: `${table.source} capture=${String(table.enabled)}`,
+          });
+          break;
+        }
+        case "set-history-rows": {
+          if (typeof table.source !== "string" || !Array.isArray(table.rows)) {
+            throw new CaseFailure(
+              "set-history-rows requires string source and array rows",
+            );
+          }
+          try {
+            host.setHistoryRows(
+              table.source,
+              table.rows as Parameters<typeof host.setHistoryRows>[1],
+            );
+          } catch (cause) {
+            if (!(cause instanceof HostError)) throw cause;
+            throw new CaseFailure(
+              `set-history-rows rejected: ${cause.message}`,
+            );
+          }
+          assertions.push({
+            op: "set-history-rows",
+            detail: `${table.source} rows=${(table.rows as unknown[]).length}`,
           });
           break;
         }

@@ -30,6 +30,12 @@ export const CAPABILITY_FAMILIES: readonly string[] = [
   "ai",
   "env",
   "workspace",
+  // W-139 (CTX-0066, accepted RFC-0004 history-read surface): the NEW
+  // read-only history/search/selection family beside `terminal.*`, never an
+  // extension of it. Derived from the accepted RFC-0004 family shape plus the
+  // open Core host PR bitty#1673 heads (alignment, RFC wins on conflict);
+  // exact Lua spellings are minted by this SDK task under the new root.
+  "history",
 ];
 
 /** Every closed capability head; parameterized heads carry a `:PARAMETER`. */
@@ -92,14 +98,18 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   // `workspace.control` mutates. Neither implies the other.
   "workspace.read",
   "workspace.control",
-  // NOTE (CTX-0066, W-139): the plugin-facing history/search/selection
-  // surface delegated to W-139 by the W-135/W-137/W-138 draft contracts has no
-  // accepted closed-set capability. The `terminal` family is a CLOSED SET
-  // (plugin-platform RFC: `terminal.semantic-read`, `terminal.raw-read`,
-  // `terminal.input.self`, `terminal.input.all`, `terminal.manage`), and v1
-  // has no scrollback text read path. Adding a scrollback/history read
-  // capability requires a successor RFC with its own security review, so it is
-  // deliberately NOT added here.
+  // W-139 (CTX-0066, accepted RFC-0004 history-read surface): the NEW
+  // read-only family beside `terminal.*`. Per-plugin, per-source scoped
+  // grants with explicit scope params carried by the host call (never as a
+  // grant parameter, same precedent as `terminal.input.submit`); no wildcard,
+  // no bundled sources, no migration to or from `terminal.*`. Session
+  // snapshots are never a queryable source. Exact heads mirror the open Core
+  // host PR bitty#1673 (CTX-0955) `history.*.read` set (alignment, RFC wins
+  // on conflict); Lua spellings live under the NEW `bitty.history` root,
+  // never `bitty.terminal.*`.
+  "history.transcript.read",
+  "history.commands.read",
+  "history.kv.read",
 ];
 
 /** Heads that must carry a `:PARAMETER` constraint. */
@@ -135,6 +145,15 @@ export const HIGH_RISK_HEADS: ReadonlySet<string> = new Set([
   // distinctly even though both are allowlisted/gated by Core.
   "terminal.input.submit",
   "process.editor",
+  // W-139 (CTX-0066, SDK projection): history reads return persisted
+  // terminal-derived content (redacted, truncated, labeled untrusted) across
+  // panels/workspaces under per-source scoped grants. Consent presents each
+  // source distinctly so a transcript grant is never confused with a commands
+  // or KV grant; the RFC fixes the grant shape, this high-risk marking is the
+  // SDK consent projection, never wire truth.
+  "history.transcript.read",
+  "history.commands.read",
+  "history.kv.read",
   "ui.protocol-register",
   "clipboard.read",
   "fs.write",

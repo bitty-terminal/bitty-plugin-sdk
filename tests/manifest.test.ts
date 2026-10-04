@@ -667,6 +667,39 @@ ${head} = true
     }
   });
 
+  test("W-139 history capabilities are valid, closed, and high-risk", () => {
+    for (const head of [
+      "history.transcript.read",
+      "history.commands.read",
+      "history.kv.read",
+    ]) {
+      const result = lint(`
+[capabilities]
+${head} = true
+`);
+      expect(result.valid).toBe(true);
+      expect(codes(result)).toContain("capabilities.high-risk");
+    }
+    // NEW root, never bitty.terminal.*: no terminal spelling reads this
+    // family's sources, no wildcard, no family grant, no parameter (scope
+    // travels with the host call, same precedent as terminal.input.submit).
+    for (const head of [
+      "history.*",
+      "history.transcript.*",
+      "terminal.history.read",
+      "terminal.transcript.read",
+      "history.transcript.read:pane-a",
+      "history.commands.read:ws-1",
+      "history.kv.read:owner",
+    ]) {
+      const result = lint(`
+[capabilities]
+${head} = true
+`);
+      expect(result.valid).toBe(false);
+    }
+  });
+
   test("high-risk capability is valid but warned", () => {
     const result = lint(`
 [capabilities]

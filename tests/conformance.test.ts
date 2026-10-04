@@ -111,6 +111,9 @@ describe("conformance fixtures", () => {
       "workspace",
       "debug",
       "process",
+      "history",
+      "selection",
+      "parity",
     ]) {
       expect(tags.has(required)).toBe(true);
     }
@@ -197,6 +200,23 @@ describe("conformance fixtures", () => {
     ) as RawCase & { manifest?: string };
     expect(first.manifest).not.toBe(third.manifest);
     expect(first.steps).toEqual(third.steps);
+    // W-139 parity proof (CTX-0066): history first-party vs third-party legs
+    // run byte-identical steps under different manifests (official keeper vs
+    // clone), proving granted vs foreign-manifest identical denials.
+    const historyFirst = JSON.parse(
+      readFileSync(
+        join(CASES_DIR, "33-parity-denial-history-first-party.json"),
+        "utf8",
+      ),
+    ) as RawCase & { manifest?: string };
+    const historyThird = JSON.parse(
+      readFileSync(
+        join(CASES_DIR, "34-parity-denial-history-third-party.json"),
+        "utf8",
+      ),
+    ) as RawCase & { manifest?: string };
+    expect(historyFirst.manifest).not.toBe(historyThird.manifest);
+    expect(historyFirst.steps).toEqual(historyThird.steps);
   });
 
   test("oversized fixture manifests are rejected before being read", async () => {
@@ -423,6 +443,16 @@ describe("accepted surface agreement", () => {
     expect(MOCK_LIMITS.SUBMIT_FRAME_OVERHEAD_BYTES).toBe(13);
     expect(MOCK_LIMITS.EDITOR_TIMEOUT_DEFAULT_MS).toBe(120_000);
     expect(MOCK_LIMITS.EDITOR_TIMEOUT_MAX_MS).toBe(300_000);
+    // W-139 history placeholders (CTX-0066): SHAPE normative, numbers parked;
+    // mock values mirror Core bitty#1673 test caps, never wire truth.
+    expect(MOCK_LIMITS.HISTORY_MAX_ROWS_PER_QUERY).toBe(16);
+    expect(MOCK_LIMITS.HISTORY_MAX_BYTES_PER_QUERY).toBe(4096);
+    expect(MOCK_LIMITS.HISTORY_MAX_BYTES_PER_ROW).toBe(256);
+    expect(MOCK_LIMITS.HISTORY_MAX_QUERIES_PER_WINDOW).toBe(4);
+    expect(MOCK_LIMITS.HISTORY_MAX_BYTES_PER_WINDOW).toBe(8192);
+    expect(MOCK_LIMITS.HISTORY_MAX_NEEDLE_BYTES).toBe(256);
+    expect(MOCK_LIMITS.HISTORY_MAX_SCOPE_ID_BYTES).toBe(128);
+    expect(MOCK_LIMITS.SELECTION_COPY_MAX_BYTES).toBe(8192);
   });
 
   test("R-SDK-1 surface table agrees with the mock host model", () => {

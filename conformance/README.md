@@ -54,7 +54,16 @@ bitty PR #1641) have no conformance cases: they are provisional host
 candidates pending per W-120, deferred and not wired into v1, recorded as
 explicit surface exclusions with no mock method.
 
-The W-139 history/search/selection surface has no conformance cases: it is
-blocked (the delegating contracts are draft, and no accepted closed-set
-capability covers scrollback/history text read), so it declares no namespace to
-exercise. See `docs/lua-defs.md` "Blocked surface".
+Cases `28-history-transcript.json`, `29-history-commands.json`, and
+`30-history-kv-selection.json` cover the accepted W-139 history-read family
+(`bitty.history.*.query` with scope, capture, bounds, budgets, purge, and
+KV isolation plus `bitty.selection.copy` with the clipboard gate) with
+`manifests/history.toml`, including the `trustLevel` fixture field and the
+`set-history-capture` and `set-history-rows` harness steps. Cases
+`31-history-safe-mode.json` and `32-history-trust.json` prove safe-mode reads
+nothing and L4 standing access denies with trust-denied. Cases
+`33-parity-denial-history-first-party.json` and
+`34-parity-denial-history-third-party.json` run byte-identical steps under
+the first-party (`manifests/history.toml`, `bitty.history-keeper`) and
+third-party (`manifests/history-thirdparty.toml`, `example.history-clone`)
+principals, proving granted vs foreign-manifest identical denials (W-139).

@@ -183,12 +183,17 @@ function namespacePrefix(typeName: string): string | undefined {
 
 /**
  * Dot path for a namespace type, supporting the nested `ui.overlay`
- * sub-namespace (W-01, CTX-0065) and the nested `process.editor`
- * sub-namespace (W-82, CTX-0068): `BittyUiNamespace` maps to `ui` while
- * `BittyUiOverlayNamespace` maps to `ui.overlay`, and `BittyProcessNamespace`
+ * sub-namespace (W-01, CTX-0065), the nested `process.editor`
+ * sub-namespace (W-82, CTX-0068), and the nested `history.*`
+ * sub-namespaces (W-139, CTX-0066): `BittyUiNamespace` maps to `ui` while
+ * `BittyUiOverlayNamespace` maps to `ui.overlay`, `BittyProcessNamespace`
  * maps to `process` while `BittyProcessEditorNamespace` maps to
- * `process.editor`. Top-level namespaces map as before; only `ui.overlay`
- * and `process.editor` may contain a dot.
+ * `process.editor`, and `BittyHistoryNamespace` maps to `history` while
+ * `BittyHistoryTranscriptNamespace` maps to `history.transcript`,
+ * `BittyHistoryCommandsNamespace` to `history.commands`, and
+ * `BittyHistoryKvNamespace` to `history.kv`. Top-level namespaces map as
+ * before; only `ui.overlay`, `process.editor`, and `history.*` may contain
+ * a dot.
  */
 function namespaceDotPath(typeName: string): string | undefined {
   const match = /^Bitty([A-Z][A-Za-z0-9]*)Namespace$/.exec(typeName);
@@ -196,6 +201,9 @@ function namespaceDotPath(typeName: string): string | undefined {
   const stem = match[1] ?? "";
   if (stem === "UiOverlay") return "ui.overlay";
   if (stem === "ProcessEditor") return "process.editor";
+  if (stem === "HistoryTranscript") return "history.transcript";
+  if (stem === "HistoryCommands") return "history.commands";
+  if (stem === "HistoryKv") return "history.kv";
   return stem.charAt(0).toLowerCase() + stem.slice(1);
 }
 
@@ -337,16 +345,21 @@ export function validateSurface(surface: Surface): string[] {
     } else if (
       segments.length === 3 &&
       ((segments[0] === "ui" && segments[1] === "overlay") ||
-        (segments[0] === "process" && segments[1] === "editor"))
+        (segments[0] === "process" && segments[1] === "editor") ||
+        (segments[0] === "history" &&
+          (segments[1] === "transcript" ||
+            segments[1] === "commands" ||
+            segments[1] === "kv")))
     ) {
       // Nested sub-namespaces: `ui.overlay.acquire` and kin (W-01, CTX-0065),
-      // `process.editor.start` (W-82, CTX-0068). Only these prefixes may carry
-      // three segments; no other nesting exists.
+      // `process.editor.start` (W-82, CTX-0068), `history.transcript.query`
+      // and kin (W-139, CTX-0066). Only these prefixes may carry three
+      // segments; no other nesting exists.
       prefix = `${segments[0]}.${segments[1]}`;
       name = segments[2];
     } else {
       problems.push(
-        `function path must be <namespace>.<name> (or ui.overlay.<name> or process.editor.<name>): ${fn.path}`,
+        `function path must be <namespace>.<name> (or ui.overlay.<name>, process.editor.<name>, or history.<source>.<name>): ${fn.path}`,
       );
       continue;
     }
@@ -380,7 +393,13 @@ export function validateSurface(surface: Surface): string[] {
           ? "BittyUiOverlayNamespace"
           : prefix === "process.editor"
             ? "BittyProcessEditorNamespace"
-            : `Bitty${prefix.charAt(0).toUpperCase() ?? ""}${prefix.slice(1)}Namespace`;
+            : prefix === "history.transcript"
+              ? "BittyHistoryTranscriptNamespace"
+              : prefix === "history.commands"
+                ? "BittyHistoryCommandsNamespace"
+                : prefix === "history.kv"
+                  ? "BittyHistoryKvNamespace"
+                  : `Bitty${prefix.charAt(0).toUpperCase() ?? ""}${prefix.slice(1)}Namespace`;
       problems.push(`${fn.path}: no ${expected} type`);
     }
     if (fn.level !== "L1" && fn.level !== "L2") {

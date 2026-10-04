@@ -1,0 +1,28 @@
+{
+  "name": "Safe mode reads nothing",
+  "description": "W-139 safe-mode denial: bitty --safe reads no transcript, history, snapshot, or KV, identically for every level and grant, with no content bytes in the denial.",
+  "manifest": "manifests/history.toml",
+  "tags": ["history", "capability", "deny-by-default"],
+  "grants": ["history.transcript.read"],
+  "safeMode": true,
+  "steps": [
+    { "op": "begin-activation" },
+    { "op": "set-history-capture", "source": "transcript", "enabled": true },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_SAFE_MODE", "class": "runtime" }
+      }
+    },
+    { "op": "end-activation" }
+  ]
+}

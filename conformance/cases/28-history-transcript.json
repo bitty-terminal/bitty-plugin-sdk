@@ -1,0 +1,283 @@
+{
+  "name": "Transcript snapshot queries with typed denials",
+  "description": "W-139 transcript reads require history.transcript.read, carry explicit panel/workspace scope with no wildcard, need opt-in capture, enforce row/byte caps and per-plugin window budgets with attribution, surface purged content as typed unavailability, and return redacted truncated attributed records with the untrusted label or a typed denial; polling reconstitutes no stream.",
+  "manifest": "manifests/history.toml",
+  "tags": ["history", "capability", "deny-by-default", "budgets"],
+  "grants": [],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_MISSING_GRANT", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "history.transcript.read" },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_CAPTURE_DISABLED", "class": "runtime" }
+      }
+    },
+    { "op": "set-history-capture", "source": "transcript", "enabled": true },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": {},
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_SCOPE_MISMATCH", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "*", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_DEF_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "set-history-rows",
+      "source": "transcript",
+      "rows": [
+        {
+          "panel": "pane-a",
+          "workspace": "ws-1",
+          "seq": 0,
+          "body": "redacted output line one",
+          "command": "make check",
+          "recorded_at": 10,
+          "actor": "user"
+        },
+        {
+          "panel": "pane-a",
+          "workspace": "ws-1",
+          "seq": 1,
+          "body": "redacted output line two",
+          "command": "make check",
+          "recorded_at": 11,
+          "actor": "user"
+        },
+        {
+          "panel": "pane-b",
+          "workspace": "ws-1",
+          "seq": 2,
+          "body": "foreign panel bytes never cross",
+          "recorded_at": 12
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "result": {
+          "records": [
+            {
+              "seq": 0,
+              "body": "redacted output line one",
+              "truncated": false,
+              "redacted": true,
+              "attribution": {
+                "panel": "pane-a",
+                "workspace": "ws-1",
+                "command": "make check",
+                "recorded_at": 10,
+                "actor": "user"
+              },
+              "label": "untrusted-observation"
+            },
+            {
+              "seq": 1,
+              "body": "redacted output line two",
+              "truncated": false,
+              "redacted": true,
+              "attribution": {
+                "panel": "pane-a",
+                "workspace": "ws-1",
+                "command": "make check",
+                "recorded_at": 11,
+                "actor": "user"
+              },
+              "label": "untrusted-observation"
+            }
+          ],
+          "total_in_scope": 2,
+          "freshness": "point-in-time-no-guarantee"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 1,
+          "max_bytes": 4096,
+          "op": "tail"
+        }
+      },
+      "expect": {
+        "result": {
+          "records": [
+            {
+              "seq": 1,
+              "body": "redacted output line two",
+              "truncated": false,
+              "redacted": true,
+              "attribution": {
+                "panel": "pane-a",
+                "workspace": "ws-1",
+                "command": "make check",
+                "recorded_at": 11,
+                "actor": "user"
+              },
+              "label": "untrusted-observation"
+            }
+          ],
+          "total_in_scope": 2,
+          "freshness": "point-in-time-no-guarantee"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "search",
+          "needle": "line two"
+        }
+      },
+      "expect": {
+        "result": {
+          "records": [
+            {
+              "seq": 1,
+              "body": "redacted output line two",
+              "truncated": false,
+              "redacted": true,
+              "attribution": {
+                "panel": "pane-a",
+                "workspace": "ws-1",
+                "command": "make check",
+                "recorded_at": 11,
+                "actor": "user"
+              },
+              "label": "untrusted-observation"
+            }
+          ],
+          "total_in_scope": 3,
+          "freshness": "point-in-time-no-guarantee"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 0,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_OVER_BOUND", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 64,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_OVER_BOUND", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "search",
+          "needle": ""
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_OVER_BOUND", "class": "runtime" }
+      }
+    },
+    { "op": "revoke", "capability": "history.transcript.read" },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_REVOKED_GRANT", "class": "runtime" }
+      }
+    },
+    { "op": "end-activation" }
+  ]
+}

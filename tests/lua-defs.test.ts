@@ -55,6 +55,10 @@ const EXPECTED_FUNCTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ["L1", "workspace.rename", "boolean"],
   ["L1", "workspace.move_panel", "boolean"],
   ["L2", "process.editor.start", "BittyEditorOutcome"],
+  ["L2", "history.transcript.query", "BittyHistoryPage"],
+  ["L2", "history.commands.query", "BittyHistoryPage"],
+  ["L2", "history.kv.query", "BittyHistoryPage"],
+  ["L2", "selection.copy", "BittySelectionCopyOutcome"],
 ];
 
 const EXPECTED_EVENTS: ReadonlyArray<readonly [string, string, string]> = [
@@ -153,6 +157,14 @@ describe("surface table", () => {
     expect(gates.get("debug.control")).toEqual(["debug.control"]);
     expect(gates.get("workspace.list")).toEqual(["workspace.read"]);
     expect(gates.get("process.editor.start")).toEqual(["process.editor"]);
+    expect(gates.get("history.transcript.query")).toEqual([
+      "history.transcript.read",
+    ]);
+    expect(gates.get("history.commands.query")).toEqual([
+      "history.commands.read",
+    ]);
+    expect(gates.get("history.kv.query")).toEqual(["history.kv.read"]);
+    expect(gates.get("selection.copy")).toEqual(["clipboard.write"]);
     for (const path of [
       "workspace.focus",
       "workspace.new",
@@ -179,6 +191,10 @@ describe("surface table", () => {
           "terminal.snapshot",
           "terminal.submit",
           "process.editor.start",
+          "history.transcript.query",
+          "history.commands.query",
+          "history.kv.query",
+          "selection.copy",
         ].includes(fn.path) &&
         !fn.path.startsWith("debug.") &&
         !fn.path.startsWith("workspace.")
@@ -207,7 +223,9 @@ describe("surface table", () => {
     expect(namespaces.debug).toBe("wired");
     expect(namespaces.workspace).toBe("wired");
     expect(namespaces.process).toBe("wired");
-    expect(Object.keys(namespaces)).toHaveLength(15);
+    expect(namespaces.history).toBe("wired");
+    expect(namespaces.selection).toBe("wired");
+    expect(Object.keys(namespaces)).toHaveLength(17);
     expect(surface.hostParity.functions).toEqual({
       "debug.control": "deferred",
     });
@@ -298,8 +316,9 @@ describe("generated definitions", () => {
     }));
     expect(parsed.length).toBe(surface.functions.length);
     for (const fn of surface.functions) {
-      // Nested `ui.overlay.*` renders under `BittyUiOverlayNamespace` and
-      // nested `process.editor.*` under `BittyProcessEditorNamespace`.
+      // Nested `ui.overlay.*` renders under `BittyUiOverlayNamespace`,
+      // nested `process.editor.*` under `BittyProcessEditorNamespace`, and
+      // nested `history.*.*` under the matching history sub-namespace.
       const segments = fn.path.split(".");
       const name = segments[segments.length - 1] ?? "";
       const namespaceType =
@@ -307,7 +326,13 @@ describe("generated definitions", () => {
           ? "BittyUiOverlayNamespace"
           : fn.path.startsWith("process.editor.") === true
             ? "BittyProcessEditorNamespace"
-            : `Bitty${capitalized(segments[0] ?? "")}Namespace`;
+            : fn.path.startsWith("history.transcript.") === true
+              ? "BittyHistoryTranscriptNamespace"
+              : fn.path.startsWith("history.commands.") === true
+                ? "BittyHistoryCommandsNamespace"
+                : fn.path.startsWith("history.kv.") === true
+                  ? "BittyHistoryKvNamespace"
+                  : `Bitty${capitalized(segments[0] ?? "")}Namespace`;
       const found = parsed.find(
         (entry) => entry.namespace === namespaceType && entry.name === name,
       );

@@ -775,26 +775,49 @@ explicitly.
   list and directions live in [`docs/manifest.md`](manifest.md) "Known gaps
   and open questions".
 
+## History/search/selection mock (W-139, CTX-0066)
+
+The mock models the accepted RFC-0004 read-only history/search/selection gate
+with the same check order as open Core host PR bitty#1673 (alignment, RFC
+wins): safe mode first, trust admission (TerminalOutput-only L1/L2 allowed,
+L0/L3/L4/unknown deny with `E_HISTORY_TRUST_DENIED`; L3 per-request and L4
+per-invocation grants parked to Core W-146), grant presence (deny-by-default;
+revoked/expired distinct via `E_HISTORY_REVOKED_GRANT`), explicit scope with
+no wildcard (`*`/`all`/blank/control/over-long are `E_DEF_INVALID`,
+unscoped transcript/commands are `E_HISTORY_SCOPE_MISMATCH`, KV forbids
+panel/workspace extents), capture opt-in, static bounds plus per-plugin window
+budgets with attribution (over-bound/over-rate deny, never clamp silently),
+and purged unavailability (typed, never silent gaps, never resurrected).
+Success truncates per-row at the mock placeholder cap (marked), attaches the
+Core `untrusted-observation` label surviving both, attributes every record,
+charges the window on success only, and delivers VM-only (frozen tables, never
+the Event Bus, never clipboard/files/process). Source isolation holds: a
+transcript grant never implies commands/KV. History budget numbers are harness
+placeholders mirroring bitty#1673 test caps (16 rows, 4096 bytes/query, 256
+bytes/row, 4 queries and 8192 bytes/window, 256-byte needle, 128-byte scope
+ids), never wire truth. `bitty.selection.copy` reuses the existing
+`clipboard.write` grant (no new capability per W-143), is bounded to 8192
+bytes with a `truncated` flag, and the history grant never implies it. The
+mock performs no I/O, spawns no process, and constructs no shell strings
+(argv-first, no interpolation). Live per-view search binding, viewport
+navigation, and selection lifecycles stay Core-owned deferred (see
+[`docs/lua-defs.md`](lua-defs.md#accepted-historysearchselection-surface-w-139-ctx-0066)).
+
 ## Known gaps
 
-- **History and storage policy.** The plugin-facing history/storage policy
-  ([`history-and-storage-policy.md`](https://github.com/bitty-terminal/bitty-plugins-docs/blob/main/extensibility/history-and-storage-policy.md),
-  W-137) is not re-derived by the mock; `store`/`settings` remain the only
-  plugin persistence the mock models.
-- **Search/selection SDK surface (W-139) is blocked.** The plugin-facing
-  history/search/selection public APIs delegated to W-139 by the W-135/W-137/W-138
-  draft contracts are not implemented: those contracts are `status: draft`, are
-  recorded in the surface table `sources` for traceability, and authorize no
-  implementation, and no accepted closed-set `terminal` capability covers
-  scrollback or history text read. The Plugin Platform RFC fixes the `terminal`
-  family as `terminal.semantic-read`/`raw-read`/`input.self`/`input.all`/
-  `manage`, and the accepted Plugin API v1 Lua Surface RFC states v1 has no
-  scrollback text read path; a scrollback/history read capability requires a
-  successor RFC with its own security review. W-139 therefore adds no mock
-  method, no capability head, and no function path; the surface records the
-  blocked path as the explicit `bitty.history` exclusion. See
-  [`docs/lua-defs.md`](lua-defs.md) "Blocked surface: history, search, and
-  selection (W-139, CTX-0066)".
+- **History redaction format.** Persisted-history redaction stays parked to
+  W-137: harness rows are seeded already-redacted, the mock truncates, labels,
+  and attributes but never redacts, and export-preview equality holds because
+  both derive from the same bodies.
+- **Grant-scope narrowing and per-request grants.** Per-panel grant narrowing
+  plus L3 per-request and L4 per-invocation Core-issued grants stay parked to
+  Core W-146: the mock tracks bare per-source heads plus explicit query scopes
+  and returns only in-scope rows, denying L3/L4 fail-closed.
+- **Live search/selection binding.** Per-view search binding, viewport
+  navigation, result coalescing handles, and selection lifecycles (W-135
+  accepted + Core W-143 mechanism) stay Core-owned deferred pending W-01 +
+  W-138; the mock covers persisted history search plus the clipboard export
+  only.
 - **R-SDK-1 drift coverage.** The modeled function paths, capability gates,
   event names/classes, and the raw-snapshot exclusion are checked against
   `surface/bitty-plugin-api-v1.json` in `tests/conformance.test.ts`. LuaLS

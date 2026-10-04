@@ -67,6 +67,23 @@ export const HOST_CODES = {
   DEF_INVALID: "E_DEF_INVALID",
   DEF_LIMIT: "E_DEF_LIMIT",
   NOT_IMPLEMENTED: "E_NOT_IMPLEMENTED",
+  // W-139 (CTX-0066, accepted RFC-0004): the complete 8-category typed-denial
+  // taxonomy for the read-only history/search/selection family. Minted by this
+  // SDK task (RFC parks exact identifiers to W-139); codes mirror the open
+  // Core host PR bitty#1673 `HistoryDenialKind::code` set (alignment, RFC wins
+  // on conflict). Denials are oracle-tight: they name the category plus the
+  // trust level and the family only, never content bytes, foreign identifiers,
+  // or absent-versus-denied signals. Mock-owned until an accepted contract
+  // fixes them verbatim; they never replace `E_CAPABILITY_DENIED` outside this
+  // family.
+  HISTORY_MISSING_GRANT: "E_HISTORY_MISSING_GRANT",
+  HISTORY_REVOKED_GRANT: "E_HISTORY_REVOKED_GRANT",
+  HISTORY_SCOPE_MISMATCH: "E_HISTORY_SCOPE_MISMATCH",
+  HISTORY_OVER_BOUND: "E_HISTORY_OVER_BOUND",
+  HISTORY_CAPTURE_DISABLED: "E_HISTORY_CAPTURE_DISABLED",
+  HISTORY_SAFE_MODE: "E_HISTORY_SAFE_MODE",
+  HISTORY_TRUST_DENIED: "E_HISTORY_TRUST_DENIED",
+  HISTORY_UNAVAILABLE: "E_HISTORY_UNAVAILABLE",
 } as const;
 
 export type HostCode = (typeof HOST_CODES)[keyof typeof HOST_CODES];
