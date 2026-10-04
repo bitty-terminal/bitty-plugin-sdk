@@ -1,0 +1,105 @@
+{
+  "name": "First-party/third-party parity denial (history first-party)",
+  "description": "W-139 parity proof, first-party leg: the official history keeper (bitty.history-keeper) sees the identical denials and success shapes as the third-party leg. Steps are byte-identical to 34-parity-denial-history-third-party.json; only the manifest differs.",
+  "manifest": "manifests/history.toml",
+  "tags": ["history", "selection", "capability", "deny-by-default", "parity"],
+  "grants": [],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_MISSING_GRANT", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "history.commands.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_MISSING_GRANT", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "selection.copy",
+      "args": { "opts": { "text": "hi" } },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "history.transcript.read" },
+    { "op": "grant", "capability": "history.commands.read" },
+    { "op": "grant", "capability": "clipboard.write" },
+    { "op": "set-history-capture", "source": "transcript", "enabled": true },
+    { "op": "set-history-capture", "source": "commands", "enabled": true },
+    {
+      "op": "set-history-rows",
+      "source": "transcript",
+      "rows": [
+        {
+          "panel": "pane-a",
+          "workspace": "ws-1",
+          "seq": 0,
+          "body": "parity bytes",
+          "recorded_at": 50
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "result": {
+          "records": [
+            {
+              "seq": 0,
+              "body": "parity bytes",
+              "truncated": false,
+              "redacted": true,
+              "attribution": {
+                "panel": "pane-a",
+                "workspace": "ws-1",
+                "recorded_at": 50
+              },
+              "label": "untrusted-observation"
+            }
+          ],
+          "total_in_scope": 1,
+          "freshness": "point-in-time-no-guarantee"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "selection.copy",
+      "args": { "opts": { "text": "parity bytes" } },
+      "expect": { "result": { "text": "parity bytes", "truncated": false } }
+    },
+    { "op": "end-activation" }
+  ]
+}

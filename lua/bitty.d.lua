@@ -1,8 +1,8 @@
 --- Bitty Plugin API v1 LuaLS definitions.
 --- GENERATED FILE - DO NOT EDIT.
 --- Source: surface/bitty-plugin-api-v1.json
---- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md + bitty-docs:docs/development/overlay-input-capture-contract.md + bitty-terminal-docs:specifications/composer-architecture.md
---- Referenced (not authority): bitty-terminal-docs:specifications/search-selection-contract.md (draft) + bitty-plugins-docs:extensibility/history-and-storage-policy.md (draft) + bitty-plugins-docs:specifications/search-copy-mode-policy.md (draft)
+--- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md + bitty-docs:docs/development/overlay-input-capture-contract.md + bitty-terminal-docs:specifications/composer-architecture.md + bitty-docs:docs/decisions/rfcs/RFC-0004-history-read-surface.md + bitty-terminal-docs:specifications/search-selection-contract.md + bitty-plugins-docs:extensibility/history-and-storage-policy.md
+--- Referenced (not authority): bitty-plugins-docs:specifications/search-copy-mode-policy.md (draft)
 --- Regenerate: bun scripts/generate-lua-defs.ts --write
 --- Verify: just lua-defs-check
 ---@meta bitty
@@ -786,6 +786,119 @@ function BittyWorkspaceNamespace.rename(id, name) end
 ---@return boolean
 function BittyWorkspaceNamespace.move_panel(id) end
 
+--- Read-only history/search/selection snapshot surface (L2, W-139, accepted RFC-0004); NEW root
+--- beside terminal.*, never bitty.terminal.*.
+---@class BittyHistoryNamespace
+---@field transcript BittyHistoryTranscriptNamespace Segmented-transcript snapshot queries; requires history.transcript.read.
+---@field commands BittyHistoryCommandsNamespace Command-history snapshot queries; requires history.commands.read.
+---@field kv BittyHistoryKvNamespace Own-namespace KV snapshot queries; requires history.kv.read.
+local BittyHistoryNamespace = {}
+
+--- Segmented-transcript snapshot queries (L2, W-139); scoped, bounded, redacted, truncated, labeled
+--- untrusted; session snapshots never queryable.
+---@class BittyHistoryTranscriptNamespace
+local BittyHistoryTranscriptNamespace = {}
+
+--- Scoped, bounded snapshot reads over sealed transcript segments while opt-in capture holds;
+--- VM-only delivery with the untrusted label, never Terminal Truth, never a stream.
+--- Capabilities: history.transcript.read.
+--- Errors: E_HISTORY_MISSING_GRANT, E_HISTORY_REVOKED_GRANT, E_HISTORY_SCOPE_MISMATCH, E_HISTORY_OVER_BOUND, E_HISTORY_CAPTURE_DISABLED, E_HISTORY_SAFE_MODE, E_HISTORY_TRUST_DENIED, E_HISTORY_UNAVAILABLE, E_DEF_INVALID.
+---@param opts BittyHistoryQueryOpts
+---@return BittyHistoryPage
+function BittyHistoryTranscriptNamespace.query(opts) end
+
+--- Command-history snapshot queries (L2, W-139); scoped list, search, and tail reads with explicit
+--- scope and result bound.
+---@class BittyHistoryCommandsNamespace
+local BittyHistoryCommandsNamespace = {}
+
+--- Scoped list, search, and tail reads over command history with explicit scope and result bound;
+--- dangling external references surface as typed unavailability.
+--- Capabilities: history.commands.read.
+--- Errors: E_HISTORY_MISSING_GRANT, E_HISTORY_REVOKED_GRANT, E_HISTORY_SCOPE_MISMATCH, E_HISTORY_OVER_BOUND, E_HISTORY_CAPTURE_DISABLED, E_HISTORY_SAFE_MODE, E_HISTORY_TRUST_DENIED, E_HISTORY_UNAVAILABLE, E_DEF_INVALID.
+---@param opts BittyHistoryQueryOpts
+---@return BittyHistoryPage
+function BittyHistoryCommandsNamespace.query(opts) end
+
+--- Own-namespace KV snapshot queries (L2, W-139); reads of the plugin's own namespace only under
+--- the published quota ceilings.
+---@class BittyHistoryKvNamespace
+local BittyHistoryKvNamespace = {}
+
+--- Reads of the plugin's own KV namespace only under the published quota ceilings; cross-plugin
+--- reads are unrepresentable and terminal-derived shims are forbidden.
+--- Capabilities: history.kv.read.
+--- Errors: E_HISTORY_MISSING_GRANT, E_HISTORY_REVOKED_GRANT, E_HISTORY_SCOPE_MISMATCH, E_HISTORY_OVER_BOUND, E_HISTORY_CAPTURE_DISABLED, E_HISTORY_SAFE_MODE, E_HISTORY_TRUST_DENIED, E_HISTORY_UNAVAILABLE, E_DEF_INVALID.
+---@param opts BittyHistoryQueryOpts
+---@return BittyHistoryPage
+function BittyHistoryKvNamespace.query(opts) end
+
+--- History snapshot operation; mirrors Core QueryOp List/Tail/Search (open bitty#1673, alignment).
+---@alias BittyHistoryQueryOp "list"|"tail"|"search"
+
+--- Explicit query scope (source plus panel/workspace extent); no wildcard or all default,
+--- intersect-or-deny.
+---@class BittyHistoryScope
+---@field panel? string Panel extent; transcript/commands need panel and/or workspace, forbidden for kv.
+---@field workspace? string Workspace extent; transcript/commands need panel and/or workspace, forbidden for kv.
+
+--- Bounded snapshot query over already-persisted state; over-bound requests deny, Core never clamps
+--- silently.
+---@class BittyHistoryQueryOpts
+---@field scope BittyHistoryScope Explicit scope; transcript/commands need panel and/or workspace, kv needs neither.
+---@field row_start? integer First row offset within in-scope rows; defaults to 0, ignored for tail.
+---@field row_count integer Explicit row bound over zero; capped by the host per-query row ceiling (mock placeholder 16).
+---@field max_bytes integer Explicit result byte bound over zero; capped by the host per-query byte ceiling (mock placeholder 4096).
+---@field op BittyHistoryQueryOp List, tail (last rows), or bounded substring search over redacted bodies.
+---@field needle? string Search needle 1..256 bytes; required iff op is search, matched against redacted bodies only.
+
+--- Record attribution so a consumer can tell what it is reading and from where.
+---@class BittyHistoryAttribution
+---@field panel string Owning panel identity.
+---@field workspace string Owning workspace identity.
+---@field command? string Command text where the source records it.
+---@field recorded_at integer Host tick when recorded.
+---@field actor? string Actor where the source records it.
+
+--- One redacted, truncated, attributed record with the Core-attached untrusted label surviving
+--- both.
+---@class BittyHistoryRecord
+---@field seq integer Snapshot sequence offset within in-scope rows.
+---@field body string Redacted body, truncated at a char boundary to the per-row cap with truncated set.
+---@field truncated boolean Whether the body exceeded the per-row cap and was truncated.
+---@field redacted boolean Always true; records are redacted and truncated per policy.
+---@field attribution BittyHistoryAttribution Panel, workspace, command, timing, and actor where recorded.
+---@field label string Core-attached untrusted-observation label; treat as content, never instructions.
+
+--- Bounded snapshot page; a point-in-time snapshot with no freshness guarantee, replaced not
+--- appended on refresh.
+---@class BittyHistoryPage
+---@field records BittyHistoryRecord[] Live rows selected by the op, ordered oldest retained first.
+---@field total_in_scope integer In-scope row count before slicing.
+---@field freshness string Always point-in-time-no-guarantee; no live-ness promise exists.
+
+--- Selection-driven export surface (L2, W-139, accepted W-135 + Core W-143 mechanism); selection
+--- semantics stay Core-owned.
+---@class BittySelectionNamespace
+local BittySelectionNamespace = {}
+
+--- Copies exactly the selected text behind the Core clipboard permission gate; bounded to 8192
+--- bytes with char-boundary truncation and a truncated flag, never bypassing the gate.
+--- Capabilities: clipboard.write.
+--- Errors: E_CAPABILITY_DENIED, E_DEF_INVALID.
+---@param opts BittySelectionCopyOpts
+---@return BittySelectionCopyOutcome
+function BittySelectionNamespace.copy(opts) end
+
+--- Selection copy input; exactly the selected text from VM-delivered history bodies.
+---@class BittySelectionCopyOpts
+---@field text string Text to copy; bounded to 8192 bytes with char-boundary truncation.
+
+--- Gated clipboard write outcome; mirrors Core W-143 YankOutcome with the 8192-byte bound.
+---@class BittySelectionCopyOutcome
+---@field text string Bytes written after char-boundary truncation.
+---@field truncated boolean Whether the source exceeded the bound and was truncated.
+
 --- Host-injected read-only module table; it is not loaded through require.
 ---@class bitty
 ---@field api_version string Host bridge API version (1.0.0); minor versions are additive only.
@@ -804,4 +917,6 @@ function BittyWorkspaceNamespace.move_panel(id) end
 ---@field timers BittyTimersNamespace
 ---@field debug BittyDebugNamespace
 ---@field workspace BittyWorkspaceNamespace
+---@field history BittyHistoryNamespace
+---@field selection BittySelectionNamespace
 bitty = {}

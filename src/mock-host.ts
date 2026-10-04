@@ -40,6 +40,10 @@ import {
   EVENT_PAYLOAD_FIELDS,
   eventKindSpec,
   EXCLUSIVE_CLAIM_SLOTS,
+  HISTORY_FRESHNESS,
+  HISTORY_QUERY_OPS,
+  HISTORY_SOURCES,
+  HISTORY_UNTRUSTED_LABEL,
   INTERCEPTION_KINDS,
   LIFECYCLE_KINDS,
   MOCK_LIMITS,
@@ -123,6 +127,17 @@ export interface MockHostOptions {
    * `{ kind: "cancelled" }` (cancel writes nothing, the safe no-op).
    */
   readonly editorResult?: EditorSeed;
+  /**
+   * Trust level for the W-139 history-read family (CTX-0066, accepted
+   * RFC-0004 + threat-model matrix + P0-AC-035): `L1` (BundledLua) or `L2`
+   * (ThirdPartyLua) with standing grants is the normal plugin path; `L3`
+   * (NativeSidecar), `L4` (ExternalTool), `L0` (Core), and unknown levels deny
+   * with `E_HISTORY_TRUST_DENIED` (TerminalOutput-only trust: L0-L3 admit at
+   * the domain gate, L4 admits nothing; L3 per-request and L4 per-invocation
+   * Core-issued grants stay parked to Core W-146, so the mock denies L3/L4
+   * fail-closed, never more permissive). Defaults to `L2`.
+   */
+  readonly trustLevel?: string;
 }
 
 /** PTY delivery behind `bitty.terminal.submit` (W-82, CTX-0068). */
@@ -172,6 +187,79 @@ export type EditorOutcome =
   | { readonly status: "spawn-failed"; readonly detail: string }
   | { readonly status: "non-zero"; readonly code?: number }
   | { readonly status: "unavailable"; readonly reason: string };
+
+/**
+ * History query scope (W-139, accepted RFC-0004): explicit panel/workspace
+ * extent with no wildcard default. Transcript/commands require panel and/or
+ * workspace; KV forbids both (caller namespace only).
+ */
+export interface HistoryScopeOpts {
+  readonly panel?: string;
+  readonly workspace?: string;
+}
+
+/** History snapshot operation (W-139, mirrors Core `QueryOp`). */
+export type HistoryQueryOp = "list" | "tail" | "search";
+
+/** Options accepted by `bitty.history.*.query` (W-139, accepted RFC-0004). */
+export interface HistoryQueryOpts {
+  readonly scope?: HistoryScopeOpts | null;
+  readonly row_start?: number;
+  readonly row_count?: number;
+  readonly max_bytes?: number;
+  readonly op?: HistoryQueryOp;
+  readonly needle?: string;
+}
+
+/** Attribution carried by every history record (W-139). */
+export interface HistoryAttribution {
+  readonly panel: string;
+  readonly workspace: string;
+  readonly command?: string;
+  readonly recorded_at: number;
+  readonly actor?: string;
+}
+
+/** One history record (W-139): redacted, truncated, attributed, labeled untrusted. */
+export interface HistoryRecord {
+  readonly seq: number;
+  readonly body: string;
+  readonly truncated: boolean;
+  readonly redacted: boolean;
+  readonly attribution: HistoryAttribution;
+  readonly label: string;
+}
+
+/** Bounded history snapshot page (W-139): point-in-time, no freshness promise. */
+export interface HistoryPage {
+  readonly records: readonly HistoryRecord[];
+  readonly total_in_scope: number;
+  readonly freshness: string;
+}
+
+/** Harness-seeded history row (not a Lua surface; already-redacted bodies). */
+export interface HistorySeedRow {
+  readonly panel?: string;
+  readonly workspace?: string;
+  readonly seq?: number;
+  readonly body?: string;
+  readonly purged?: boolean;
+  readonly command?: string;
+  readonly recorded_at?: number;
+  readonly actor?: string;
+  readonly owner?: string;
+}
+
+/** Options accepted by `bitty.selection.copy` (W-139, accepted W-135 + W-143). */
+export interface SelectionCopyOpts {
+  readonly text?: string;
+}
+
+/** `bitty.selection.copy` outcome (W-139, mirrors Core `YankOutcome`). */
+export interface SelectionCopyOutcome {
+  readonly text: string;
+  readonly truncated: boolean;
+}
 
 /** Notification payload accepted by `bitty.notify.show`. */
 export interface NotifyPayload {
@@ -461,14 +549,21 @@ function boundedWorkspaceName(name: string): string {
 }
 
 /**
- * Truncate host detail to a byte ceiling (W-82, CTX-0068). Mirrors the Core
- * 256-byte truncation of editor spawn/wait detail (`truncate_err`,
- * composer.rs:1324 at bitty 1df0459e): over-long detail is cut
- * at the byte boundary and undecodable tails decode leniently.
+ * Truncate to a byte ceiling at a UTF-8 character boundary (W-82, CTX-0068;
+ * reused by W-139, CTX-0066). Mirrors the Core truncation semantics
+ * (`truncate_err`, composer.rs:1324 at bitty 1df0459e; W-143
+ * `truncate_to_clipboard_bytes`): when the cut splits a multi-byte
+ * character, walk back to its lead byte so the result never exceeds the cap
+ * and never contains a U+FFFD replacement character from the cut.
  */
 function truncateBytes(value: string, maxBytes: number): string {
-  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
-  return Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
+  const buf = Buffer.from(value, "utf8");
+  if (buf.length <= maxBytes) return value;
+  let end = maxBytes;
+  // buf[end] is the first excluded byte; a continuation byte means the
+  // character straddles the cut, so move back to its lead byte.
+  while (end > 0 && ((buf[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return buf.subarray(0, end).toString("utf8");
 }
 
 /** Parse a trace topic filter (bitty `TraceFilter::parse`). */
@@ -1176,6 +1271,20 @@ export class MockHost {
         start(opts?: EditorStartOpts | null): EditorOutcome;
       };
     };
+    readonly history: {
+      readonly transcript: {
+        query(opts?: HistoryQueryOpts | null): HistoryPage;
+      };
+      readonly commands: {
+        query(opts?: HistoryQueryOpts | null): HistoryPage;
+      };
+      readonly kv: {
+        query(opts?: HistoryQueryOpts | null): HistoryPage;
+      };
+    };
+    readonly selection: {
+      copy(opts?: SelectionCopyOpts | null): SelectionCopyOutcome;
+    };
     readonly services: {
       get(iface: string, opts: ServiceGetOptions): ResolvedService | undefined;
       provide(iface: string, impl: Record<string, ServiceMethod>): number;
@@ -1255,6 +1364,28 @@ export class MockHost {
   private droppedWorkspaceRequests = 0;
   private readonly traces = new Map<number, TraceState>();
   private traceHandleSequence = 0;
+  // W-139 history-read gate state (CTX-0066, accepted RFC-0004). Rows are
+  // harness-seeded already-redacted bodies (redaction format parked to W-137;
+  // the mock truncates, labels, and attributes, never redacts). Capture
+  // defaults mirror Core `HistoryGate::new` (transcript/commands off opt-in,
+  // KV on for plugin-authored state). Usage is per-plugin attributed
+  // (P0-AC-014); the window never auto-resets in the mock (each case is a
+  // fresh gate, over-rate proven by exceeding the placeholder ceilings).
+  // Revoked heads are tracked separately so revoked/expired denies
+  // (`E_HISTORY_REVOKED_GRANT`) stay distinct from missing grants
+  // (`E_HISTORY_MISSING_GRANT`) without leaking which (both oracle-tight).
+  // Trust defaults to L2; L3 per-request and L4 per-invocation Core-issued
+  // grants stay parked to Core W-146, so the mock denies L0/L3/L4/unknown
+  // with `E_HISTORY_TRUST_DENIED` fail-closed (never more permissive).
+  private historyRows = new Map<string, HistorySeedRow[]>();
+  private historyCapture = new Map<string, boolean>([
+    ["transcript", false],
+    ["commands", false],
+    ["kv", true],
+  ]);
+  private historyUsage = new Map<string, { queries: number; bytes: number }>();
+  private readonly revoked = new Set<string>();
+  private readonly trustLevel: string;
 
   constructor(options: MockHostOptions) {
     this.manifest = loadManifestModel(options.manifestSource);
@@ -1264,6 +1395,7 @@ export class MockHost {
     );
     this.toolsGitVersion = options.toolsGitVersion ?? null;
     this.safeMode = options.safeMode === true;
+    this.trustLevel = options.trustLevel ?? "L2";
     if (
       options.submitBudgetBytes !== undefined &&
       (!Number.isSafeInteger(options.submitBudgetBytes) ||
@@ -1349,6 +1481,24 @@ export class MockHost {
             this.processEditorStart(opts),
         },
       },
+      history: {
+        transcript: {
+          query: (opts?: HistoryQueryOpts | null): HistoryPage =>
+            this.historyQuery("transcript", opts),
+        },
+        commands: {
+          query: (opts?: HistoryQueryOpts | null): HistoryPage =>
+            this.historyQuery("commands", opts),
+        },
+        kv: {
+          query: (opts?: HistoryQueryOpts | null): HistoryPage =>
+            this.historyQuery("kv", opts),
+        },
+      },
+      selection: {
+        copy: (opts?: SelectionCopyOpts | null): SelectionCopyOutcome =>
+          this.selectionCopy(opts),
+      },
       services: {
         get: (
           iface: string,
@@ -1424,11 +1574,16 @@ export class MockHost {
       fail("validation", HOST_CODES.DEF_INVALID, "capability id too long");
     }
     this.grants.add(capability);
+    this.revoked.delete(capability);
   }
 
   /** Revoke one capability; subsequent calls fail closed again. */
   revoke(capability: string): void {
     this.grants.delete(capability);
+    // Tracked so the history family can distinguish revoked/expired grants
+    // (`E_HISTORY_REVOKED_GRANT`) from missing grants without leaking which;
+    // non-history surfaces keep the single `E_CAPABILITY_DENIED` shape.
+    this.revoked.add(capability);
   }
 
   /** Whether a capability is currently granted (declaration still required). */
@@ -1883,6 +2038,89 @@ export class MockHost {
   setEditorResult(seed: EditorSeed): void {
     checkEditorSeed(seed);
     this.editorSeed = seed;
+  }
+
+  /**
+   * Set opt-in capture for one history source (harness-only, W-139, CTX-0066).
+   * Transcript/commands persist only while capture holds (W-131 opt-in,
+   * default off); KV is plugin-authored state (default on). Models the Core
+   * capture flag the gate checks after trust/version/grant/scope.
+   */
+  setHistoryCapture(source: string, enabled: boolean): void {
+    if (!HISTORY_SOURCES.includes(source)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "history source must be transcript, commands, or kv",
+        "source",
+      );
+    }
+    if (typeof enabled !== "boolean") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "history capture must be a boolean",
+        "enabled",
+      );
+    }
+    this.historyCapture.set(source, enabled);
+  }
+
+  /**
+   * Seed already-redacted history rows for one source (harness-only, W-139,
+   * CTX-0066). Bodies are harness-provided redacted text (redaction format
+   * parked to W-137; the mock truncates, labels, and attributes, never
+   * redacts). Rows are copied; purged rows model expired content (typed
+   * unavailability, never resurrected). KV rows carry `owner` (plugin id);
+   * transcript/commands rows carry panel/workspace extents.
+   */
+  setHistoryRows(source: string, rows: readonly HistorySeedRow[]): void {
+    if (!HISTORY_SOURCES.includes(source)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "history source must be transcript, commands, or kv",
+        "source",
+      );
+    }
+    if (!Array.isArray(rows)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "history rows must be an array",
+      );
+    }
+    const bounded: HistorySeedRow[] = [];
+    for (const [index, row] of rows.entries()) {
+      const path = `rows[${index}]`;
+      if (!isPlainObject(row)) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `${path} must be a table`,
+          path,
+        );
+      }
+      const body = (row as Record<string, unknown>).body ?? "";
+      if (typeof body !== "string") {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `${path}.body must be a string`,
+          path,
+        );
+      }
+      if (utf8Bytes(body) > 64 * 1024) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `${path}.body exceeds the 64 KiB harness seed cap`,
+          path,
+        );
+      }
+      bounded.push({ ...(row as HistorySeedRow) });
+    }
+    this.historyRows.set(source, bounded);
   }
 
   /** Remove one provided service; consumers fail closed with a gone error. */
@@ -3279,6 +3517,393 @@ export class MockHost {
           reason: seed.reason ?? "temp-unavailable",
         });
     }
+  }
+
+  /**
+   * Bounded snapshot query over already-persisted history state (W-139,
+   * CTX-0066, accepted RFC-0004). Check order mirrors open Core host PR
+   * bitty#1673 `HistoryGate::query` (alignment, RFC wins): safe mode first
+   * (identical for every level/version/grant/content), trust admission
+   * (TerminalOutput-only: L1/L2 standing grants allowed, L0/L3/L4/unknown
+   * deny with `E_HISTORY_TRUST_DENIED`; L3 per-request and L4 per-invocation
+   * Core-issued grants parked to Core W-146), grant presence
+   * (deny-by-default; revoked/expired distinct without leaking which), scope
+   * explicitness (transcript/commands need panel and/or workspace, KV forbids
+   * both; `*`/`all`/blank/control/over-long malformed scopes are
+   * `E_DEF_INVALID`, unscoped transcript/commands queries are
+   * `E_HISTORY_SCOPE_MISMATCH`; grant-scope narrowing parked to Core W-146,
+   * the mock returns only in-scope rows, never foreign rows), capture opt-in
+   * (transcript/commands need opt-in, KV needs none), static bounds plus
+   * per-plugin window budgets with attribution (over-bound/over-rate denies,
+   * never clamps silently), purged unavailability (typed, never silent gaps,
+   * never resurrected). Success truncates per-row at a char boundary
+   * (marked), attaches the Core untrusted label surviving both, attributes
+   * every record, charges the window on success only, and delivers VM-only
+   * (frozen tables, never the Event Bus, never clipboard/files/process).
+   * Source isolation holds: a transcript grant never implies commands/KV.
+   */
+  private historyQuery(source: string, opts: unknown): HistoryPage {
+    this.assertAlive();
+    const head =
+      source === "transcript"
+        ? "history.transcript.read"
+        : source === "commands"
+          ? "history.commands.read"
+          : "history.kv.read";
+    const surface =
+      source === "transcript"
+        ? "bitty.history.transcript.query"
+        : source === "commands"
+          ? "bitty.history.commands.query"
+          : "bitty.history.kv.query";
+    // 1. Safe mode reads nothing, identically for every level and grant.
+    if (this.safeMode) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_SAFE_MODE,
+        "safe mode reads no history",
+      );
+    }
+    // 2. Trust admission before grant intersection (P0-AC-035).
+    if (this.trustLevel !== "L1" && this.trustLevel !== "L2") {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_TRUST_DENIED,
+        `trust level ${this.trustLevel} admits no standing history access`,
+      );
+    }
+    // 3. Grant presence (deny-by-default), revoked distinct without leaking.
+    const declared = this.manifest.capabilities.includes(head);
+    const granted = declared && this.grants.has(head);
+    if (!granted) {
+      if (declared && this.revoked.has(head)) {
+        fail(
+          "runtime",
+          HOST_CODES.HISTORY_REVOKED_GRANT,
+          "history grant revoked or expired",
+        );
+      }
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_MISSING_GRANT,
+        `history query requires capability ${head}`,
+      );
+    }
+    // 4. Scope explicitness (no wildcard default, intersect-or-deny projected).
+    let table: Record<string, unknown> = {};
+    if (opts !== undefined && opts !== null) {
+      if (!isPlainObject(opts)) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `${surface} opts must be a table`,
+          "opts",
+        );
+      }
+      table = opts as Record<string, unknown>;
+    }
+    const scopeRaw = table.scope ?? null;
+    let panel: string | undefined;
+    let workspace: string | undefined;
+    if (scopeRaw !== undefined && scopeRaw !== null) {
+      if (!isPlainObject(scopeRaw)) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          `${surface} scope must be a table`,
+          "opts.scope",
+        );
+      }
+      const scopeTable = scopeRaw as Record<string, unknown>;
+      if (scopeTable.panel !== undefined) {
+        if (typeof scopeTable.panel !== "string") {
+          fail(
+            "validation",
+            HOST_CODES.DEF_INVALID,
+            `${surface} scope.panel must be a string`,
+            "opts.scope.panel",
+          );
+        }
+        panel = scopeTable.panel;
+      }
+      if (scopeTable.workspace !== undefined) {
+        if (typeof scopeTable.workspace !== "string") {
+          fail(
+            "validation",
+            HOST_CODES.DEF_INVALID,
+            `${surface} scope.workspace must be a string`,
+            "opts.scope.workspace",
+          );
+        }
+        workspace = scopeTable.workspace;
+      }
+      for (const [axis, value] of [
+        ["panel", panel],
+        ["workspace", workspace],
+      ] as const) {
+        if (value === undefined) continue;
+        if (
+          value.length === 0 ||
+          utf8Bytes(value) > MOCK_LIMITS.HISTORY_MAX_SCOPE_ID_BYTES ||
+          value === "*" ||
+          value.toLowerCase() === "all" ||
+          /[\p{Cc}\s]/u.test(value)
+        ) {
+          fail(
+            "validation",
+            HOST_CODES.DEF_INVALID,
+            `${surface} scope.${axis} must be 1..128 non-blank bytes, never '*' or 'all'`,
+            `opts.scope.${axis}`,
+          );
+        }
+      }
+    }
+    if (source === "kv") {
+      if (panel !== undefined || workspace !== undefined) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "kv scope is the caller namespace; panel/workspace extents are rejected",
+          "opts.scope",
+        );
+      }
+    } else {
+      if (panel === undefined && workspace === undefined) {
+        fail(
+          "runtime",
+          HOST_CODES.HISTORY_SCOPE_MISMATCH,
+          "history query scope names no panel or workspace extent",
+        );
+      }
+    }
+    // 5. Capture opt-in for terminal-derived sources.
+    const capture = this.historyCapture.get(source) ?? false;
+    if ((source === "transcript" || source === "commands") && !capture) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_CAPTURE_DISABLED,
+        "history capture opt-in off",
+      );
+    }
+    // 6. Static bounds plus per-plugin window budgets with attribution.
+    const rowStartRaw = table.row_start ?? 0;
+    const rowCountRaw = table.row_count;
+    const maxBytesRaw = table.max_bytes;
+    const opRaw = table.op ?? "list";
+    if (typeof opRaw !== "string" || !HISTORY_QUERY_OPS.includes(opRaw)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        `${surface} op must be list, tail, or search`,
+        "opts.op",
+      );
+    }
+    const op = opRaw as HistoryQueryOp;
+    if (!Number.isSafeInteger(rowStartRaw) || (rowStartRaw as number) < 0) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        `${surface} row_start must be a nonnegative safe integer`,
+        "opts.row_start",
+      );
+    }
+    if (!Number.isSafeInteger(rowCountRaw) || (rowCountRaw as number) <= 0) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_OVER_BOUND,
+        "history query needs an explicit row bound over zero",
+      );
+    }
+    if (!Number.isSafeInteger(maxBytesRaw) || (maxBytesRaw as number) <= 0) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_OVER_BOUND,
+        "history query needs an explicit byte bound over zero",
+      );
+    }
+    const rowStart = rowStartRaw as number;
+    const rowCount = rowCountRaw as number;
+    const maxBytes = maxBytesRaw as number;
+    if (
+      rowCount > MOCK_LIMITS.HISTORY_MAX_ROWS_PER_QUERY ||
+      maxBytes > MOCK_LIMITS.HISTORY_MAX_BYTES_PER_QUERY
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_OVER_BOUND,
+        "history query exceeds the per-query bound",
+      );
+    }
+    let needle: string | undefined;
+    if (op === "search") {
+      const needleRaw = (table as Record<string, unknown>).needle;
+      if (
+        typeof needleRaw !== "string" ||
+        needleRaw.length === 0 ||
+        utf8Bytes(needleRaw) > MOCK_LIMITS.HISTORY_MAX_NEEDLE_BYTES
+      ) {
+        fail(
+          "runtime",
+          HOST_CODES.HISTORY_OVER_BOUND,
+          "history search needle must be 1..256 bytes",
+        );
+      }
+      needle = needleRaw as string;
+    }
+    const pluginId = this.manifest.pluginId;
+    const used = this.historyUsage.get(pluginId) ?? { queries: 0, bytes: 0 };
+    if (
+      used.queries >= MOCK_LIMITS.HISTORY_MAX_QUERIES_PER_WINDOW ||
+      used.bytes >= MOCK_LIMITS.HISTORY_MAX_BYTES_PER_WINDOW
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_OVER_BOUND,
+        "history query exceeds the per-plugin window budget",
+      );
+    }
+    // 7. Collect in-scope rows (snapshot order). KV is structurally restricted
+    // to the caller namespace: foreign rows are never collected, counted, or
+    // named (oracle-tight). Source isolation: only this source's rows.
+    const seeded = this.historyRows.get(source) ?? [];
+    const inScope = seeded
+      .filter((row) => {
+        if (source === "kv" && (row.owner ?? "") !== pluginId) return false;
+        if (panel !== undefined && (row.panel ?? "") !== panel) return false;
+        if (workspace !== undefined && (row.workspace ?? "") !== workspace)
+          return false;
+        return true;
+      })
+      .slice()
+      .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+    const totalInScope = inScope.length;
+    let selected: HistorySeedRow[];
+    if (op === "tail") {
+      selected = inScope.slice(Math.max(0, inScope.length - rowCount));
+    } else if (op === "list") {
+      selected = inScope.slice(rowStart, rowStart + rowCount);
+    } else {
+      const text = needle ?? "";
+      selected = inScope
+        .filter((row) => !row.purged)
+        .filter((row) => (row.body ?? "").includes(text))
+        .slice(rowStart, rowStart + rowCount);
+    }
+    // 8. Purged or expired content: a range covering only purged rows denies
+    // as typed unavailability (never a silent gap, never resurrected).
+    if (selected.length > 0 && selected.every((row) => row.purged === true)) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_UNAVAILABLE,
+        "history content purged or expired",
+      );
+    }
+    const live = selected.filter((row) => row.purged !== true);
+    // 9. Truncate per-row at a char boundary (marked), attach the Core label
+    // surviving both, attribute every record, and charge the window on success
+    // only. Export-preview equality holds: both derive from the same bodies.
+    const records: HistoryRecord[] = [];
+    let pageBytes = 0;
+    for (const row of live) {
+      const raw = row.body ?? "";
+      const cap = MOCK_LIMITS.HISTORY_MAX_BYTES_PER_ROW;
+      // Truncation mirrors Core walking back to a UTF-8 char boundary (the
+      // mock `truncateBytes` walks back continuation bytes, so the result
+      // never exceeds the cap and never gains a U+FFFD from the cut);
+      // over-long bodies are marked, never silently kept.
+      const body = utf8Bytes(raw) > cap ? truncateBytes(raw, cap) : raw;
+      const truncated = utf8Bytes(raw) > cap;
+      pageBytes += utf8Bytes(body);
+      records.push({
+        seq: row.seq ?? 0,
+        body,
+        truncated,
+        redacted: true,
+        attribution: {
+          panel: row.panel ?? "",
+          workspace: row.workspace ?? "",
+          ...(row.command === undefined ? {} : { command: row.command }),
+          recorded_at: row.recorded_at ?? 0,
+          ...(row.actor === undefined ? {} : { actor: row.actor }),
+        },
+        label: HISTORY_UNTRUSTED_LABEL,
+      });
+    }
+    if (
+      pageBytes > MOCK_LIMITS.HISTORY_MAX_BYTES_PER_QUERY ||
+      pageBytes > maxBytes ||
+      used.bytes + pageBytes > MOCK_LIMITS.HISTORY_MAX_BYTES_PER_WINDOW
+    ) {
+      fail(
+        "runtime",
+        HOST_CODES.HISTORY_OVER_BOUND,
+        "history query exceeds the result byte bound",
+      );
+    }
+    this.historyUsage.set(pluginId, {
+      queries: used.queries + 1,
+      bytes: used.bytes + pageBytes,
+    });
+    return deepFreeze({
+      records: records.map((record) =>
+        deepFreeze({
+          ...record,
+          attribution: deepFreeze({ ...record.attribution }),
+        }),
+      ),
+      total_in_scope: totalInScope,
+      freshness: HISTORY_FRESHNESS,
+    }) as HistoryPage;
+  }
+
+  /**
+   * Copy exactly the selected text behind the Core clipboard permission gate
+   * (W-139, accepted W-135 + Core W-143 mechanism 0d50b436). Requires the
+   * existing `clipboard.write` grant (no new capability per W-143); the
+   * history grant never implies it (VM-only delivery + separate export
+   * grants). Bounded to 8192 bytes with char-boundary truncation and a
+   * `truncated` flag; the mock performs no clipboard I/O (test double).
+   */
+  private selectionCopy(opts: unknown): SelectionCopyOutcome {
+    this.assertAlive();
+    this.assertCapability("bitty.selection.copy", "clipboard.write");
+    let table: Record<string, unknown> = {};
+    if (opts !== undefined && opts !== null) {
+      if (!isPlainObject(opts)) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "selection.copy opts must be a table",
+          "opts",
+        );
+      }
+      table = opts as Record<string, unknown>;
+    }
+    const text = table.text ?? "";
+    if (typeof text !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "selection.copy text must be a string",
+        "opts.text",
+      );
+    }
+    if (LONE_SURROGATE.test(text)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "selection.copy text must be valid UTF-8",
+        "opts.text",
+      );
+    }
+    const cap = MOCK_LIMITS.SELECTION_COPY_MAX_BYTES;
+    if (utf8Bytes(text) <= cap) {
+      return deepFreeze({ text, truncated: false }) as SelectionCopyOutcome;
+    }
+    return deepFreeze({
+      text: truncateBytes(text, cap),
+      truncated: true,
+    }) as SelectionCopyOutcome;
   }
 
   /**

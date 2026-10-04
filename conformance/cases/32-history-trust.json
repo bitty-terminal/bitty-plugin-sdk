@@ -1,0 +1,28 @@
+{
+  "name": "Trust admission denies standing L4 access",
+  "description": "W-139 TerminalOutput-only trust (threat-model matrix + P0-AC-035): L4 admits nothing by default and acts only through explicit per-invocation Core-issued grants (parked to Core W-146), so a standing-grant L4 query denies with E_HISTORY_TRUST_DENIED naming the level and family only.",
+  "manifest": "manifests/history.toml",
+  "tags": ["history", "capability", "deny-by-default"],
+  "grants": ["history.transcript.read"],
+  "trustLevel": "L4",
+  "steps": [
+    { "op": "begin-activation" },
+    { "op": "set-history-capture", "source": "transcript", "enabled": true },
+    {
+      "op": "call",
+      "surface": "history.transcript.query",
+      "args": {
+        "opts": {
+          "scope": { "panel": "pane-a", "workspace": "ws-1" },
+          "row_count": 4,
+          "max_bytes": 4096,
+          "op": "list"
+        }
+      },
+      "expect": {
+        "denial": { "code": "E_HISTORY_TRUST_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "end-activation" }
+  ]
+}

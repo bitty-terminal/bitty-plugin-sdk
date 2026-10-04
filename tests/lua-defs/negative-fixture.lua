@@ -10,6 +10,10 @@ local raw_scope = bitty.terminal.snapshot({ scope = "raw" })
 local singular = bitty.task.spawn
 local protocol = bitty.protocol
 local unconstrained_spawn = bitty.process.spawn
+local terminal_history = bitty.terminal.history
+local live_search = bitty.search
+local session_snapshot = bitty.history.session
+local live_selection = bitty.selection.get
 
 local missing_opts = bitty.services.get("bitty.example")
 local missing_version = bitty.services.get("bitty.example", {})
@@ -26,6 +30,10 @@ print(
   singular,
   protocol,
   unconstrained_spawn,
+  terminal_history,
+  live_search,
+  session_snapshot,
+  live_selection,
   missing_opts,
   missing_version,
   missing_version_with_optional

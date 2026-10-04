@@ -1,0 +1,16 @@
+[plugin]
+id = "bitty.history-keeper"
+name = "Conformance History Keeper (first-party)"
+version = "1.0.0"
+description = "First-party history-keeper manifest (W-139, CTX-0066) for mock-host conformance: transcript, commands, and KV snapshot queries plus selection copy over the same public API as any third-party extension."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+history.transcript.read = true
+history.commands.read = true
+history.kv.read = true
+clipboard.write = true

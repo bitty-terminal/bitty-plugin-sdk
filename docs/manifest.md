@@ -305,6 +305,7 @@ validation instead of being ignored. Parameterized heads must carry a
 | `mcp`       | `mcp.invoke:TOOL`                                                                                                                      |
 | `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                                                 |
 | `workspace` | `workspace.read`, `workspace.control`                                                                                                  |
+| `history`   | `history.transcript.read`, `history.commands.read`, `history.kv.read`                                                                  |
 
 The `workspace` family mirrors the host closed set (`bitty-package`
 `CLOSED_CAPABILITY_HEADS`, ADR 0014, bitty CTX-0889): `workspace.read` lists
@@ -333,6 +334,20 @@ executes a program with temp-file access. Without the grants
 `bitty.terminal.submit` and `bitty.process.editor.start` fail
 `E_CAPABILITY_DENIED`.
 
+The `history.transcript.read`, `history.commands.read`, and
+`history.kv.read` heads (W-139, CTX-0066, accepted RFC-0004) are the additive
+v2 history grants: per-plugin, per-source scoped reads with explicit scope
+params carried by the host call (never as a grant parameter, same precedent
+as `terminal.input.submit`), no wildcard, no bundled sources, no migration
+to or from `terminal.*`, session snapshots never queryable. The NEW `history`
+family lives beside `terminal.*` (never under `bitty.terminal.*`); each
+source is consent-distinct (high-risk) so a transcript grant is never
+confused with commands or KV. Without the matching per-source grant the
+corresponding `bitty.history.*.query` fails with the typed
+`E_HISTORY_MISSING_GRANT` (revoked/expired, scope, bound, capture,
+safe-mode, trust, and purge denials use their own `E_HISTORY_*` codes; see
+`docs/mock-host.md`).
+
 A flat `fs.read:PATTERN` / `fs.write:PATTERN` capability applies the same
 pattern rules as the structured `[[capabilities.filesystem]]` form (relative
 only, no `..` segment, no sensitive location, at most 512 bytes); both share
@@ -341,14 +356,15 @@ one validator, so neither form can declare a traversal or absolute pattern.
 `bitty-plugin-lint` emits a `capabilities.high-risk` warning (never an error)
 for capabilities that reach beyond presentation:
 
-| Escalation shape       | Heads                                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Host management        | `terminal.manage`, `runtime.plugin-manage`, `debug.control`                                                  |
-| Sensitive input reads  | `terminal.raw-read`, `terminal.input.all`, `clipboard.read`                                                  |
-| PTY write / execution  | `terminal.input.submit`, `process.editor`                                                                    |
-| Execution / write      | `fs.write:PATTERN`, `process.spawn:CONSTRAINT`, `ui.protocol-register`, `protocol.register`, `browser.embed` |
-| Outbound network       | `network.connect:DESTINATION`                                                                                |
-| Agent / external calls | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`, `mcp.invoke:TOOL`             |
+| Escalation shape        | Heads                                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Host management         | `terminal.manage`, `runtime.plugin-manage`, `debug.control`                                                  |
+| Sensitive input reads   | `terminal.raw-read`, `terminal.input.all`, `clipboard.read`                                                  |
+| Persisted history reads | `history.transcript.read`, `history.commands.read`, `history.kv.read`                                        |
+| PTY write / execution   | `terminal.input.submit`, `process.editor`                                                                    |
+| Execution / write       | `fs.write:PATTERN`, `process.spawn:CONSTRAINT`, `ui.protocol-register`, `protocol.register`, `browser.embed` |
+| Outbound network        | `network.connect:DESTINATION`                                                                                |
+| Agent / external calls  | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`, `mcp.invoke:TOOL`             |
 
 The warning is consent metadata only: it changes neither the manifest verdict
 nor any grant requirement. Capabilities that stay presentation-only or expose

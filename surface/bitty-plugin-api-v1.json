@@ -7,7 +7,7 @@
     "repository": "bitty",
     "commit": "fb44a8671ea7526c985d8f0ca3f57ef9b82f09e0",
     "pr": 1641,
-    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe for CTX-0063. Re-verified at bitty main fb44a867 (PR 1641, CTX-0067, W-43): bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and transient input-capture mechanism bitty.ui.overlay.acquire/release/poll (existing ui.overlay grant, no new capability; application wiring tracked as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942, re-scoped minimal per DEC-0085) added thin targeting bindings bitty.ui.targets.* and bitty.ui.labels.* over existing beacon types with no new capability and no Event-Bus exposure; the thin targeting bindings stay pending per W-120, deferred and not wired into v1 and recorded as explicit exclusions, while the W-28 overlay mechanism is now the accepted W-01 surface (CTX-0065, ui.overlay.focus with bitty.ui.overlay.acquire/update/poll/release plus overlay.released) living under the already-wired ui namespace, so no v1 namespace verdict moved. CTX-0068 (W-103 S-2) wires the accepted W-82 composer operations additively: bitty.terminal.submit under the already-wired terminal namespace (no verdict move) and bitty.process.editor.start under a newly recorded wired process namespace verdict (editor round trip only; unconstrained process.spawn stays v1-OUT, see exclusions), with the additive v2 capabilities terminal.input.submit and process.editor and typed outcomes mirroring the Core mechanism evidence at bitty #1661 (CTX-0929, 1df0459e) and #1654 (CTX-0941, 2f49934d); api_version stays 1.0.0 (additive only) and the pin stays fb44a867 (#1641).",
+    "note": "Per-namespace parity verdicts from bitty #1303 (CTX-0707) with services re-wired by bitty #1391 (CTX-0767, LUA-OQ-8): keymaps.suggest and tasks.spawn/cancel are WIRED bridge captures; services.get/provide are WIRED to the host backend (shape checks, manifest-gated provide capture, deterministic resolution, typed E_SERVICE_* failures); env.get/has stay DEFERRED (grant-gated, backend-absent denial without env.read grants); process.spawn is v1-OUT (see exclusions). bitty #1563/#1573 (CTX-0894/CTX-0897) WIRED the read-only bitty.debug backend (inspect gated on debug.inspect, trace/trace_get gated on debug.trace) while debug.control stays DEFERRED (always E_NOT_IMPLEMENTED, see functions). bitty #1584 (CTX-0889, ADR-0014) WIRED bitty.workspace (list gated on workspace.read; focus/new/next/close/rename/move_panel gated on workspace.control and only enqueue a bounded request) and the workspace.* observation events, delivered only to workspace.read holders; the Lua spellings are host candidates pending OQ-056. bitty #1591 (CTX-0907) only adds plugin-host-side workspace event publication and moved no Lua verdict. bitty #1604 (CTX-0906, DIR-030) moved no verdict: Core removed the embedded network Cargo feature and Lua network binding, network access is the out-of-process net native component, and its Lua request surface is deferred and not wired, so bitty.network stays excluded. Re-verified at bitty main 2cb49afe for CTX-0063. Re-verified at bitty main fb44a867 (PR 1641, CTX-0067, W-43): bitty #1633 (W-28, CTX-0941) added the provisional focusable overlay and transient input-capture mechanism bitty.ui.overlay.acquire/release/poll (existing ui.overlay grant, no new capability; application wiring tracked as CTX-0943 and not landed) and bitty #1641 (W-29, CTX-0942, re-scoped minimal per DEC-0085) added thin targeting bindings bitty.ui.targets.* and bitty.ui.labels.* over existing beacon types with no new capability and no Event-Bus exposure; the thin targeting bindings stay pending per W-120, deferred and not wired into v1 and recorded as explicit exclusions, while the W-28 overlay mechanism is now the accepted W-01 surface (CTX-0065, ui.overlay.focus with bitty.ui.overlay.acquire/update/poll/release plus overlay.released) living under the already-wired ui namespace, so no v1 namespace verdict moved. CTX-0068 (W-103 S-2) wires the accepted W-82 composer operations additively: bitty.terminal.submit under the already-wired terminal namespace (no verdict move) and bitty.process.editor.start under a newly recorded wired process namespace verdict (editor round trip only; unconstrained process.spawn stays v1-OUT, see exclusions), with the additive v2 capabilities terminal.input.submit and process.editor and typed outcomes mirroring the Core mechanism evidence at bitty #1661 (CTX-0929, 1df0459e) and #1654 (CTX-0941, 2f49934d); api_version stays 1.0.0 (additive only) and the pin stays fb44a867 (#1641). CTX-0066 (W-139) wires the accepted RFC-0004 history-read family additively: bitty.history.transcript.query under history.transcript.read, bitty.history.commands.query under history.commands.read, and bitty.history.kv.query under history.kv.read (NEW history root, never bitty.terminal.*; per-plugin per-source scoped grants with explicit scope params, no wildcard, intersect-or-deny; 8-category typed denials oracle-tight; VM-only delivery with separate export grants, argv-first; Core-attached untrusted label; TerminalOutput-only trust L0-L3 admit L4 deny; rate/aggregate budget SHAPE normative with mock placeholders), plus bitty.selection.copy under the existing clipboard.write (no new capability per Core W-143); live per-view search binding, viewport navigation, and selection lifecycles stay Core-owned deferred pending W-01 + W-138; mechanism evidence is open Core host PR bitty#1673 (CTX-0955, c01a9772, alignment, RFC wins) plus merged Core W-143 0d50b436 (CTX-0936, #1640); api_version stays 1.0.0 (additive only, precedent #141) and the pin stays fb44a867 (#1641).",
     "namespaces": {
       "commands": "wired",
       "events": "wired",
@@ -23,7 +23,9 @@
       "timers": "wired",
       "debug": "wired",
       "workspace": "wired",
-      "process": "wired"
+      "process": "wired",
+      "history": "wired",
+      "selection": "wired"
     },
     "functions": {
       "debug.control": "deferred"
@@ -61,22 +63,28 @@
       "revision": "8246ef683e6e850217477385e3f2c735dd240e5f"
     },
     {
+      "repository": "bitty-docs",
+      "path": "docs/decisions/rfcs/RFC-0004-history-read-surface.md",
+      "status": "accepted",
+      "revision": "adbb7875d9283c56cfa714e4e656047dac469686"
+    },
+    {
       "repository": "bitty-terminal-docs",
       "path": "specifications/search-selection-contract.md",
-      "status": "draft",
-      "revision": "89dbec0c9f75329d252cf0a22dffbf30ada73072"
+      "status": "accepted",
+      "revision": "6cbe944c6b9d52813d5cea89561261bda1402c81"
     },
     {
       "repository": "bitty-plugins-docs",
       "path": "extensibility/history-and-storage-policy.md",
-      "status": "draft",
-      "revision": "60c644173fa93824e6dbc6ef713363bbd311c948"
+      "status": "accepted",
+      "revision": "c97112d211f0b6f4d8a0c565dfb47092cfe1bc96"
     },
     {
       "repository": "bitty-plugins-docs",
       "path": "specifications/search-copy-mode-policy.md",
       "status": "draft",
-      "revision": "c97af7444858e149edaf063d9eb8702cfa6bcceb"
+      "revision": "c97112d211f0b6f4d8a0c565dfb47092cfe1bc96"
     }
   ],
   "types": [
@@ -295,7 +303,11 @@
       "kind": "class",
       "doc": "selection.changed payload; coalescable and carries no selection text in v1.",
       "fields": [
-        { "name": "view_id", "type": "integer", "doc": "View identity." },
+        {
+          "name": "view_id",
+          "type": "integer",
+          "doc": "View identity."
+        },
         {
           "name": "terminal_id",
           "type": "integer",
@@ -360,8 +372,16 @@
       "kind": "class",
       "doc": "Interception payload with bounded sanitized metadata; rewriting content is not expressible.",
       "fields": [
-        { "name": "action", "type": "string", "doc": "Bounded action label." },
-        { "name": "origin", "type": "string", "doc": "Bounded origin label." },
+        {
+          "name": "action",
+          "type": "string",
+          "doc": "Bounded action label."
+        },
+        {
+          "name": "origin",
+          "type": "string",
+          "doc": "Bounded origin label."
+        },
         {
           "name": "preview",
           "type": "string",
@@ -463,7 +483,11 @@
       "kind": "class",
       "doc": "Notification payload gated by platform.notify and subject to host rate policy.",
       "fields": [
-        { "name": "title", "type": "string", "doc": "Bounded title text." },
+        {
+          "name": "title",
+          "type": "string",
+          "doc": "Bounded title text."
+        },
         {
           "name": "body",
           "type": "string",
@@ -753,7 +777,11 @@
           "type": "integer",
           "doc": "Inclusive start column."
         },
-        { "name": "end", "type": "integer", "doc": "Exclusive end column." },
+        {
+          "name": "end",
+          "type": "integer",
+          "doc": "Exclusive end column."
+        },
         {
           "name": "attrs",
           "type": "BittyCellAttrs",
@@ -783,8 +811,16 @@
       "kind": "class",
       "doc": "Cursor position within the snapshot region.",
       "fields": [
-        { "name": "row", "type": "integer", "doc": "Cursor row." },
-        { "name": "col", "type": "integer", "doc": "Cursor column." },
+        {
+          "name": "row",
+          "type": "integer",
+          "doc": "Cursor row."
+        },
+        {
+          "name": "col",
+          "type": "integer",
+          "doc": "Cursor column."
+        },
         {
           "name": "visible",
           "type": "boolean",
@@ -863,7 +899,11 @@
       "kind": "class",
       "doc": "Semantic zone in a terminal snapshot.",
       "fields": [
-        { "name": "kind", "type": "BittyZoneKind", "doc": "Zone kind." },
+        {
+          "name": "kind",
+          "type": "BittyZoneKind",
+          "doc": "Zone kind."
+        },
         {
           "name": "range",
           "type": "BittyZoneRange",
@@ -927,8 +967,16 @@
           "type": "BittySnapshotCursor",
           "doc": "Cursor state."
         },
-        { "name": "modes", "type": "BittySnapshotModes", "doc": "Mode flags." },
-        { "name": "title", "type": "string", "doc": "Bounded title text." },
+        {
+          "name": "modes",
+          "type": "BittySnapshotModes",
+          "doc": "Mode flags."
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "doc": "Bounded title text."
+        },
         {
           "name": "zones",
           "type": "BittySemanticZone[]",
@@ -1136,7 +1184,11 @@
           "type": "string",
           "doc": "Owner-qualified plugin id."
         },
-        { "name": "version", "type": "string", "doc": "Manifest version." },
+        {
+          "name": "version",
+          "type": "string",
+          "doc": "Manifest version."
+        },
         {
           "name": "state",
           "type": "BittyDebugPluginState",
@@ -1154,13 +1206,21 @@
       "kind": "class",
       "doc": "One commands inspect row, sorted by plugin, id, title.",
       "fields": [
-        { "name": "plugin", "type": "string", "doc": "Owning plugin id." },
+        {
+          "name": "plugin",
+          "type": "string",
+          "doc": "Owning plugin id."
+        },
         {
           "name": "id",
           "type": "string",
           "doc": "Command id as registered (unqualified)."
         },
-        { "name": "title", "type": "string", "doc": "Bounded command title." }
+        {
+          "name": "title",
+          "type": "string",
+          "doc": "Bounded command title."
+        }
       ]
     },
     {
@@ -1168,8 +1228,16 @@
       "kind": "class",
       "doc": "One events inspect row (an event subscription), sorted by plugin, kind.",
       "fields": [
-        { "name": "plugin", "type": "string", "doc": "Owning plugin id." },
-        { "name": "kind", "type": "string", "doc": "Subscribed event kind." }
+        {
+          "name": "plugin",
+          "type": "string",
+          "doc": "Owning plugin id."
+        },
+        {
+          "name": "kind",
+          "type": "string",
+          "doc": "Subscribed event kind."
+        }
       ]
     },
     {
@@ -1236,7 +1304,11 @@
       "kind": "class",
       "doc": "One recorded event, redacted for the trace owner's own grants.",
       "fields": [
-        { "name": "topic", "type": "string", "doc": "Event kind." },
+        {
+          "name": "topic",
+          "type": "string",
+          "doc": "Event kind."
+        },
         {
           "name": "sequence",
           "type": "integer",
@@ -1352,6 +1424,234 @@
       "name": "BittyWorkspaceNamespace",
       "kind": "class",
       "doc": "Workspace domain (L1, ADR 0014): list is gated on workspace.read; every mutation is gated on workspace.control only (read never implies control), enqueues into a bounded host queue (32 requests per tick), and returns whether it was queued, not applied. Spellings are host candidates pending OQ-056."
+    },
+    {
+      "name": "BittyHistoryNamespace",
+      "kind": "class",
+      "doc": "Read-only history/search/selection snapshot surface (L2, W-139, accepted RFC-0004); NEW root beside terminal.*, never bitty.terminal.*.",
+      "fields": [
+        {
+          "name": "transcript",
+          "type": "BittyHistoryTranscriptNamespace",
+          "doc": "Segmented-transcript snapshot queries; requires history.transcript.read."
+        },
+        {
+          "name": "commands",
+          "type": "BittyHistoryCommandsNamespace",
+          "doc": "Command-history snapshot queries; requires history.commands.read."
+        },
+        {
+          "name": "kv",
+          "type": "BittyHistoryKvNamespace",
+          "doc": "Own-namespace KV snapshot queries; requires history.kv.read."
+        }
+      ]
+    },
+    {
+      "name": "BittyHistoryTranscriptNamespace",
+      "kind": "class",
+      "doc": "Segmented-transcript snapshot queries (L2, W-139); scoped, bounded, redacted, truncated, labeled untrusted; session snapshots never queryable."
+    },
+    {
+      "name": "BittyHistoryCommandsNamespace",
+      "kind": "class",
+      "doc": "Command-history snapshot queries (L2, W-139); scoped list, search, and tail reads with explicit scope and result bound."
+    },
+    {
+      "name": "BittyHistoryKvNamespace",
+      "kind": "class",
+      "doc": "Own-namespace KV snapshot queries (L2, W-139); reads of the plugin's own namespace only under the published quota ceilings."
+    },
+    {
+      "name": "BittyHistoryQueryOp",
+      "kind": "alias",
+      "type": "\"list\"|\"tail\"|\"search\"",
+      "doc": "History snapshot operation; mirrors Core QueryOp List/Tail/Search (open bitty#1673, alignment)."
+    },
+    {
+      "name": "BittyHistoryScope",
+      "kind": "class",
+      "doc": "Explicit query scope (source plus panel/workspace extent); no wildcard or all default, intersect-or-deny.",
+      "fields": [
+        {
+          "name": "panel",
+          "type": "string",
+          "optional": true,
+          "doc": "Panel extent; transcript/commands need panel and/or workspace, forbidden for kv."
+        },
+        {
+          "name": "workspace",
+          "type": "string",
+          "optional": true,
+          "doc": "Workspace extent; transcript/commands need panel and/or workspace, forbidden for kv."
+        }
+      ]
+    },
+    {
+      "name": "BittyHistoryQueryOpts",
+      "kind": "class",
+      "doc": "Bounded snapshot query over already-persisted state; over-bound requests deny, Core never clamps silently.",
+      "fields": [
+        {
+          "name": "scope",
+          "type": "BittyHistoryScope",
+          "doc": "Explicit scope; transcript/commands need panel and/or workspace, kv needs neither."
+        },
+        {
+          "name": "row_start",
+          "type": "integer",
+          "optional": true,
+          "doc": "First row offset within in-scope rows; defaults to 0, ignored for tail."
+        },
+        {
+          "name": "row_count",
+          "type": "integer",
+          "doc": "Explicit row bound over zero; capped by the host per-query row ceiling (mock placeholder 16)."
+        },
+        {
+          "name": "max_bytes",
+          "type": "integer",
+          "doc": "Explicit result byte bound over zero; capped by the host per-query byte ceiling (mock placeholder 4096)."
+        },
+        {
+          "name": "op",
+          "type": "BittyHistoryQueryOp",
+          "doc": "List, tail (last rows), or bounded substring search over redacted bodies."
+        },
+        {
+          "name": "needle",
+          "type": "string",
+          "optional": true,
+          "doc": "Search needle 1..256 bytes; required iff op is search, matched against redacted bodies only."
+        }
+      ]
+    },
+    {
+      "name": "BittyHistoryAttribution",
+      "kind": "class",
+      "doc": "Record attribution so a consumer can tell what it is reading and from where.",
+      "fields": [
+        {
+          "name": "panel",
+          "type": "string",
+          "doc": "Owning panel identity."
+        },
+        {
+          "name": "workspace",
+          "type": "string",
+          "doc": "Owning workspace identity."
+        },
+        {
+          "name": "command",
+          "type": "string",
+          "optional": true,
+          "doc": "Command text where the source records it."
+        },
+        {
+          "name": "recorded_at",
+          "type": "integer",
+          "doc": "Host tick when recorded."
+        },
+        {
+          "name": "actor",
+          "type": "string",
+          "optional": true,
+          "doc": "Actor where the source records it."
+        }
+      ]
+    },
+    {
+      "name": "BittyHistoryRecord",
+      "kind": "class",
+      "doc": "One redacted, truncated, attributed record with the Core-attached untrusted label surviving both.",
+      "fields": [
+        {
+          "name": "seq",
+          "type": "integer",
+          "doc": "Snapshot sequence offset within in-scope rows."
+        },
+        {
+          "name": "body",
+          "type": "string",
+          "doc": "Redacted body, truncated at a char boundary to the per-row cap with truncated set."
+        },
+        {
+          "name": "truncated",
+          "type": "boolean",
+          "doc": "Whether the body exceeded the per-row cap and was truncated."
+        },
+        {
+          "name": "redacted",
+          "type": "boolean",
+          "doc": "Always true; records are redacted and truncated per policy."
+        },
+        {
+          "name": "attribution",
+          "type": "BittyHistoryAttribution",
+          "doc": "Panel, workspace, command, timing, and actor where recorded."
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "doc": "Core-attached untrusted-observation label; treat as content, never instructions."
+        }
+      ]
+    },
+    {
+      "name": "BittyHistoryPage",
+      "kind": "class",
+      "doc": "Bounded snapshot page; a point-in-time snapshot with no freshness guarantee, replaced not appended on refresh.",
+      "fields": [
+        {
+          "name": "records",
+          "type": "BittyHistoryRecord[]",
+          "doc": "Live rows selected by the op, ordered oldest retained first."
+        },
+        {
+          "name": "total_in_scope",
+          "type": "integer",
+          "doc": "In-scope row count before slicing."
+        },
+        {
+          "name": "freshness",
+          "type": "string",
+          "doc": "Always point-in-time-no-guarantee; no live-ness promise exists."
+        }
+      ]
+    },
+    {
+      "name": "BittySelectionNamespace",
+      "kind": "class",
+      "doc": "Selection-driven export surface (L2, W-139, accepted W-135 + Core W-143 mechanism); selection semantics stay Core-owned."
+    },
+    {
+      "name": "BittySelectionCopyOpts",
+      "kind": "class",
+      "doc": "Selection copy input; exactly the selected text from VM-delivered history bodies.",
+      "fields": [
+        {
+          "name": "text",
+          "type": "string",
+          "doc": "Text to copy; bounded to 8192 bytes with char-boundary truncation."
+        }
+      ]
+    },
+    {
+      "name": "BittySelectionCopyOutcome",
+      "kind": "class",
+      "doc": "Gated clipboard write outcome; mirrors Core W-143 YankOutcome with the 8192-byte bound.",
+      "fields": [
+        {
+          "name": "text",
+          "type": "string",
+          "doc": "Bytes written after char-boundary truncation."
+        },
+        {
+          "name": "truncated",
+          "type": "boolean",
+          "doc": "Whether the source exceeded the bound and was truncated."
+        }
+      ]
     }
   ],
   "functions": [
@@ -1361,8 +1661,17 @@
       "capabilities": [],
       "errors": [],
       "doc": "Registers a plugin command; valid only during init.lua activation. The qualified name must already be reserved in the manifest [lazy].commands, duplicate qualified names are rejected at graph construction, and a later registration attempt is a registration error.",
-      "params": [{ "name": "def", "type": "BittyCommandDef" }],
-      "returns": [{ "type": "BittyCommandHandle" }]
+      "params": [
+        {
+          "name": "def",
+          "type": "BittyCommandDef"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyCommandHandle"
+        }
+      ]
     },
     {
       "path": "events.subscribe",
@@ -1371,10 +1680,20 @@
       "errors": [],
       "doc": "Subscribes to one closed v1 event name; the type must be declared for the plugin. Observation and lifecycle handler results are ignored; interception handlers return false to veto, anything else to approve.",
       "params": [
-        { "name": "name", "type": "BittyEventName" },
-        { "name": "handler", "type": "BittyEventHandler" }
+        {
+          "name": "name",
+          "type": "BittyEventName"
+        },
+        {
+          "name": "handler",
+          "type": "BittyEventHandler"
+        }
       ],
-      "returns": [{ "type": "BittySubscriptionHandle" }]
+      "returns": [
+        {
+          "type": "BittySubscriptionHandle"
+        }
+      ]
     },
     {
       "path": "keymaps.suggest",
@@ -1382,8 +1701,17 @@
       "capabilities": [],
       "errors": [],
       "doc": "Suggests a key binding for a command registered by the same generation; the accepted precedence user > workspace > first-party/default > plugin always applies and conflicts produce diagnostics for user resolution.",
-      "params": [{ "name": "def", "type": "BittyKeymapSuggestion" }],
-      "returns": [{ "type": "BittyKeymapHandle" }]
+      "params": [
+        {
+          "name": "def",
+          "type": "BittyKeymapSuggestion"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyKeymapHandle"
+        }
+      ]
     },
     {
       "path": "settings.get",
@@ -1391,8 +1719,17 @@
       "capabilities": [],
       "errors": [],
       "doc": "Reads a key relative to plugins.<owner>.<name>; plugins cannot read outside their own namespace.",
-      "params": [{ "name": "key", "type": "string" }],
-      "returns": [{ "type": "BittySettingsValue" }]
+      "params": [
+        {
+          "name": "key",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittySettingsValue"
+        }
+      ]
     },
     {
       "path": "settings.set",
@@ -1401,10 +1738,20 @@
       "errors": [],
       "doc": "Writes a key relative to plugins.<owner>.<name>; plugins cannot write outside their own namespace.",
       "params": [
-        { "name": "key", "type": "string" },
-        { "name": "value", "type": "BittySettingsValue" }
+        {
+          "name": "key",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "BittySettingsValue"
+        }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "store.get",
@@ -1412,8 +1759,17 @@
       "capabilities": [],
       "errors": [],
       "doc": "Reads a persisted value by key; keys match ^[a-z0-9][a-z0-9._-]{0,127}$ and the store survives suspension, reload, and generation disposal.",
-      "params": [{ "name": "key", "type": "string" }],
-      "returns": [{ "type": "BittyStoreValue|nil" }]
+      "params": [
+        {
+          "name": "key",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyStoreValue|nil"
+        }
+      ]
     },
     {
       "path": "store.set",
@@ -1422,10 +1778,20 @@
       "errors": ["E_STORE_VALUE_INVALID", "E_STORE_QUOTA"],
       "doc": "Writes or, with nil, deletes a persisted value; writes are synchronous and fail closed on value invalidity or quota overflow without partial writes.",
       "params": [
-        { "name": "key", "type": "string" },
-        { "name": "value", "type": "BittyStoreValue|nil" }
+        {
+          "name": "key",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "BittyStoreValue|nil"
+        }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "notify.show",
@@ -1433,8 +1799,17 @@
       "capabilities": ["platform.notify"],
       "errors": ["E_CAPABILITY_DENIED"],
       "doc": "Shows a host-rendered notification via the platform.notify capability, subject to host rate policy.",
-      "params": [{ "name": "payload", "type": "BittyNotifyPayload" }],
-      "returns": [{ "type": "boolean" }]
+      "params": [
+        {
+          "name": "payload",
+          "type": "BittyNotifyPayload"
+        }
+      ],
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "env.get",
@@ -1442,8 +1817,17 @@
       "capabilities": ["env.read:<KEY>"],
       "errors": ["E_NOT_IMPLEMENTED"],
       "doc": "Reads a desensitized environment value for a bounded ASCII key matching ^[A-Z_][A-Z0-9_]*$ (1..64); keys outside the allowlist return nil, indistinguishable from an unset variable. Available only when the namespace is declared.",
-      "params": [{ "name": "name", "type": "string" }],
-      "returns": [{ "type": "string|nil" }]
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "string|nil"
+        }
+      ]
     },
     {
       "path": "env.has",
@@ -1451,8 +1835,17 @@
       "capabilities": ["env.read:<KEY>"],
       "errors": ["E_NOT_IMPLEMENTED"],
       "doc": "Reports presence without exposing the value beyond the trace surface. Available only when the namespace is declared.",
-      "params": [{ "name": "name", "type": "string" }],
-      "returns": [{ "type": "boolean" }]
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "services.get",
@@ -1465,10 +1858,20 @@
       ],
       "doc": "Resolves a provider before activation; a missing provider fails closed with E_SERVICE_RESOLUTION unless opts.optional is true, and provider disappearance makes in-flight calls fail closed with E_SERVICE_GONE.",
       "params": [
-        { "name": "iface", "type": "string" },
-        { "name": "opts", "type": "BittyServiceGetOpts" }
+        {
+          "name": "iface",
+          "type": "string"
+        },
+        {
+          "name": "opts",
+          "type": "BittyServiceGetOpts"
+        }
       ],
-      "returns": [{ "type": "BittyService|nil" }]
+      "returns": [
+        {
+          "type": "BittyService|nil"
+        }
+      ]
     },
     {
       "path": "services.provide",
@@ -1477,17 +1880,30 @@
       "errors": ["E_DEF_INVALID", "E_SERVICE_UNDECLARED"],
       "doc": "Provides an interface implementation during activation; the interface, version, and bounded schemas must already be declared in the manifest [services.provided] table form, and arguments and results are schema-validated by the host.",
       "params": [
-        { "name": "iface", "type": "string" },
-        { "name": "impl", "type": "BittyService" }
+        {
+          "name": "iface",
+          "type": "string"
+        },
+        {
+          "name": "impl",
+          "type": "BittyService"
+        }
       ],
-      "returns": [{ "type": "BittyServiceHandle" }]
+      "returns": [
+        {
+          "type": "BittyServiceHandle"
+        }
+      ]
     },
     {
       "path": "ui.mount",
       "level": "L2",
       "capabilities": ["ui.rich"],
       "conditionalCapabilities": [
-        { "capability": "ui.overlay", "when": "slot == \"overlay\"" }
+        {
+          "capability": "ui.overlay",
+          "when": "slot == \"overlay\""
+        }
       ],
       "errors": [
         "E_CAPABILITY_DENIED",
@@ -1497,10 +1913,20 @@
       ],
       "doc": "Mounts declarative component content into an accepted semantic slot; rich content requires ui.rich, the overlay slot additionally requires ui.overlay, and the exclusive tabline slot requires a matching [lazy].claims entry (E_UI_CLAIM_REQUIRED). After those gates, an accepted slot the host does not present (tabline, overlay, terminal) fails closed with E_UI_UNAVAILABLE (runtime). Host layout owns placement and decoration, and there are no global coordinates, shaders, pipelines, glyph injection, native windows, or renderer handles.",
       "params": [
-        { "name": "slot", "type": "BittyUiSlot" },
-        { "name": "component", "type": "BittySceneNode" }
+        {
+          "name": "slot",
+          "type": "BittyUiSlot"
+        },
+        {
+          "name": "component",
+          "type": "BittySceneNode"
+        }
       ],
-      "returns": [{ "type": "BittyBlockHandle" }]
+      "returns": [
+        {
+          "type": "BittyBlockHandle"
+        }
+      ]
     },
     {
       "path": "ui.update",
@@ -1509,10 +1935,20 @@
       "errors": ["E_CAPABILITY_DENIED", "E_UI_COMPONENT_INVALID"],
       "doc": "Replaces a block's scene subtree under the same block_id with an incremented version; returns false for a stale or foreign handle and raises E_UI_COMPONENT_INVALID for a component that violates the scene contract.",
       "params": [
-        { "name": "handle", "type": "BittyBlockHandle" },
-        { "name": "component", "type": "BittySceneNode" }
+        {
+          "name": "handle",
+          "type": "BittyBlockHandle"
+        },
+        {
+          "name": "component",
+          "type": "BittySceneNode"
+        }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "ui.overlay.acquire",
@@ -1526,9 +1962,17 @@
       ],
       "doc": "Requests the focusable overlay and the single transient input-capture session in one Core-owned switch; spec carries optional bounded title and placeholder hints with unknown fields ignored. Without ui.overlay.focus fails E_CAPABILITY_DENIED, a second acquire while active fails E_UI_ALREADY_CAPTURED, and safe mode fails E_UI_UNAVAILABLE.",
       "params": [
-        { "name": "spec", "type": "BittyOverlaySpec", "optional": true }
+        {
+          "name": "spec",
+          "type": "BittyOverlaySpec",
+          "optional": true
+        }
       ],
-      "returns": [{ "type": "BittyOverlayHandle" }]
+      "returns": [
+        {
+          "type": "BittyOverlayHandle"
+        }
+      ]
     },
     {
       "path": "ui.overlay.update",
@@ -1541,10 +1985,20 @@
       ],
       "doc": "Replaces the overlay content for a session the caller owns; the scene uses the accepted v1 node set under the v1 scene budgets. An update on a handle the caller does not own, or on a released handle, fails E_UI_NOT_OWNER and keeps the previous content.",
       "params": [
-        { "name": "handle", "type": "BittyOverlayHandle" },
-        { "name": "scene", "type": "BittySceneNode" }
+        {
+          "name": "handle",
+          "type": "BittyOverlayHandle"
+        },
+        {
+          "name": "scene",
+          "type": "BittySceneNode"
+        }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "ui.overlay.poll",
@@ -1552,8 +2006,17 @@
       "capabilities": ["ui.overlay.focus"],
       "errors": ["E_CAPABILITY_DENIED", "E_UI_NOT_OWNER"],
       "doc": "Drains the session queue as an owner-initiated synchronous read of already-queued events; never a Core-driven callback and never on the input hot path. Returns status, seq, ordered events, sticky overflowed, and reason only with released.",
-      "params": [{ "name": "handle", "type": "BittyOverlayHandle" }],
-      "returns": [{ "type": "BittyOverlayPollResult" }]
+      "params": [
+        {
+          "name": "handle",
+          "type": "BittyOverlayHandle"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyOverlayPollResult"
+        }
+      ]
     },
     {
       "path": "ui.overlay.release",
@@ -1562,10 +2025,21 @@
       "errors": ["E_CAPABILITY_DENIED", "E_UI_NOT_OWNER", "E_DEF_INVALID"],
       "doc": "Ends a session the caller owns; idempotent on an already-released handle within the owning generation. The optional reason is submitted or cancelled and defaults to released; an invalid reason is E_DEF_INVALID and Core-reported reasons overwrite on involuntary terminal causes.",
       "params": [
-        { "name": "handle", "type": "BittyOverlayHandle" },
-        { "name": "reason", "type": "string", "optional": true }
+        {
+          "name": "handle",
+          "type": "BittyOverlayHandle"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "optional": true
+        }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "terminal.snapshot",
@@ -1573,8 +2047,17 @@
       "capabilities": ["terminal.semantic-read"],
       "errors": ["E_CAPABILITY_DENIED", "E_SNAPSHOT_TOO_LARGE"],
       "doc": "Returns a read-only semantic snapshot of the visible viewport; only the semantic scope is accepted in v1 and there is no raw scope, scrollback, or full-grid selection.",
-      "params": [{ "name": "opts", "type": "BittySnapshotOpts" }],
-      "returns": [{ "type": "BittyTerminalSnapshot" }]
+      "params": [
+        {
+          "name": "opts",
+          "type": "BittySnapshotOpts"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyTerminalSnapshot"
+        }
+      ]
     },
     {
       "path": "terminal.submit",
@@ -1582,8 +2065,17 @@
       "capabilities": ["terminal.input.submit"],
       "errors": ["E_CAPABILITY_DENIED", "E_DEF_INVALID"],
       "doc": "Submits text to the focused panel PTY through the capability-gated paste pipeline as one byte-exact bracketed-paste frame; over-cap, lease, and budget refusals return a denied outcome and emit nothing, and a frame that only buffers reports unavailable without charging the budget.",
-      "params": [{ "name": "text", "type": "string" }],
-      "returns": [{ "type": "BittySubmitOutcome" }]
+      "params": [
+        {
+          "name": "text",
+          "type": "string"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittySubmitOutcome"
+        }
+      ]
     },
     {
       "path": "tasks.spawn",
@@ -1591,8 +2083,17 @@
       "capabilities": [],
       "errors": ["E_BUDGET_TASK"],
       "doc": "Spawns a host-owned task wrapping a Lua continuation; handles are generation-owned and all generation N handles fail closed after disposal.",
-      "params": [{ "name": "fn", "type": "fun(): any" }],
-      "returns": [{ "type": "BittyTaskHandle" }]
+      "params": [
+        {
+          "name": "fn",
+          "type": "fun(): any"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyTaskHandle"
+        }
+      ]
     },
     {
       "path": "tasks.cancel",
@@ -1600,8 +2101,17 @@
       "capabilities": [],
       "errors": [],
       "doc": "Cancels a task cooperatively at the next host slice; cancellation releases the cap slot and there is no Lua-visible abort hook in v1.",
-      "params": [{ "name": "task_id", "type": "BittyTaskHandle" }],
-      "returns": [{ "type": "boolean" }]
+      "params": [
+        {
+          "name": "task_id",
+          "type": "BittyTaskHandle"
+        }
+      ],
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "timers.create",
@@ -1610,10 +2120,20 @@
       "errors": ["E_BUDGET_TIMER"],
       "doc": "Creates a generation-owned one-shot timer; repeating timers are a 1.x minor addition.",
       "params": [
-        { "name": "delay_ms", "type": "integer" },
-        { "name": "callback", "type": "fun(): any" }
+        {
+          "name": "delay_ms",
+          "type": "integer"
+        },
+        {
+          "name": "callback",
+          "type": "fun(): any"
+        }
       ],
-      "returns": [{ "type": "BittyTimerHandle" }]
+      "returns": [
+        {
+          "type": "BittyTimerHandle"
+        }
+      ]
     },
     {
       "path": "timers.cancel",
@@ -1621,8 +2141,17 @@
       "capabilities": [],
       "errors": [],
       "doc": "Cancels a timer and releases the cap slot; handles from a disposed generation fail closed.",
-      "params": [{ "name": "timer_id", "type": "BittyTimerHandle" }],
-      "returns": [{ "type": "boolean" }]
+      "params": [
+        {
+          "name": "timer_id",
+          "type": "BittyTimerHandle"
+        }
+      ],
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "debug.inspect",
@@ -1630,8 +2159,17 @@
       "capabilities": ["debug.inspect"],
       "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
       "doc": "Read-only runtime inspection returning { target, items, truncated }; a non-string target is E_DEF_INVALID before the grant check, the reserved panels target fails closed with E_NOT_IMPLEMENTED, and other plugins' grants are never exposed.",
-      "params": [{ "name": "target", "type": "BittyDebugInspectTarget" }],
-      "returns": [{ "type": "BittyDebugInspectResult" }]
+      "params": [
+        {
+          "name": "target",
+          "type": "BittyDebugInspectTarget"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyDebugInspectResult"
+        }
+      ]
     },
     {
       "path": "debug.trace",
@@ -1640,9 +2178,17 @@
       "errors": ["E_DEF_INVALID", "E_DEF_LIMIT", "E_CAPABILITY_DENIED"],
       "doc": "Opens (nil or enabled = true) or closes (enabled = false with handle) an event trace; a trace records only event kinds the plugin declares in [lazy].events, intersected with filter, at most 4 traces per plugin (E_DEF_LIMIT), and closing an unknown or foreign handle is E_DEF_INVALID.",
       "params": [
-        { "name": "opts", "type": "BittyDebugTraceOpts", "optional": true }
+        {
+          "name": "opts",
+          "type": "BittyDebugTraceOpts",
+          "optional": true
+        }
       ],
-      "returns": [{ "type": "BittyDebugTraceHandle" }]
+      "returns": [
+        {
+          "type": "BittyDebugTraceHandle"
+        }
+      ]
     },
     {
       "path": "debug.trace_get",
@@ -1650,8 +2196,17 @@
       "capabilities": ["debug.trace"],
       "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
       "doc": "Drains a trace owned by this plugin; a non-integer handle is E_DEF_INVALID, and an unknown or foreign handle returns nil so other plugins' traces cannot be probed.",
-      "params": [{ "name": "handle", "type": "BittyDebugTraceHandle" }],
-      "returns": [{ "type": "BittyDebugTraceDrain|nil" }]
+      "params": [
+        {
+          "name": "handle",
+          "type": "BittyDebugTraceHandle"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyDebugTraceDrain|nil"
+        }
+      ]
     },
     {
       "path": "debug.control",
@@ -1660,10 +2215,20 @@
       "errors": ["E_NOT_IMPLEMENTED"],
       "doc": "High-risk lifecycle control (reload_plugin, suspend_plugin, resume_plugin, clear_state by plugin id); non-string arguments are E_DEF_INVALID, and the host fails closed before reading the grant or the target.",
       "params": [
-        { "name": "action", "type": "string" },
-        { "name": "target", "type": "string" }
+        {
+          "name": "action",
+          "type": "string"
+        },
+        {
+          "name": "target",
+          "type": "string"
+        }
       ],
-      "returns": [{ "type": "any" }]
+      "returns": [
+        {
+          "type": "any"
+        }
+      ]
     },
     {
       "path": "workspace.list",
@@ -1672,7 +2237,11 @@
       "errors": ["E_CAPABILITY_DENIED"],
       "doc": "Lists workspaces in order, at most 16 rows (the Core MAX_WORKSPACES bound); names are truncated to 32 characters and rows never carry terminal content.",
       "params": [],
-      "returns": [{ "type": "BittyWorkspaceInfo[]" }]
+      "returns": [
+        {
+          "type": "BittyWorkspaceInfo[]"
+        }
+      ]
     },
     {
       "path": "workspace.focus",
@@ -1686,7 +2255,11 @@
           "type": "BittyWorkspaceId|BittyWorkspaceIndexTarget"
         }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "workspace.new",
@@ -1695,7 +2268,11 @@
       "errors": ["E_CAPABILITY_DENIED"],
       "doc": "Queues creating a workspace and switching to it, subject to the Core capacity bound.",
       "params": [],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "workspace.next",
@@ -1704,7 +2281,11 @@
       "errors": ["E_CAPABILITY_DENIED"],
       "doc": "Queues switching to the next workspace (wraps).",
       "params": [],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "workspace.close",
@@ -1713,9 +2294,17 @@
       "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
       "doc": "Queues closing a workspace (nil closes the active one) through the kill-confirm gate: idle workspaces close immediately and live ones arm the user confirmation.",
       "params": [
-        { "name": "id", "type": "BittyWorkspaceId", "optional": true }
+        {
+          "name": "id",
+          "type": "BittyWorkspaceId",
+          "optional": true
+        }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "workspace.rename",
@@ -1724,10 +2313,20 @@
       "errors": ["E_DEF_INVALID", "E_DEF_LIMIT", "E_CAPABILITY_DENIED"],
       "doc": "Queues renaming a workspace; name must be a non-blank UTF-8 string without control characters and at most 256 bytes (E_DEF_LIMIT), and Core truncates accepted names to 32 characters.",
       "params": [
-        { "name": "id", "type": "BittyWorkspaceId" },
-        { "name": "name", "type": "string" }
+        {
+          "name": "id",
+          "type": "BittyWorkspaceId"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        }
       ],
-      "returns": [{ "type": "boolean" }]
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "workspace.move_panel",
@@ -1735,8 +2334,17 @@
       "capabilities": ["workspace.control"],
       "errors": ["E_DEF_INVALID", "E_CAPABILITY_DENIED"],
       "doc": "Queues moving the focused panel of the active workspace into the workspace with this stable id.",
-      "params": [{ "name": "id", "type": "BittyWorkspaceId" }],
-      "returns": [{ "type": "boolean" }]
+      "params": [
+        {
+          "name": "id",
+          "type": "BittyWorkspaceId"
+        }
+      ],
+      "returns": [
+        {
+          "type": "boolean"
+        }
+      ]
     },
     {
       "path": "process.editor.start",
@@ -1745,9 +2353,119 @@
       "errors": ["E_CAPABILITY_DENIED", "E_DEF_INVALID"],
       "doc": "Runs one allowlisted external-editor round trip (nvim, vim, or vi matched exactly from $VISUAL then $EDITOR with no fallback) on a Core-owned 0600 temp file that is always removed; returns the typed outcome and never the temp path.",
       "params": [
-        { "name": "opts", "type": "BittyEditorStartOpts", "optional": true }
+        {
+          "name": "opts",
+          "type": "BittyEditorStartOpts",
+          "optional": true
+        }
       ],
-      "returns": [{ "type": "BittyEditorOutcome" }]
+      "returns": [
+        {
+          "type": "BittyEditorOutcome"
+        }
+      ]
+    },
+    {
+      "path": "history.transcript.query",
+      "level": "L2",
+      "capabilities": ["history.transcript.read"],
+      "errors": [
+        "E_HISTORY_MISSING_GRANT",
+        "E_HISTORY_REVOKED_GRANT",
+        "E_HISTORY_SCOPE_MISMATCH",
+        "E_HISTORY_OVER_BOUND",
+        "E_HISTORY_CAPTURE_DISABLED",
+        "E_HISTORY_SAFE_MODE",
+        "E_HISTORY_TRUST_DENIED",
+        "E_HISTORY_UNAVAILABLE",
+        "E_DEF_INVALID"
+      ],
+      "doc": "Scoped, bounded snapshot reads over sealed transcript segments while opt-in capture holds; VM-only delivery with the untrusted label, never Terminal Truth, never a stream.",
+      "params": [
+        {
+          "name": "opts",
+          "type": "BittyHistoryQueryOpts"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyHistoryPage"
+        }
+      ]
+    },
+    {
+      "path": "history.commands.query",
+      "level": "L2",
+      "capabilities": ["history.commands.read"],
+      "errors": [
+        "E_HISTORY_MISSING_GRANT",
+        "E_HISTORY_REVOKED_GRANT",
+        "E_HISTORY_SCOPE_MISMATCH",
+        "E_HISTORY_OVER_BOUND",
+        "E_HISTORY_CAPTURE_DISABLED",
+        "E_HISTORY_SAFE_MODE",
+        "E_HISTORY_TRUST_DENIED",
+        "E_HISTORY_UNAVAILABLE",
+        "E_DEF_INVALID"
+      ],
+      "doc": "Scoped list, search, and tail reads over command history with explicit scope and result bound; dangling external references surface as typed unavailability.",
+      "params": [
+        {
+          "name": "opts",
+          "type": "BittyHistoryQueryOpts"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyHistoryPage"
+        }
+      ]
+    },
+    {
+      "path": "history.kv.query",
+      "level": "L2",
+      "capabilities": ["history.kv.read"],
+      "errors": [
+        "E_HISTORY_MISSING_GRANT",
+        "E_HISTORY_REVOKED_GRANT",
+        "E_HISTORY_SCOPE_MISMATCH",
+        "E_HISTORY_OVER_BOUND",
+        "E_HISTORY_CAPTURE_DISABLED",
+        "E_HISTORY_SAFE_MODE",
+        "E_HISTORY_TRUST_DENIED",
+        "E_HISTORY_UNAVAILABLE",
+        "E_DEF_INVALID"
+      ],
+      "doc": "Reads of the plugin's own KV namespace only under the published quota ceilings; cross-plugin reads are unrepresentable and terminal-derived shims are forbidden.",
+      "params": [
+        {
+          "name": "opts",
+          "type": "BittyHistoryQueryOpts"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittyHistoryPage"
+        }
+      ]
+    },
+    {
+      "path": "selection.copy",
+      "level": "L2",
+      "capabilities": ["clipboard.write"],
+      "errors": ["E_CAPABILITY_DENIED", "E_DEF_INVALID"],
+      "doc": "Copies exactly the selected text behind the Core clipboard permission gate; bounded to 8192 bytes with char-boundary truncation and a truncated flag, never bypassing the gate.",
+      "params": [
+        {
+          "name": "opts",
+          "type": "BittySelectionCopyOpts"
+        }
+      ],
+      "returns": [
+        {
+          "type": "BittySelectionCopyOutcome"
+        }
+      ]
     }
   ],
   "events": [
@@ -1941,16 +2659,32 @@
       "reason": "Level 4 protocol registration is excluded in v1."
     },
     {
-      "path": "bitty.history",
-      "reason": "W-139 (CTX-0066) history/search/selection surface is blocked: the delegating W-135 (bitty-terminal-docs search-selection-contract), W-137 (bitty-plugins-docs history-and-storage-policy), and W-138 (bitty-plugins-docs search-copy-mode-policy) contracts are draft and authorize no implementation, and no accepted closed-set capability covers scrollback or history text read. The Plugin Platform RFC fixes the terminal family as terminal.semantic-read/raw-read/input.self/input.all/manage, and the accepted Plugin API v1 Lua Surface RFC states v1 has no scrollback text read path; adding a scrollback/history read capability requires a successor RFC with its own security review. Re-evaluate when an accepted capability and a bitty host entry point exist."
-    },
-    {
       "path": "bitty.ui.targets",
       "reason": "Thin targeting mechanism bindings (bitty #1641, W-29, CTX-0942, re-scoped minimal per DEC-0085) stay out of v1: snapshot, register, unregister, session_start, session_cancel, and dispatch over existing beacon types with no new struct, enum, namespace, or capability and no target or annotation Event-Bus exposure. Provisional host candidates pending per W-120, deferred and not wired; re-evaluate when an accepted contract authorizes the spellings."
     },
     {
       "path": "bitty.ui.labels",
       "reason": "Bounded label operations (bitty #1641, W-29, CTX-0942) stay out of v1: set_policy and assign over existing beacon types with no new capability and no Event-Bus exposure. Provisional host candidates pending per W-120, deferred and not wired; re-evaluate when an accepted contract authorizes the spellings."
+    },
+    {
+      "path": "bitty.search",
+      "reason": "Live per-view search binding (W-135 accepted + Core W-143 0d50b436 mechanism) stays Core-owned deferred pending W-01 focusable-overlay/transient-capture plus W-138 policy; SDK covers persisted history search via bitty.history.*.query search ops only."
+    },
+    {
+      "path": "bitty.history.session",
+      "reason": "Session snapshots are never a queryable source (W-131 accepted, W-137 accepted, RFC-0004 accepted): save/restore stays Core-only per W-137 and no plugin may gate, read, or mutate a snapshot."
+    },
+    {
+      "path": "bitty.history.export",
+      "reason": "No bundled export path in the history family (RFC-0004 grant-combination rule): reading authorizes VM-only delivery; clipboard, filesystem, process, and external-history exports each need their own separately granted authority (clipboard.write-class, filesystem, process; external adapters argv-first per P0-AC-009)."
+    },
+    {
+      "path": "bitty.terminal.history",
+      "reason": "NEW history root, never bitty.terminal.* (RFC-0004 family invariant): no terminal.* member gains a read sub-scope and no terminal.* spelling reads the history sources."
+    },
+    {
+      "path": "bitty.selection.get",
+      "reason": "Live selection handles, viewport navigation, and per-view search binding (W-135 accepted + Core W-143 0d50b436) stay Core-owned deferred pending W-01 + W-138; only bitty.selection.copy is wired."
     }
   ],
   "excludedArgumentLiterals": [

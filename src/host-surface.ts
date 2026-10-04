@@ -114,6 +114,30 @@ export const CAPABILITY_GATED_SURFACE: readonly CapabilityGate[] = [
   // by the additive v2 capability process.editor; the temp file never leaves
   // Core and grants no general fs.write authority.
   { surface: "bitty.process.editor.start", capability: "process.editor" },
+  // CTX-0066 (W-139, accepted RFC-0004): read-only history/search/selection
+  // snapshot queries under the NEW `history` family, never `bitty.terminal.*`.
+  // Per-plugin, per-source scoped grants; scope travels with the host call
+  // (never as a grant parameter, same precedent as `terminal.input.submit`);
+  // no wildcard, no bundled sources, no migration to or from `terminal.*`.
+  // Session snapshots are never queryable. Exact heads mirror open Core host
+  // PR bitty#1673 (alignment, RFC wins on conflict); Lua spellings are minted
+  // by this SDK task.
+  {
+    surface: "bitty.history.transcript.query",
+    capability: "history.transcript.read",
+  },
+  {
+    surface: "bitty.history.commands.query",
+    capability: "history.commands.read",
+  },
+  { surface: "bitty.history.kv.query", capability: "history.kv.read" },
+  // CTX-0066 (W-139, accepted W-135 + Core W-143 mechanism 0d50b436): the
+  // selection-driven clipboard export reuses the existing `clipboard.write`
+  // grant (no new capability per W-143); the history grant never implies it
+  // (VM-only delivery + separate export grants). Live selection semantics,
+  // viewport navigation, and per-view search binding stay Core-owned and
+  // deferred pending W-01 + W-138 (see surface exclusions).
+  { surface: "bitty.selection.copy", capability: "clipboard.write" },
   { surface: "bitty.env.get", capability: "env.read:<KEY>" },
   { surface: "bitty.env.has", capability: "env.read:<KEY>" },
   { surface: "bitty.debug.inspect", capability: "debug.inspect" },
@@ -173,6 +197,10 @@ export const V1_SURFACE_FUNCTIONS: readonly string[] = [
   "workspace.rename",
   "workspace.move_panel",
   "process.editor.start",
+  "history.transcript.query",
+  "history.commands.query",
+  "history.kv.query",
+  "selection.copy",
 ];
 
 /** The only snapshot scope accepted in v1 (`scope = "raw"` is excluded). */
@@ -338,6 +366,32 @@ export const MOCK_LIMITS = {
   // Editor spawn/wait detail truncation mirrors bitty `truncate_err`
   // (composer.rs:1324, CTX-0929): over-long detail is cut at 256 bytes.
   EDITOR_SPAWN_DETAIL_MAX_BYTES: 256,
+  // W-139 history-read budgets (CTX-0066, accepted RFC-0004): the SHAPE is
+  // normative (explicit row range plus count/size caps, per-plugin query rate
+  // plus aggregate result budget with attribution, polling reconstituted as
+  // streaming denies, no freshness guarantee); exact numbers stay parked to
+  // W-137/W-139/W-146 and reuse the accepted W-131/W-137 bounds. The mock
+  // values below are clearly-documented harness placeholders mirroring the
+  // Core host PR bitty#1673 test caps, never wire truth and never presented
+  // as contract values.
+  HISTORY_MAX_ROWS_PER_QUERY: 16,
+  HISTORY_MAX_BYTES_PER_QUERY: 4096,
+  HISTORY_MAX_BYTES_PER_ROW: 256,
+  HISTORY_MAX_QUERIES_PER_WINDOW: 4,
+  HISTORY_MAX_BYTES_PER_WINDOW: 8192,
+  // W-139 history validation bounds (CTX-0066): search needle 1..256 bytes
+  // mirrors Core `MAX_NEEDLE_BYTES` (itself mirroring `SEARCH_MAX_PATTERN_LEN`
+  // 256 from the accepted W-135 contract, reviewed Core-internal evidence, not
+  // an accepted ceiling; the binding requirement is a finite bound enforced
+  // before allocation). Scope-id 1..128 bytes mirrors Core
+  // `MAX_SCOPE_ID_BYTES` (a validation bound, not a query ceiling).
+  HISTORY_MAX_NEEDLE_BYTES: 256,
+  HISTORY_MAX_SCOPE_ID_BYTES: 128,
+  // W-135 selection export bound (CTX-0066): copied content is exactly the
+  // selected text, bounded by `CLIPBOARD_MAX_BYTES=8192` with char-boundary
+  // truncation and a `truncated` flag (accepted input-pointer + W-135
+  // contract, mirrored by Core W-143 `truncate_to_clipboard_bytes`).
+  SELECTION_COPY_MAX_BYTES: 8192,
 } as const;
 
 /** Closed editor program allowlist (W-82, CTX-0068): bare names only, exact match. */
@@ -392,6 +446,47 @@ export const EDITOR_UNAVAILABLE_REASONS: readonly string[] = [
   "invalid-utf8",
   "wait-unavailable",
 ];
+
+/**
+ * Queryable history sources (W-139, accepted RFC-0004 source table).
+ * Exactly the three W-131 objects this family may read; session snapshots
+ * are absent deliberately (Core-only per W-137). Labels mirror open Core
+ * host PR bitty#1673 `HistorySource::as_str` (alignment, RFC wins).
+ */
+export const HISTORY_SOURCES: readonly string[] = [
+  "transcript",
+  "commands",
+  "kv",
+];
+
+/** Snapshot operations over an explicit row range (W-139, mirrors Core `QueryOp`). */
+export const HISTORY_QUERY_OPS: readonly string[] = ["list", "tail", "search"];
+
+/**
+ * Complete 8-category typed-denial codes for the history family (W-139,
+ * accepted RFC-0004 taxonomy). Codes mirror open Core host PR bitty#1673
+ * `HistoryDenialKind::code` (alignment, RFC wins); the Lua wire shape
+ * (throw vs outcome) is the SDK projection documented in `docs/mock-host.md`.
+ * Oracle-tight: denials name the category plus the trust level and the family
+ * only, never content bytes, foreign identifiers, or absent-versus-denied
+ * signals.
+ */
+export const HISTORY_DENIAL_CODES: readonly string[] = [
+  "E_HISTORY_MISSING_GRANT",
+  "E_HISTORY_REVOKED_GRANT",
+  "E_HISTORY_SCOPE_MISMATCH",
+  "E_HISTORY_OVER_BOUND",
+  "E_HISTORY_CAPTURE_DISABLED",
+  "E_HISTORY_SAFE_MODE",
+  "E_HISTORY_TRUST_DENIED",
+  "E_HISTORY_UNAVAILABLE",
+];
+
+/** Core-attached untrusted-observation label on every history record (RFC-0004, P0-AC-024). */
+export const HISTORY_UNTRUSTED_LABEL = "untrusted-observation";
+
+/** History snapshot freshness: point-in-time, no live-ness promise (RFC-0004). */
+export const HISTORY_FRESHNESS = "point-in-time-no-guarantee";
 
 /** Decided overlay input-event tags (W-01); field encodings stay parked. */
 export const OVERLAY_EVENT_TAGS: readonly string[] = [
@@ -563,11 +658,27 @@ export interface NamespaceHostParity {
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
  * fails when the two drift apart.
  *
- * SDK task W-139 (CTX-0066) adds no verdict: the plugin-facing
- * history/search/selection surface the W-135/W-137/W-138 draft contracts
- * delegate to W-139 has no accepted closed-set capability and no host entry
- * point, so it is not declared as accepted SDK surface here (see the surface
- * table exclusion `bitty.history`).
+ * SDK task CTX-0066 (W-139) wires the accepted RFC-0004 history-read family
+ * additively: `bitty.history.transcript.query` (gated on the additive v2
+ * capability `history.transcript.read`), `bitty.history.commands.query`
+ * (gated on `history.commands.read`), and `bitty.history.kv.query` (gated on
+ * `history.kv.read`) record the new wired `history` namespace verdict below,
+ * and `bitty.selection.copy` (gated on the existing `clipboard.write`, no new
+ * capability per Core W-143) records the new wired `selection` namespace
+ * verdict below. The NEW `history` root never touches `bitty.terminal.*`;
+ * per-plugin per-source scoped grants carry explicit scope params with no
+ * wildcard and intersect-or-deny; the 8-category typed denials stay
+ * oracle-tight; delivery is VM-only with separate export grants (argv-first,
+ * no shell); every record carries the Core-attached untrusted label;
+ * TerminalOutput-only trust (L0-L3 admit, L4 deny); rate/aggregate budget
+ * SHAPE normative with mock placeholders (never wire truth). Mechanism
+ * evidence is open Core host PR bitty#1673 (CTX-0955, `c01a9772`, alignment,
+ * RFC wins on conflict) plus merged Core W-143 `0d50b436` (CTX-0936, #1640)
+ * for the bounded search/selection host primitives; live per-view search
+ * binding, viewport navigation, and selection lifecycles stay Core-owned and
+ * deferred pending W-01 + W-138 (see surface exclusions `bitty.search`,
+ * `bitty.selection.*` beyond `copy`). `api_version` stays `1.0.0` (additive
+ * only, precedent #141) and the pin stays `fb44a867` (#1641).
  */
 export const HOST_PARITY_SOURCE = {
   repository: "bitty",
@@ -604,6 +715,17 @@ export const NAMESPACE_HOST_PARITY: readonly NamespaceHostParity[] = [
   // `bitty.process.spawn`). Mechanism evidence: bitty #1661 (CTX-0929,
   // 1df0459e).
   { namespace: "process", status: "wired" },
+  // CTX-0066 (W-139, accepted RFC-0004): the NEW read-only history family is
+  // wired for scoped, bounded snapshot queries over the three queryable
+  // sources (transcript, commands, own KV). Session snapshots are never
+  // queryable. Mechanism evidence: open Core host PR bitty#1673 (CTX-0955).
+  { namespace: "history", status: "wired" },
+  // CTX-0066 (W-139, accepted W-135 + Core W-143 mechanism 0d50b436): the
+  // selection namespace is wired for the clipboard export only
+  // (`selection.copy` gated on the existing `clipboard.write`); live selection
+  // semantics, viewport navigation, and per-view search binding stay
+  // Core-owned and deferred (see surface exclusions).
+  { namespace: "selection", status: "wired" },
 ];
 
 /** One per-function parity override inside a wired namespace. */

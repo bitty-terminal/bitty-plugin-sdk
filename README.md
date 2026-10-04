@@ -119,12 +119,15 @@ too. The `bitty.workspace` namespace (`list`, `focus`, `new`, `next`,
 gated on `workspace.read` (list and events) and `workspace.control`
 (mutations, which only enqueue). Both namespaces are host-implemented
 candidates outside the ADR 0009 v1 guarantee; the workspace spellings stay
-open under OQ-056. The W-139 history/search/selection surface is **blocked**
-and adds no namespace: the delegating W-135/W-137/W-138 contracts are draft and
-authorize no implementation, and no accepted closed-set `terminal` capability
-covers scrollback/history text read (which needs a successor RFC with its own
-security review), so the path is recorded as an explicit exclusion rather than
-declared. There is no
+open under OQ-056. The accepted W-139 history-read family (CTX-0066,
+RFC-0004) is wired additively under the NEW `history` root (never
+`bitty.terminal.*`): `bitty.history.transcript.query` under
+`history.transcript.read`, `bitty.history.commands.query` under
+`history.commands.read`, and `bitty.history.kv.query` under
+`history.kv.read`, plus `bitty.selection.copy` under the existing
+`clipboard.write` (no new capability per Core W-143); live per-view search
+binding, viewport navigation, and selection lifecycles stay Core-owned
+deferred pending W-01 + W-138. There is no
 `bitty.network` namespace: it is a v1 surface exclusion, bitty #1604
 (DIR-030) removed Core's embedded Lua network binding, and the Lua request
 surface of the out-of-process `net` native component is deferred, not wired.
@@ -134,7 +137,11 @@ The accepted W-01 `bitty.ui.overlay.*` focusable surface plus
 W-103 S-2, issue 142) are wired additively: `bitty.terminal.submit` under
 `terminal.input.submit` and `bitty.process.editor.start` under
 `process.editor`, with typed outcomes mirroring Core bitty #1661/#1654 and a
-first-party/third-party parity-denial proof in conformance. The thin W-29 `bitty.ui.targets` and `bitty.ui.labels`
+first-party/third-party parity-denial proof in conformance. The accepted
+W-139 history/search/selection operations (CTX-0066, RFC-0004) are wired
+additively with per-source scoped grants, 8-category typed denials,
+VM-only delivery, and a history first-party/third-party parity-denial proof
+in conformance. The thin W-29 `bitty.ui.targets` and `bitty.ui.labels`
 bindings (bitty #1641) stay provisional host candidates pending per W-120,
 deferred and not wired, recorded as explicit exclusions with no new
 capability. The parity pin is bitty `main` `fb44a867` (PR #1641, CTX-0067,

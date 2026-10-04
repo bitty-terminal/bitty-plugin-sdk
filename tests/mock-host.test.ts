@@ -4391,3 +4391,222 @@ terminal.input.submit = true
     });
   });
 });
+
+describe("history-read family (W-139, CTX-0066)", () => {
+  const HISTORY_MANIFEST = `
+[plugin]
+id = "bitty.history-keeper"
+name = "History Keeper"
+version = "1.0.0"
+description = "History fixture."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+history.transcript.read = true
+history.commands.read = true
+history.kv.read = true
+clipboard.write = true
+`;
+
+  function historyHost(extra?: Record<string, unknown>): MockHost {
+    const host = new MockHost({
+      manifestSource: HISTORY_MANIFEST,
+      ...(extra ?? {}),
+    });
+    host.beginActivation();
+    return host;
+  }
+
+  function queryOpts(
+    scope: Record<string, string> | undefined,
+    extra?: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return {
+      ...(scope === undefined ? {} : { scope }),
+      row_count: 4,
+      max_bytes: 4096,
+      op: "list",
+      ...(extra ?? {}),
+    };
+  }
+
+  test("missing, revoked, scope, capture, and over-bound deny with typed codes", () => {
+    const host = historyHost();
+    const scope = { panel: "pane-a", workspace: "ws-1" };
+    expect(
+      denial(() => host.bitty.history.transcript.query(queryOpts(scope))),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_MISSING_GRANT });
+    host.grant("history.transcript.read");
+    expect(
+      denial(() => host.bitty.history.transcript.query(queryOpts(scope))),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_CAPTURE_DISABLED });
+    host.setHistoryCapture("transcript", true);
+    expect(
+      denial(() => host.bitty.history.transcript.query(queryOpts(undefined))),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_SCOPE_MISMATCH });
+    expect(
+      denial(() =>
+        host.bitty.history.transcript.query(queryOpts({ panel: "*" })),
+      ),
+    ).toMatchObject({ code: HOST_CODES.DEF_INVALID });
+    expect(
+      denial(() =>
+        host.bitty.history.transcript.query(queryOpts(scope, { row_count: 0 })),
+      ),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_OVER_BOUND });
+    host.revoke("history.transcript.read");
+    expect(
+      denial(() => host.bitty.history.transcript.query(queryOpts(scope))),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_REVOKED_GRANT });
+    host.endActivation();
+  });
+
+  test("safe-mode, trust, purge, budgets, KV isolation, and export gates hold", () => {
+    const safe = historyHost({ safeMode: true });
+    safe.grant("history.transcript.read");
+    safe.setHistoryCapture("transcript", true);
+    expect(
+      denial(() =>
+        safe.bitty.history.transcript.query(
+          queryOpts({ panel: "pane-a", workspace: "ws-1" }),
+        ),
+      ),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_SAFE_MODE });
+    safe.endActivation();
+
+    const untrusted = historyHost({ trustLevel: "L4" });
+    untrusted.grant("history.transcript.read");
+    untrusted.setHistoryCapture("transcript", true);
+    expect(
+      denial(() =>
+        untrusted.bitty.history.transcript.query(
+          queryOpts({ panel: "pane-a", workspace: "ws-1" }),
+        ),
+      ),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_TRUST_DENIED });
+    untrusted.endActivation();
+
+    const host = historyHost();
+    host.grant("history.commands.read");
+    host.setHistoryCapture("commands", true);
+    host.setHistoryRows("commands", [
+      {
+        panel: "pane-a",
+        workspace: "ws-1",
+        seq: 0,
+        body: "gone",
+        purged: true,
+      },
+    ]);
+    expect(
+      denial(() =>
+        host.bitty.history.commands.query(
+          queryOpts({ panel: "pane-a", workspace: "ws-1" }),
+        ),
+      ),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_UNAVAILABLE });
+
+    host.grant("history.kv.read");
+    host.setHistoryRows("kv", [
+      { seq: 0, body: "own", owner: "bitty.history-keeper" },
+      { seq: 1, body: "foreign", owner: "example.other" },
+    ]);
+    const kv = host.bitty.history.kv.query({
+      row_count: 4,
+      max_bytes: 4096,
+      op: "list",
+    });
+    expect(kv.records.map((record) => record.body)).toEqual(["own"]);
+    expect(kv.total_in_scope).toBe(1);
+
+    host.setHistoryRows("commands", [
+      { panel: "pane-a", workspace: "ws-1", seq: 0, body: "live" },
+    ]);
+    for (let index = 0; index < 3; index += 1) {
+      const page = host.bitty.history.commands.query(
+        queryOpts({ panel: "pane-a", workspace: "ws-1" }, { row_count: 1 }),
+      );
+      expect(page.records).toHaveLength(1);
+      expect(page.records[0]?.label).toBe("untrusted-observation");
+      expect(page.records[0]?.redacted).toBe(true);
+      expect(page.freshness).toBe("point-in-time-no-guarantee");
+    }
+    expect(
+      denial(() =>
+        host.bitty.history.commands.query(
+          queryOpts({ panel: "pane-a", workspace: "ws-1" }, { row_count: 1 }),
+        ),
+      ),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_OVER_BOUND });
+
+    expect(
+      denial(() => host.bitty.selection.copy({ text: "hi" })),
+    ).toMatchObject({ code: HOST_CODES.CAPABILITY_DENIED });
+    host.grant("clipboard.write");
+    expect(host.bitty.selection.copy({ text: "hi" })).toEqual({
+      text: "hi",
+      truncated: false,
+    });
+    host.endActivation();
+  });
+
+  test("grants never bundle sources and history never implies export", () => {
+    const host = historyHost();
+    host.grant("history.transcript.read");
+    host.setHistoryCapture("transcript", true);
+    expect(
+      denial(() =>
+        host.bitty.history.commands.query(
+          queryOpts({ panel: "pane-a", workspace: "ws-1" }),
+        ),
+      ),
+    ).toMatchObject({ code: HOST_CODES.HISTORY_MISSING_GRANT });
+    expect(
+      denial(() => host.bitty.selection.copy({ text: "hi" })),
+    ).toMatchObject({ code: HOST_CODES.CAPABILITY_DENIED });
+    host.endActivation();
+  });
+
+  test("truncation walks back split multi-byte characters without U+FFFD", () => {
+    const host = historyHost();
+    host.grant("history.transcript.read");
+    host.setHistoryCapture("transcript", true);
+    // 255 ASCII bytes plus U+00E9 (2 bytes in UTF-8): 257 bytes against the
+    // 256-byte row cap, with the cut splitting the multi-byte character.
+    const split = `${"a".repeat(255)}é`;
+    expect(Buffer.byteLength(split, "utf8")).toBe(257);
+    host.setHistoryRows("transcript", [
+      { panel: "pane-a", workspace: "ws-1", seq: 0, body: split },
+    ]);
+    const page = host.bitty.history.transcript.query(
+      queryOpts({ panel: "pane-a", workspace: "ws-1" }),
+    );
+    expect(page.records).toHaveLength(1);
+    expect(page.records[0]?.truncated).toBe(true);
+    expect(page.records[0]?.body).toBe("a".repeat(255));
+    expect(page.records[0]?.body.includes("�")).toBe(false);
+    expect(
+      Buffer.byteLength(page.records[0]?.body ?? "", "utf8"),
+    ).toBeLessThanOrEqual(MOCK_LIMITS.HISTORY_MAX_BYTES_PER_ROW);
+    host.endActivation();
+
+    const copier = historyHost();
+    copier.grant("clipboard.write");
+    // 8191 ASCII bytes plus U+00E9: 8193 bytes against the 8192-byte copy
+    // cap, with the cut splitting the multi-byte tail.
+    const long = `${"b".repeat(8191)}é`;
+    expect(Buffer.byteLength(long, "utf8")).toBe(8193);
+    const outcome = copier.bitty.selection.copy({ text: long });
+    expect(outcome.truncated).toBe(true);
+    expect(outcome.text).toBe("b".repeat(8191));
+    expect(outcome.text.includes("�")).toBe(false);
+    expect(Buffer.byteLength(outcome.text, "utf8")).toBeLessThanOrEqual(
+      MOCK_LIMITS.SELECTION_COPY_MAX_BYTES,
+    );
+    copier.endActivation();
+  });
+});
