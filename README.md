@@ -130,11 +130,15 @@ declared. There is no
 surface of the out-of-process `net` native component is deferred, not wired.
 The accepted W-01 `bitty.ui.overlay.*` focusable surface plus
 `overlay.released` (CTX-0065) is wired under the coupled grant
-`ui.overlay.focus`. The thin W-29 `bitty.ui.targets` and `bitty.ui.labels`
+`ui.overlay.focus`. The accepted W-82 composer operations (CTX-0068, plan
+W-103 S-2, issue 142) are wired additively: `bitty.terminal.submit` under
+`terminal.input.submit` and `bitty.process.editor.start` under
+`process.editor`, with typed outcomes mirroring Core bitty #1661/#1654 and a
+first-party/third-party parity-denial proof in conformance. The thin W-29 `bitty.ui.targets` and `bitty.ui.labels`
 bindings (bitty #1641) stay provisional host candidates pending per W-120,
 deferred and not wired, recorded as explicit exclusions with no new
 capability. The parity pin is bitty `main` `fb44a867` (PR #1641, CTX-0067,
-W-43) with no v1 verdict move. LuaLS conformance runs
+W-43); `api_version` stays `1.0.0` (additive only). LuaLS conformance runs
 locally only: CI has no `lua-language-server`, so that check skips there.
 
 See [`docs/lua-defs.md`](docs/lua-defs.md) for LuaLS setup, coverage,

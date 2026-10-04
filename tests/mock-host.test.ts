@@ -119,6 +119,7 @@ describe("surface", () => {
       "timers",
       "debug",
       "workspace",
+      "process",
     ] as const) {
       expect(host.bitty[namespace]).toBeDefined();
     }
@@ -3874,5 +3875,519 @@ describe("overlay focusable surface (W-01, CTX-0065)", () => {
       code: HOST_CODES.UI_UNAVAILABLE,
     });
     expect(seen).toEqual([]);
+  });
+});
+
+const COMPOSER_MANIFEST = `
+[plugin]
+id = "example.composer-unit"
+name = "Conformance Composer Unit"
+version = "1.0.0"
+description = "Submit/editor unit fixture."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+terminal.input.submit = true
+process.editor = true
+ui.overlay.focus = true
+
+[lazy]
+events = [
+  "overlay.released",
+]
+`;
+
+const FIRST_PARTY_MANIFEST = `
+[plugin]
+id = "bitty.composer"
+name = "Conformance Composer First-Party"
+version = "1.0.0"
+description = "First-party parity fixture."
+license = "MIT"
+
+[compat]
+plugin-api = "^1.0"
+
+[capabilities]
+terminal.input.submit = true
+process.editor = true
+ui.overlay.focus = true
+`;
+
+const THIRD_PARTY_MANIFEST = `
+[plugin]
+id = "example.composer-clone"
+name = "Conformance Composer Third-Party"
+version = "1.0.0"
+description = "Third-party parity fixture."
+license = "MIT"
+
+[compat]
+plugin-api = "^1.0"
+
+[capabilities]
+terminal.input.submit = true
+process.editor = true
+ui.overlay.focus = true
+`;
+
+function composerHost(
+  environment: Readonly<Record<string, string>> = { VISUAL: "nvim" },
+  grants: readonly string[] = ["terminal.input.submit", "process.editor"],
+): MockHost {
+  const host = new MockHost({
+    manifestSource: COMPOSER_MANIFEST,
+    environment,
+  });
+  for (const capability of grants) host.grant(capability);
+  return host;
+}
+
+describe("terminal submit path (W-82, CTX-0068)", () => {
+  test("requires declared and granted terminal.input.submit", () => {
+    const host = composerHost({}, []);
+    host.beginActivation();
+    expect(denial(() => host.bitty.terminal.submit("hi"))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    host.endActivation();
+  });
+
+  test("granted but undeclared stays denied", () => {
+    const host = makeHost();
+    host.grant("terminal.input.submit");
+    host.beginActivation();
+    expect(denial(() => host.bitty.terminal.submit("hi"))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    host.endActivation();
+  });
+
+  test("frames one byte-exact bracketed-paste frame and charges it", () => {
+    const host = composerHost();
+    host.beginActivation();
+    const outcome = host.bitty.terminal.submit("hi");
+    expect(outcome).toEqual({ status: "accepted", bytes: 15 });
+    expect(host.submitBudgetUsed).toBe(15);
+    expect(host.submittedFrames).toHaveLength(1);
+    expect(host.submittedFrames[0]).toEqual(
+      Buffer.concat([
+        Buffer.from("\u001b[200~", "utf8"),
+        Buffer.from("hi", "utf8"),
+        Buffer.from("\u001b[201~", "utf8"),
+        Buffer.from("\r", "utf8"),
+      ]),
+    );
+    host.endActivation();
+  });
+
+  test("enforces the 64 KiB cap at the boundary", () => {
+    const host = composerHost();
+    host.beginActivation();
+    const full = "q".repeat(MOCK_LIMITS.COMPOSER_MAX_BYTES);
+    expect(host.bitty.terminal.submit(full)).toEqual({
+      status: "accepted",
+      bytes: MOCK_LIMITS.COMPOSER_MAX_BYTES + 13,
+    });
+    const over = "q".repeat(MOCK_LIMITS.COMPOSER_MAX_BYTES + 1);
+    expect(host.bitty.terminal.submit(over)).toEqual({
+      status: "denied",
+      deny: "too-large",
+      wanted: MOCK_LIMITS.COMPOSER_MAX_BYTES + 1,
+    });
+    expect(host.submitBudgetUsed).toBe(
+      MOCK_LIMITS.COMPOSER_MAX_BYTES + MOCK_LIMITS.SUBMIT_FRAME_OVERHEAD_BYTES,
+    );
+    host.endActivation();
+  });
+
+  test("non-string text fails shape validation", () => {
+    const host = composerHost();
+    host.beginActivation();
+    expect(denial(() => host.bitty.terminal.submit(7 as never))).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.DEF_INVALID,
+    });
+    host.endActivation();
+  });
+
+  test("refused lease emits nothing and charges nothing", () => {
+    const host = composerHost();
+    host.beginActivation();
+    host.setSubmitLease(false);
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "denied",
+      deny: "lease-denied",
+    });
+    expect(host.submitBudgetUsed).toBe(0);
+    expect(host.submittedFrames).toHaveLength(0);
+    host.setSubmitLease(true);
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "accepted",
+      bytes: 15,
+    });
+    host.endActivation();
+  });
+
+  test("budget exhaustion fails closed and denials never charge", () => {
+    const host = new MockHost({
+      manifestSource: COMPOSER_MANIFEST,
+      environment: { VISUAL: "nvim" },
+      submitBudgetBytes: 30,
+    });
+    host.grant("terminal.input.submit");
+    host.beginActivation();
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "accepted",
+      bytes: 15,
+    });
+    // 15 + 19 = 34 > 30: the probe fails before delivery.
+    expect(host.bitty.terminal.submit("hello!")).toEqual({
+      status: "denied",
+      deny: "budget-exceeded",
+      used: 15,
+      cap: 30,
+    });
+    expect(host.submitBudgetUsed).toBe(15);
+    host.endActivation();
+  });
+
+  test("buffered-only frames report unavailable without charging", () => {
+    const host = composerHost();
+    host.beginActivation();
+    host.setSubmitDelivery("buffered");
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "unavailable",
+      reason: "buffered-only",
+    });
+    expect(host.submitBudgetUsed).toBe(0);
+    expect(host.submittedFrames).toHaveLength(0);
+    host.setSubmitDelivery("live");
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "accepted",
+      bytes: 15,
+    });
+    expect(host.submitBudgetUsed).toBe(15);
+    host.endActivation();
+  });
+
+  test("no focused view reports unavailable before the lease gate", () => {
+    const host = composerHost();
+    host.beginActivation();
+    host.setSubmitDelivery("none");
+    host.setSubmitLease(false);
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "unavailable",
+      reason: "no-focused-view",
+    });
+    host.endActivation();
+  });
+
+  test("a new generation starts with a fresh window", () => {
+    const host = new MockHost({
+      manifestSource: COMPOSER_MANIFEST,
+      environment: { VISUAL: "nvim" },
+      submitBudgetBytes: 15,
+    });
+    host.grant("terminal.input.submit");
+    host.beginActivation();
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "accepted",
+      bytes: 15,
+    });
+    expect(host.bitty.terminal.submit("hi")).toMatchObject({
+      status: "denied",
+      deny: "budget-exceeded",
+    });
+    host.endActivation();
+    host.dispose();
+    host.grant("terminal.input.submit");
+    host.beginActivation();
+    expect(host.bitty.terminal.submit("hi")).toEqual({
+      status: "accepted",
+      bytes: 15,
+    });
+    expect(host.submitBudgetUsed).toBe(15);
+    host.endActivation();
+  });
+});
+
+describe("external-editor round trip (W-82, CTX-0068)", () => {
+  test("requires declared and granted process.editor", () => {
+    const host = composerHost({}, []);
+    host.beginActivation();
+    expect(denial(() => host.bitty.process.editor.start())).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    host.endActivation();
+  });
+
+  test("defaults to the safe cancelled seed", () => {
+    const host = composerHost();
+    host.beginActivation();
+    expect(host.bitty.process.editor.start()).toEqual({ status: "cancelled" });
+    expect(host.editorTempsCreated).toBe(1);
+    expect(host.editorTempsRemoved).toBe(1);
+    host.endActivation();
+  });
+
+  test("allowlist matches bare names exactly after trimming", () => {
+    for (const program of ["nvim", "vim", "vi", "  vim  "]) {
+      const host = composerHost({ VISUAL: program });
+      host.beginActivation();
+      expect(host.bitty.process.editor.start()).toEqual({
+        status: "cancelled",
+      });
+      expect(host.editorTempsCreated).toBe(1);
+      host.endActivation();
+      host.dispose();
+    }
+  });
+
+  test("hostile values are denied with no fallback and no temp file", () => {
+    const cases: Array<Readonly<Record<string, string>>> = [
+      { VISUAL: "nano", EDITOR: "vim" },
+      { VISUAL: "VIM" },
+      { VISUAL: "/usr/bin/nvim" },
+      { VISUAL: "nvim --clean" },
+      { VISUAL: "nvim;touch pwned" },
+    ];
+    for (const environment of cases) {
+      const host = composerHost(environment);
+      host.beginActivation();
+      expect(host.bitty.process.editor.start({ draft: "x" })).toEqual({
+        status: "denied",
+        deny: "not-allowed",
+      });
+      expect(host.editorTempsCreated).toBe(0);
+      expect(host.editorTempsRemoved).toBe(0);
+      host.endActivation();
+      host.dispose();
+    }
+  });
+
+  test("blank VISUAL falls through to EDITOR; both blank is no-editor", () => {
+    const fallback = composerHost({ VISUAL: "  ", EDITOR: "vi" });
+    fallback.beginActivation();
+    expect(fallback.bitty.process.editor.start()).toEqual({
+      status: "cancelled",
+    });
+    fallback.endActivation();
+    fallback.dispose();
+    const missing = composerHost({});
+    missing.beginActivation();
+    expect(missing.bitty.process.editor.start()).toEqual({
+      status: "denied",
+      deny: "no-editor",
+    });
+    expect(missing.editorTempsCreated).toBe(0);
+    missing.endActivation();
+    missing.dispose();
+  });
+
+  test("timeout defaults to 120 s and clamps to 300 s", () => {
+    const host = composerHost();
+    host.beginActivation();
+    host.bitty.process.editor.start();
+    expect(host.lastEditorTimeoutMs).toBe(120_000);
+    host.bitty.process.editor.start({ timeout_ms: 999_999 });
+    expect(host.lastEditorTimeoutMs).toBe(300_000);
+    expect(
+      denial(() => host.bitty.process.editor.start({ timeout_ms: 0 })),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.DEF_INVALID,
+    });
+    expect(
+      denial(() => host.bitty.process.editor.start({ draft: 7 as never })),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.DEF_INVALID,
+    });
+    expect(
+      denial(() => host.bitty.process.editor.start("x" as never)),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.DEF_INVALID,
+    });
+    host.endActivation();
+  });
+
+  test("over-cap draft is unavailable with the file removed", () => {
+    const host = composerHost();
+    host.beginActivation();
+    expect(
+      host.bitty.process.editor.start({
+        draft: "q".repeat(MOCK_LIMITS.COMPOSER_MAX_BYTES + 1),
+      }),
+    ).toEqual({ status: "unavailable", reason: "too-large" });
+    expect(host.editorTempsCreated).toBe(1);
+    expect(host.editorTempsRemoved).toBe(1);
+    host.endActivation();
+  });
+
+  test("edited content echoes bounded UTF-8 with exact outcome keys", () => {
+    const host = composerHost();
+    host.beginActivation();
+    host.setEditorResult({ kind: "edited", content: "edited text" });
+    const outcome = host.bitty.process.editor.start({ draft: "hello" });
+    expect(outcome).toEqual({ status: "edited", content: "edited text" });
+    expect(Object.keys(outcome).sort()).toEqual(["content", "status"]);
+    host.setEditorResult({
+      kind: "edited",
+      content: "q".repeat(MOCK_LIMITS.COMPOSER_MAX_BYTES + 1),
+    });
+    expect(host.bitty.process.editor.start()).toEqual({
+      status: "unavailable",
+      reason: "too-large",
+    });
+    expect(host.editorTempsCreated).toBe(host.editorTempsRemoved);
+    host.endActivation();
+  });
+
+  test("covers the remaining seeded outcomes without path leakage", () => {
+    const host = composerHost();
+    host.beginActivation();
+    host.setEditorResult({ kind: "non-zero", code: 1 });
+    expect(host.bitty.process.editor.start()).toEqual({
+      status: "non-zero",
+      code: 1,
+    });
+    host.setEditorResult({ kind: "non-zero", code: null });
+    const unknown = host.bitty.process.editor.start();
+    expect(unknown).toEqual({ status: "non-zero" });
+    expect("code" in unknown).toBe(false);
+    host.setEditorResult({ kind: "spawn-failed", detail: "boom" });
+    expect(host.bitty.process.editor.start()).toEqual({
+      status: "spawn-failed",
+      detail: "boom",
+    });
+    host.setEditorResult({ kind: "timeout" });
+    expect(host.bitty.process.editor.start()).toEqual({ status: "timeout" });
+    expect(
+      denial(() =>
+        host.setEditorResult({
+          kind: "unavailable",
+          reason: "nope",
+        } as never),
+      ),
+    ).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.DEF_INVALID,
+    });
+    host.setEditorResult({ kind: "unavailable" });
+    expect(host.bitty.process.editor.start()).toEqual({
+      status: "unavailable",
+      reason: "temp-unavailable",
+    });
+    expect(host.editorTempsCreated).toBe(host.editorTempsRemoved);
+    host.endActivation();
+  });
+
+  test("spawn detail truncates to the 512-byte ceiling", () => {
+    const host = composerHost();
+    host.beginActivation();
+    host.setEditorResult({ kind: "spawn-failed", detail: "y".repeat(600) });
+    const outcome = host.bitty.process.editor.start();
+    expect(outcome.status).toBe("spawn-failed");
+    if (outcome.status === "spawn-failed") {
+      expect(Buffer.byteLength(outcome.detail, "utf8")).toBe(512);
+    }
+    host.endActivation();
+  });
+});
+
+describe("first-party/third-party parity (W-103 S-2, CTX-0068)", () => {
+  function parityHost(manifestSource: string): MockHost {
+    const host = new MockHost({
+      manifestSource,
+      environment: { VISUAL: "vim" },
+    });
+    host.beginActivation();
+    return host;
+  }
+
+  test("the same operation is denied identically for both principals", () => {
+    const first = parityHost(FIRST_PARTY_MANIFEST);
+    const third = parityHost(THIRD_PARTY_MANIFEST);
+    expect(denial(() => first.bitty.terminal.submit("hi"))).toEqual(
+      denial(() => third.bitty.terminal.submit("hi")),
+    );
+    expect(denial(() => first.bitty.process.editor.start())).toEqual(
+      denial(() => third.bitty.process.editor.start()),
+    );
+    expect(denial(() => first.bitty.ui.overlay.acquire({}))).toEqual(
+      denial(() => third.bitty.ui.overlay.acquire({})),
+    );
+    expect(denial(() => first.bitty.terminal.submit("hi"))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.CAPABILITY_DENIED,
+    });
+    first.endActivation();
+    third.endActivation();
+    first.dispose();
+    third.dispose();
+  });
+
+  test("granted principals observe identical success shapes", () => {
+    const first = parityHost(FIRST_PARTY_MANIFEST);
+    const third = parityHost(THIRD_PARTY_MANIFEST);
+    for (const host of [first, third]) {
+      host.grant("terminal.input.submit");
+      host.grant("process.editor");
+      host.grant("ui.overlay.focus");
+    }
+    expect(first.bitty.terminal.submit("hi")).toEqual(
+      third.bitty.terminal.submit("hi"),
+    );
+    expect(first.bitty.process.editor.start()).toEqual(
+      third.bitty.process.editor.start(),
+    );
+    const firstHandle = first.bitty.ui.overlay.acquire({ title: "p" });
+    const thirdHandle = third.bitty.ui.overlay.acquire({ title: "p" });
+    expect(typeof firstHandle).toBe("number");
+    expect(typeof thirdHandle).toBe("number");
+    expect(first.bitty.ui.overlay.release(firstHandle, "cancelled")).toBe(true);
+    expect(third.bitty.ui.overlay.release(thirdHandle, "cancelled")).toBe(true);
+    first.endActivation();
+    third.endActivation();
+  });
+});
+
+describe("composer compat validation (W-82, CTX-0068)", () => {
+  test("plugin-api mismatch fails activation with no partial generation", () => {
+    const host = new MockHost({
+      manifestSource: `
+[plugin]
+id = "example.composer-future"
+name = "Compat Mismatch"
+version = "1.0.0"
+description = "Compat fixture."
+license = "MIT"
+
+[compat]
+plugin-api = "^99.0"
+
+[capabilities]
+terminal.input.submit = true
+`,
+    });
+    host.grant("terminal.input.submit");
+    expect(denial(() => host.beginActivation())).toMatchObject({
+      class: "validation",
+      code: HOST_CODES.LIFECYCLE_STATE,
+    });
+    expect(host.currentState).toBe("created");
+    expect(denial(() => host.bitty.terminal.submit("hi"))).toMatchObject({
+      class: "runtime",
+      code: HOST_CODES.GENERATION_DISPOSED,
+    });
   });
 });

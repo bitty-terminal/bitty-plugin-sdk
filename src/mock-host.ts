@@ -6,11 +6,14 @@
  * window, generation-owned handles, the closed v1 event set with bounded
  * immutable payloads, bounded command/store/snapshot data, the deferred `env`
  * namespace that fails closed with E_NOT_IMPLEMENTED, wired `services`
- * provide/get/resolve/call semantics (bitty #1391), and
- * host-owned tasks and timers on a virtual clock. It is a test double, not a
- * host: it performs no I/O, spawns no process, opens no network, and reads no
- * secret. Behavior is derived from ADR 0009 and the accepted Plugin API v1 Lua
- * Surface RFC; it may never be more permissive than those contracts.
+ * provide/get/resolve/call semantics (bitty #1391),
+ * host-owned tasks and timers on a virtual clock, the W-82 composer submit
+ * path with per-plugin byte windows (bitty #1661), and the allowlisted
+ * external-editor round trip with Core-owned temp files (bitty #1661). It is
+ * a test double, not a host: it performs no I/O, spawns no process, opens no
+ * network, and reads no secret. Behavior is derived from ADR 0009, the
+ * accepted Plugin API v1 Lua Surface RFC, and the accepted W-01/W-82
+ * contracts; it may never be more permissive than those contracts.
  */
 
 import {
@@ -28,6 +31,8 @@ import {
 import {
   DEFERRED_FUNCTIONS,
   DEFERRED_NAMESPACES,
+  EDITOR_ALLOWLIST,
+  EDITOR_UNAVAILABLE_REASONS,
   ENV_CAPABILITY_PREFIX,
   ENV_KEY_PATTERN,
   ENV_MAX_VALUE_BYTES,
@@ -87,7 +92,86 @@ export interface MockHostOptions {
    * `overlay.released` bus event is emitted. Defaults to false.
    */
   readonly safeMode?: boolean;
+  /**
+   * Per-plugin submit byte-window cap for `bitty.terminal.submit` (W-82,
+   * CTX-0068): mirrors the caller-supplied `SubmitBudget` window at bitty
+   * `1df0459e`. The numeric policy belongs to the Isolation/Resource lane
+   * (DEC-W103-4), so this is harness-supplied; the default is a mock-owned
+   * harness convenience (`SUBMIT_BUDGET_DEFAULT_BYTES`), never a contract
+   * value. Must be a non-negative safe integer.
+   */
+  readonly submitBudgetBytes?: number;
+  /**
+   * Panel-lease write rule for `bitty.terminal.submit` (W-82, CTX-0068):
+   * `false` models a lease the focused panel refused (not the holder or
+   * tenure lapsed) and every submit returns denied `lease-denied`.
+   * Defaults to true (the composer holds the lease on the normal path).
+   */
+  readonly submitLeaseGranted?: boolean;
+  /**
+   * PTY delivery behind `bitty.terminal.submit` (W-82, CTX-0068): `live`
+   * delivers the frame in one write and charges the budget; `buffered`
+   * models a session-less leaf with no live writer (unavailable
+   * `buffered-only`, budget untouched); `none` models no focused view
+   * (unavailable `no-focused-view`). Defaults to `live`.
+   */
+  readonly submitDelivery?: SubmitDelivery;
+  /**
+   * Harness-seeded editor child result for `bitty.process.editor.start`
+   * (W-82, CTX-0068). The mock performs no I/O and spawns no process, so
+   * the blocking round trip resolves against this seed; the default is
+   * `{ kind: "cancelled" }` (cancel writes nothing, the safe no-op).
+   */
+  readonly editorResult?: EditorSeed;
 }
+
+/** PTY delivery behind `bitty.terminal.submit` (W-82, CTX-0068). */
+export type SubmitDelivery = "live" | "buffered" | "none";
+
+/** `bitty.terminal.submit` typed outcome (W-82, CTX-0068). */
+export type SubmitOutcome =
+  | { readonly status: "accepted"; readonly bytes: number }
+  | {
+      readonly status: "denied";
+      readonly deny: "too-large" | "lease-denied" | "budget-exceeded";
+      readonly wanted?: number;
+      readonly used?: number;
+      readonly cap?: number;
+    }
+  | {
+      readonly status: "unavailable";
+      readonly reason: "no-focused-view" | "buffered-only";
+    };
+
+/** Options accepted by `bitty.process.editor.start` (W-82, CTX-0068). */
+export interface EditorStartOpts {
+  readonly draft?: string;
+  readonly timeout_ms?: number;
+}
+
+/**
+ * Harness-seeded editor child result (not a Lua surface). `edited` carries
+ * the content the editor left behind; `non-zero` carries the exit code when
+ * known; `spawn-failed` carries bounded host detail; `unavailable` carries
+ * one of `EDITOR_UNAVAILABLE_REASONS` (defaults to `temp-unavailable`).
+ */
+export type EditorSeed =
+  | { readonly kind: "edited"; readonly content: string }
+  | { readonly kind: "cancelled" }
+  | { readonly kind: "timeout" }
+  | { readonly kind: "spawn-failed"; readonly detail?: string }
+  | { readonly kind: "non-zero"; readonly code?: number | null }
+  | { readonly kind: "unavailable"; readonly reason?: string };
+
+/** `bitty.process.editor.start` typed outcome (W-82, CTX-0068). */
+export type EditorOutcome =
+  | { readonly status: "edited"; readonly content: string }
+  | { readonly status: "cancelled" }
+  | { readonly status: "denied"; readonly deny: "no-editor" | "not-allowed" }
+  | { readonly status: "timeout" }
+  | { readonly status: "spawn-failed"; readonly detail: string }
+  | { readonly status: "non-zero"; readonly code?: number }
+  | { readonly status: "unavailable"; readonly reason: string };
 
 /** Notification payload accepted by `bitty.notify.show`. */
 export interface NotifyPayload {
@@ -376,6 +460,16 @@ function boundedWorkspaceName(name: string): string {
   return [...name].slice(0, MOCK_LIMITS.WORKSPACE_NAME_MAX_CHARS).join("");
 }
 
+/**
+ * Truncate host detail to a byte ceiling (W-82, CTX-0068). Mirrors the Core
+ * 512-byte truncation of editor spawn/wait detail: over-long detail is cut
+ * at the byte boundary and undecodable tails decode leniently.
+ */
+function truncateBytes(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  return Buffer.from(value, "utf8").subarray(0, maxBytes).toString("utf8");
+}
+
 /** Parse a trace topic filter (bitty `TraceFilter::parse`). */
 function parseTraceFilter(pattern: string): TraceFilter {
   if (
@@ -416,6 +510,82 @@ function traceFilterMatches(filter: TraceFilter, topic: string): boolean {
 /** Lua integer check for debug option and handle values. */
 function isLuaInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value);
+}
+
+/**
+ * Validate a harness-seeded editor child result (W-82, CTX-0068). Seeds are
+ * harness input, not plugin calls, but malformed seeds fail with the same
+ * typed validation failure the bridge raises for misshaped arguments so a
+ * bad fixture cannot silently resolve to a wrong outcome.
+ */
+function checkEditorSeed(seed: unknown): asserts seed is EditorSeed {
+  if (!isPlainObject(seed)) {
+    fail(
+      "validation",
+      HOST_CODES.DEF_INVALID,
+      "editor result seed must be a table with a kind",
+    );
+  }
+  const kind = (seed as Record<string, unknown>).kind;
+  if (kind === "cancelled" || kind === "timeout") return;
+  if (kind === "edited") {
+    if (typeof (seed as Record<string, unknown>).content !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "edited editor seed needs a string content",
+      );
+    }
+    return;
+  }
+  if (kind === "spawn-failed") {
+    const detail = (seed as Record<string, unknown>).detail;
+    if (detail !== undefined && typeof detail !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "spawn-failed editor seed detail must be a string",
+      );
+    }
+    return;
+  }
+  if (kind === "non-zero") {
+    const code = (seed as Record<string, unknown>).code;
+    if (
+      code !== undefined &&
+      code !== null &&
+      (!Number.isSafeInteger(code) ||
+        (code as number) < MOCK_LIMITS.EXIT_CODE_MIN ||
+        (code as number) > MOCK_LIMITS.EXIT_CODE_MAX)
+    ) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "non-zero editor seed code must be a signed 32-bit integer or null",
+      );
+    }
+    return;
+  }
+  if (kind === "unavailable") {
+    const reason = (seed as Record<string, unknown>).reason;
+    if (
+      reason !== undefined &&
+      (typeof reason !== "string" ||
+        !EDITOR_UNAVAILABLE_REASONS.includes(reason))
+    ) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        `unavailable editor seed reason must be one of ${EDITOR_UNAVAILABLE_REASONS.join(", ")}`,
+      );
+    }
+    return;
+  }
+  fail(
+    "validation",
+    HOST_CODES.DEF_INVALID,
+    "editor result seed kind must be edited, cancelled, timeout, spawn-failed, non-zero, or unavailable",
+  );
 }
 
 function canonicalValue(value: unknown): string {
@@ -998,6 +1168,12 @@ export class MockHost {
     };
     readonly terminal: {
       snapshot(opts?: SnapshotOptions): Record<string, unknown>;
+      submit(text: string): SubmitOutcome;
+    };
+    readonly process: {
+      readonly editor: {
+        start(opts?: EditorStartOpts | null): EditorOutcome;
+      };
     };
     readonly services: {
       get(iface: string, opts: ServiceGetOptions): ResolvedService | undefined;
@@ -1058,6 +1234,20 @@ export class MockHost {
   private readonly safeMode: boolean;
   private overlaySession: OverlaySession | undefined;
   private terminalSnapshot: Record<string, unknown> = {};
+  // W-82 composer submit/editor state (CTX-0068). The byte window is
+  // per-generation (reset on activation); delivery, lease, and the editor
+  // seed are host-provided facts that persist across generations until the
+  // harness changes them. Temp counters are host-lifetime so cleanup holds on
+  // every path; submitted frames accumulate for byte-exactness assertions.
+  private submitBudgetBytes: number;
+  private submitUsed = 0;
+  private submitLeaseGranted: boolean;
+  private submitDelivery: SubmitDelivery;
+  private editorSeed: EditorSeed | undefined;
+  private editorTempsCreatedCount = 0;
+  private editorTempsRemovedCount = 0;
+  private lastEditorTimeoutMsValue = 0;
+  readonly submittedFrames: Uint8Array[] = [];
   private deliveringViolation = false;
   private workspaceRows: WorkspaceInfo[] = [];
   private workspaceQueue: WorkspaceRequest[] = [];
@@ -1073,6 +1263,29 @@ export class MockHost {
     );
     this.toolsGitVersion = options.toolsGitVersion ?? null;
     this.safeMode = options.safeMode === true;
+    if (
+      options.submitBudgetBytes !== undefined &&
+      (!Number.isSafeInteger(options.submitBudgetBytes) ||
+        options.submitBudgetBytes < 0)
+    ) {
+      throw new Error("submitBudgetBytes must be a non-negative safe integer");
+    }
+    this.submitBudgetBytes =
+      options.submitBudgetBytes ?? MOCK_LIMITS.SUBMIT_BUDGET_DEFAULT_BYTES;
+    this.submitLeaseGranted = options.submitLeaseGranted ?? true;
+    if (
+      options.submitDelivery !== undefined &&
+      options.submitDelivery !== "live" &&
+      options.submitDelivery !== "buffered" &&
+      options.submitDelivery !== "none"
+    ) {
+      throw new Error('submitDelivery must be "live", "buffered", or "none"');
+    }
+    this.submitDelivery = options.submitDelivery ?? "live";
+    if (options.editorResult !== undefined) {
+      checkEditorSeed(options.editorResult);
+      this.editorSeed = options.editorResult;
+    }
     this.environment = Object.freeze({ ...(options.environment ?? {}) });
     const envDeclared = this.declaredEnvCapabilities().length > 0;
 
@@ -1127,6 +1340,13 @@ export class MockHost {
       terminal: {
         snapshot: (opts?: SnapshotOptions): Record<string, unknown> =>
           this.terminalSnapshotRead(opts),
+        submit: (text: string): SubmitOutcome => this.terminalSubmit(text),
+      },
+      process: {
+        editor: {
+          start: (opts?: EditorStartOpts | null): EditorOutcome =>
+            this.processEditorStart(opts),
+        },
       },
       services: {
         get: (
@@ -1286,6 +1506,13 @@ export class MockHost {
     this.checkWorkspaceEventActivation();
     if (this.state === "disposed" || this.state === "created") {
       this.generation += 1;
+      // W-82 (CTX-0068): the submit byte window is per-generation, so a new
+      // generation starts uncharged; the editor seed resets to the safe
+      // cancelled default. Delivery, lease, and temp counters are host facts
+      // and persist.
+      this.submitUsed = 0;
+      this.editorSeed = undefined;
+      this.lastEditorTimeoutMsValue = 0;
       this.state = "activating";
       return;
     }
@@ -1613,6 +1840,50 @@ export class MockHost {
     this.terminalSnapshot = deepFreeze(deepCopy(snapshot));
   }
 
+  /**
+   * Set PTY delivery behind `bitty.terminal.submit` (harness-only, W-82,
+   * CTX-0068): `live` delivers and charges, `buffered` reports unavailable
+   * `buffered-only` without charging, `none` reports unavailable
+   * `no-focused-view`.
+   */
+  setSubmitDelivery(delivery: SubmitDelivery): void {
+    if (delivery !== "live" && delivery !== "buffered" && delivery !== "none") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        'submit delivery must be "live", "buffered", or "none"',
+      );
+    }
+    this.submitDelivery = delivery;
+  }
+
+  /**
+   * Set the panel-lease write rule behind `bitty.terminal.submit`
+   * (harness-only, W-82, CTX-0068). `false` models a refused lease and every
+   * submit returns denied `lease-denied` with nothing emitted.
+   */
+  setSubmitLease(granted: boolean): void {
+    if (typeof granted !== "boolean") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "submit lease must be a boolean",
+      );
+    }
+    this.submitLeaseGranted = granted;
+  }
+
+  /**
+   * Seed the editor child result behind `bitty.process.editor.start`
+   * (harness-only, W-82, CTX-0068). The mock spawns no process, so the
+   * blocking round trip resolves against this seed after capability and
+   * allowlist checks pass.
+   */
+  setEditorResult(seed: EditorSeed): void {
+    checkEditorSeed(seed);
+    this.editorSeed = seed;
+  }
+
   /** Remove one provided service; consumers fail closed with a gone error. */
   removeService(iface: string): void {
     const record = this.services.get(iface);
@@ -1679,6 +1950,26 @@ export class MockHost {
   /** Requests dropped because the bounded workspace queue was full. */
   get workspaceRequestsDropped(): number {
     return this.droppedWorkspaceRequests;
+  }
+
+  /** Submit byte-window bytes charged in the current generation (W-82). */
+  get submitBudgetUsed(): number {
+    return this.submitUsed;
+  }
+
+  /** Editor temp files created over host lifetime (W-82 temp rules). */
+  get editorTempsCreated(): number {
+    return this.editorTempsCreatedCount;
+  }
+
+  /** Editor temp files removed over host lifetime (cleanup is structural). */
+  get editorTempsRemoved(): number {
+    return this.editorTempsRemovedCount;
+  }
+
+  /** Effective bounded editor wait of the last start in milliseconds. */
+  get lastEditorTimeoutMs(): number {
+    return this.lastEditorTimeoutMsValue;
   }
 
   /**
@@ -2775,6 +3066,240 @@ export class MockHost {
       );
     }
     return deepCopy(this.terminalSnapshot);
+  }
+
+  /**
+   * Submit text to the focused panel PTY through the paste pipeline (W-82,
+   * CTX-0068). Order mirrors `Runtime::terminal_submit` at bitty `1df0459e`
+   * (all fail-closed, nothing emitted on refusal): focused-view check, then
+   * the panel-lease gate, then the byte cap, then the per-plugin budget
+   * probe, then delivery. The budget charges framed bytes only after delivery
+   * is confirmed live; denials and buffered-only frames leave it untouched.
+   */
+  private terminalSubmit(text: unknown): SubmitOutcome {
+    this.assertAlive();
+    this.assertCapability("bitty.terminal.submit", "terminal.input.submit");
+    if (typeof text !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "terminal.submit text must be a string",
+        "text",
+      );
+    }
+    if (LONE_SURROGATE.test(text)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "terminal.submit text must be valid UTF-8",
+        "text",
+      );
+    }
+    if (this.submitDelivery === "none") {
+      return deepFreeze({
+        status: "unavailable",
+        reason: "no-focused-view",
+      }) as SubmitOutcome;
+    }
+    if (!this.submitLeaseGranted) {
+      return deepFreeze({
+        status: "denied",
+        deny: "lease-denied",
+      }) as SubmitOutcome;
+    }
+    const bytes = utf8Bytes(text);
+    if (bytes > MOCK_LIMITS.COMPOSER_MAX_BYTES) {
+      return deepFreeze({
+        status: "denied",
+        deny: "too-large",
+        wanted: bytes,
+      }) as SubmitOutcome;
+    }
+    const framed = bytes + MOCK_LIMITS.SUBMIT_FRAME_OVERHEAD_BYTES;
+    const wanted = this.submitUsed + framed;
+    if (wanted > this.submitBudgetBytes) {
+      return deepFreeze({
+        status: "denied",
+        deny: "budget-exceeded",
+        used: this.submitUsed,
+        cap: this.submitBudgetBytes,
+      }) as SubmitOutcome;
+    }
+    if (this.submitDelivery === "buffered") {
+      return deepFreeze({
+        status: "unavailable",
+        reason: "buffered-only",
+      }) as SubmitOutcome;
+    }
+    this.submitUsed = wanted;
+    this.submittedFrames.push(
+      Buffer.concat([
+        // Byte-exact bracketed-paste frame: ESC[200~ + content + ESC[201~ + CR.
+        Buffer.from("\u001b[200~", "utf8"),
+        Buffer.from(text, "utf8"),
+        Buffer.from("\u001b[201~", "utf8"),
+        Buffer.from("\r", "utf8"),
+      ]),
+    );
+    return deepFreeze({
+      status: "accepted",
+      bytes: framed,
+    }) as SubmitOutcome;
+  }
+
+  /**
+   * Run one allowlisted external-editor round trip (W-82, CTX-0068). Mirrors
+   * `process_editor_start` at bitty `1df0459e`: resolve and allowlist
+   * `$VISUAL`/`$EDITOR` first (a hostile value is denied before any temp
+   * file exists), then create the `0600` temp file, resolve the harness-seeded
+   * child result, read back bounded UTF-8, and remove the temp file on every
+   * path. The outcome never carries the temp path. The mock performs no I/O
+   * and spawns no process: wall-clock waiting, tree kill, and crash-restart
+   * sweep stay Core-owned and out of mock scope.
+   */
+  private processEditorStart(opts: unknown): EditorOutcome {
+    this.assertAlive();
+    this.assertCapability("bitty.process.editor.start", "process.editor");
+    let table: Record<string, unknown> = {};
+    if (opts !== undefined && opts !== null) {
+      if (!isPlainObject(opts)) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "process.editor.start opts must be a table",
+          "opts",
+        );
+      }
+      table = opts as Record<string, unknown>;
+    }
+    // Unknown opts fields are ignored per the v1 rule.
+    const draft = table.draft ?? "";
+    if (typeof draft !== "string") {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "process.editor.start draft must be a string",
+        "opts.draft",
+      );
+    }
+    if (LONE_SURROGATE.test(draft as string)) {
+      fail(
+        "validation",
+        HOST_CODES.DEF_INVALID,
+        "process.editor.start draft must be valid UTF-8",
+        "opts.draft",
+      );
+    }
+    let timeoutMs: number = MOCK_LIMITS.EDITOR_TIMEOUT_DEFAULT_MS;
+    if (table.timeout_ms !== undefined) {
+      if (
+        !Number.isSafeInteger(table.timeout_ms) ||
+        (table.timeout_ms as number) < 1
+      ) {
+        fail(
+          "validation",
+          HOST_CODES.DEF_INVALID,
+          "process.editor.start timeout_ms must be a positive integer",
+          "opts.timeout_ms",
+        );
+      }
+      timeoutMs = Math.min(
+        table.timeout_ms as number,
+        MOCK_LIMITS.EDITOR_TIMEOUT_MAX_MS,
+      );
+    }
+    this.lastEditorTimeoutMsValue = timeoutMs;
+    const program = this.resolveEditorProgram();
+    if (program === undefined) {
+      return deepFreeze({
+        status: "denied",
+        deny: "no-editor",
+      }) as EditorOutcome;
+    }
+    if (program === null) {
+      return deepFreeze({
+        status: "denied",
+        deny: "not-allowed",
+      }) as EditorOutcome;
+    }
+    if (utf8Bytes(draft as string) > MOCK_LIMITS.COMPOSER_MAX_BYTES) {
+      // The Core write fails past the cap and the file is removed: model the
+      // create/remove pair with no content retained.
+      this.editorTempsCreatedCount += 1;
+      this.editorTempsRemovedCount += 1;
+      return deepFreeze({
+        status: "unavailable",
+        reason: "too-large",
+      }) as EditorOutcome;
+    }
+    this.editorTempsCreatedCount += 1;
+    const seed = this.editorSeed ?? { kind: "cancelled" as const };
+    const finish = (outcome: EditorOutcome): EditorOutcome => {
+      this.editorTempsRemovedCount += 1;
+      return deepFreeze(outcome) as EditorOutcome;
+    };
+    switch (seed.kind) {
+      case "edited": {
+        const content = seed.content;
+        if (LONE_SURROGATE.test(content)) {
+          return finish({ status: "unavailable", reason: "invalid-utf8" });
+        }
+        if (utf8Bytes(content) > MOCK_LIMITS.COMPOSER_MAX_BYTES) {
+          return finish({ status: "unavailable", reason: "too-large" });
+        }
+        return finish({ status: "edited", content });
+      }
+      case "cancelled":
+        return finish({ status: "cancelled" });
+      case "timeout":
+        return finish({ status: "timeout" });
+      case "spawn-failed": {
+        const detail =
+          seed.detail === undefined || seed.detail === ""
+            ? "spawn failed"
+            : seed.detail;
+        return finish({
+          status: "spawn-failed",
+          detail: truncateBytes(
+            detail,
+            MOCK_LIMITS.EDITOR_SPAWN_DETAIL_MAX_BYTES,
+          ),
+        });
+      }
+      case "non-zero":
+        return finish(
+          seed.code === undefined || seed.code === null
+            ? { status: "non-zero" }
+            : { status: "non-zero", code: seed.code },
+        );
+      case "unavailable":
+        return finish({
+          status: "unavailable",
+          reason: seed.reason ?? "temp-unavailable",
+        });
+    }
+  }
+
+  /**
+   * Resolve the editor program from the host environment snapshot (W-82,
+   * CTX-0068). Mirrors `resolve_editor` at bitty `1df0459e`: `$VISUAL`,
+   * then `$EDITOR`; the first non-empty trimmed value wins and is matched
+   * exactly against the bare-name allowlist with no fallback to the other
+   * variable. Resolution reads the host snapshot directly (like the Core
+   * process environment); `env.read` grants are irrelevant. Returns the
+   * program, `null` for a hostile value, or `undefined` when neither variable
+   * names an editor.
+   */
+  private resolveEditorProgram(): string | null | undefined {
+    for (const key of ["VISUAL", "EDITOR"] as const) {
+      const raw = this.environment[key];
+      if (raw === undefined) continue;
+      const trimmed = raw.trim();
+      if (trimmed === "") continue;
+      if (!EDITOR_ALLOWLIST.includes(trimmed)) return null;
+      return trimmed;
+    }
+    return undefined;
   }
 
   private servicesProvide(

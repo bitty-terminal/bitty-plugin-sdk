@@ -21,6 +21,13 @@ wired (see [Pending surface](#pending-surface-targeting-w-29-ctx-0067)).
 SDK task `CTX-0065` (plan W-120) then wires the accepted W-01 overlay
 surface (see
 [Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065)).
+SDK task `CTX-0068` (issue #142, plan W-103 S-2) wires the accepted W-82
+composer operations `bitty.terminal.submit` and `bitty.process.editor.start`
+with the additive v2 capabilities `terminal.input.submit` and
+`process.editor` (see
+[Accepted submit/editor surface](#accepted-submiteditor-surface-w-82-ctx-0068));
+`api_version` stays `1.0.0` (additive only) and the host pin stays `fb44a867`
+(#1641).
 
 ## Contract sources
 
@@ -51,6 +58,14 @@ surface (see
   [Pending surface](#pending-surface-targeting-w-29-ctx-0067)). The W-28
   overlay mechanism is now covered by the accepted W-01 surface (see
   [Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065)).
+  The W-82 submit/editor spellings, outcome shapes, bounds, and error codes
+  are derived from the accepted W-82 contract plus the bitty host source at
+  `1df0459e` (`crates/bitty-rich/src/host.rs`,
+  `crates/bitty-runtime/src/runtime/submit_host.rs`,
+  `crates/bitty-terminal/src/editor_host.rs`) and the overlay mechanism at
+  `2f49934d` as mechanism evidence, not as the spelling authority (Core has
+  no Lua wiring for submit/editor yet; see
+  [Accepted submit/editor surface](#accepted-submiteditor-surface-w-82-ctx-0068)).
 - Pinned revisions live in `sources` in `surface/bitty-plugin-api-v1.json`;
   the generated header names each contract document by repository and path
   only, so the surface table is the sole revision record.
@@ -131,26 +146,27 @@ Semantics the annotations carry:
 ## Coverage
 
 The surface table covers L1 Control and the minimal L2 UI surface plus the
-accepted W-01 overlay surface: 14 namespaces, 34 functions, and the closed
-23-name event set.
+accepted W-01 overlay surface and the accepted W-82 composer operations: 15
+namespaces, 36 functions, and the closed 23-name event set.
 
-| Namespace    | Functions                                                       | Level | Capability                                                    |
-| ------------ | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |
-| `commands`   | `register`                                                      | L1    | none                                                          |
-| `events`     | `subscribe`                                                     | L1    | none                                                          |
-| `keymaps`    | `suggest`                                                       | L1    | none                                                          |
-| `settings`   | `get`, `set`                                                    | L1    | none                                                          |
-| `store`      | `get`, `set`                                                    | L1    | none (quota-bounded)                                          |
-| `notify`     | `show`                                                          | L1    | `platform.notify`                                             |
-| `env`        | `get`, `has`                                                    | L1    | `env.read:<KEY>` (namespace optional)                         |
-| `services`   | `get`, `provide`                                                | L1    | none                                                          |
-| `ui`         | `mount`, `update`                                               | L2    | `ui.rich`; `ui.overlay` for the overlay slot                  |
-| `ui.overlay` | `acquire`, `update`, `poll`, `release`                          | L2    | `ui.overlay.focus` (single coupled grant, W-01)               |
-| `terminal`   | `snapshot`                                                      | L2    | `terminal.semantic-read`                                      |
-| `tasks`      | `spawn`, `cancel`                                               | L1    | none (64-task cap)                                            |
-| `timers`     | `create`, `cancel`                                              | L1    | none (32-timer cap, one-shot)                                 |
-| `debug`      | `inspect`, `trace`, `trace_get`, `control`                      | L1    | `debug.inspect`; `debug.trace`; `debug.control` (deferred)    |
-| `workspace`  | `list`, `focus`, `new`, `next`, `close`, `rename`, `move_panel` | L1    | `workspace.read` for `list`; `workspace.control` for the rest |
+| Namespace        | Functions                                                       | Level | Capability                                                    |
+| ---------------- | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |
+| `commands`       | `register`                                                      | L1    | none                                                          |
+| `events`         | `subscribe`                                                     | L1    | none                                                          |
+| `keymaps`        | `suggest`                                                       | L1    | none                                                          |
+| `settings`       | `get`, `set`                                                    | L1    | none                                                          |
+| `store`          | `get`, `set`                                                    | L1    | none (quota-bounded)                                          |
+| `notify`         | `show`                                                          | L1    | `platform.notify`                                             |
+| `env`            | `get`, `has`                                                    | L1    | `env.read:<KEY>` (namespace optional)                         |
+| `services`       | `get`, `provide`                                                | L1    | none                                                          |
+| `ui`             | `mount`, `update`                                               | L2    | `ui.rich`; `ui.overlay` for the overlay slot                  |
+| `ui.overlay`     | `acquire`, `update`, `poll`, `release`                          | L2    | `ui.overlay.focus` (single coupled grant, W-01)               |
+| `terminal`       | `snapshot`, `submit`                                            | L2    | `terminal.semantic-read`; `terminal.input.submit` (W-82)      |
+| `tasks`          | `spawn`, `cancel`                                               | L1    | none (64-task cap)                                            |
+| `timers`         | `create`, `cancel`                                              | L1    | none (32-timer cap, one-shot)                                 |
+| `debug`          | `inspect`, `trace`, `trace_get`, `control`                      | L1    | `debug.inspect`; `debug.trace`; `debug.control` (deferred)    |
+| `workspace`      | `list`, `focus`, `new`, `next`, `close`, `rename`, `move_panel` | L1    | `workspace.read` for `list`; `workspace.control` for the rest |
+| `process.editor` | `start`                                                         | L2    | `process.editor` (single grant, W-82)                         |
 
 The accepted RFC classifies the `services.get` consumer side as cross-cutting
 within v1; the tasks and timers functions were resolved as v1 additions by
@@ -198,15 +214,18 @@ dropping the `:overlay` entry.
 The surface table records an explicit exclusion list that the tests enforce
 against the generated file: no `bitty.api` alias, no flat
 `register_command`/`on_event`/`get_terminal_state` spellings, no panel
-providers, no `bitty.fs`/`process`/`network`/`clipboard`/`ipc`/`renderer`/
-`protocol` entry points, no Level 3 presentation namespaces, no singular
+providers, no `bitty.fs`/`network`/`clipboard`/`ipc`/`renderer`/
+`protocol` entry points, no unconstrained `bitty.process.spawn` (only the
+allowlisted `bitty.process.editor.start` is wired; see
+[Accepted submit/editor surface](#accepted-submiteditor-surface-w-82-ctx-0068)),
+no Level 3 presentation namespaces, no singular
 `bitty.task`/`bitty.timer` spellings, no `scope = "raw"` snapshot, and no
 provisional `bitty.ui.targets`/`bitty.ui.labels` sub-tables (the
 `bitty.ui.overlay` focusable surface is now accepted via W-01; see
 [Accepted overlay surface](#accepted-overlay-surface-w-01-ctx-0065) and
 [Pending surface](#pending-surface-targeting-w-29-ctx-0067)).
 `tests/lua-defs.test.ts` checks the full list textually on every `just check`;
-the LuaLS negative fixture samples six excluded spellings plus the excluded
+the LuaLS negative fixture samples seven excluded spellings plus the excluded
 `raw` scope literal and wrong-shape `services.get` calls to verify rejection at
 author time.
 
@@ -277,6 +296,44 @@ Conformance cases `19-overlay-focus.json`, `20-overlay-safe-mode.json`, and
 `21-overlay-timeout-focus.json` cover the lifecycle. Field encodings, richer
 node types, submit-to-PTY, and mechanism internals stay parked with their
 owners per the contract.
+
+## Accepted submit/editor surface (W-82, CTX-0068)
+
+SDK task `CTX-0068` (plan W-103 S-2) wires the accepted W-82 Composer
+architecture (`bitty-terminal-docs`
+`specifications/composer-architecture.md`, `status: accepted`): the additive
+v2 capabilities `terminal.input.submit` and `process.editor` (closed terminal
+and process families; no wildcard, no family grant), the
+`bitty.terminal.submit(text)` spelling returning the typed
+`{status, bytes?, deny?, wanted?, used?, cap?, reason?}` outcome, and the
+`bitty.process.editor.start(opts?)` spelling returning the typed
+`{status, content?, deny?, detail?, code?, reason?}` outcome. The status tags
+mirror the Core typed outcomes at bitty `1df0459e` (CTX-0929):
+`TerminalSubmitOutcome` (`accepted`/`denied`/`unavailable`),
+`SubmitDeny` (`too-large`/`lease-denied`/`budget-exceeded`),
+`TerminalSubmitUnavailable` (`no-focused-view`/`buffered-only`),
+`EditorOutcome` (`edited`/`cancelled`/`denied`/`timeout`/`spawn-failed`/
+`non-zero`/`unavailable`, minus the hosted-only `Signal` variant, which has
+no Lua spelling), and `EditorDeny` (`no-editor`/`not-allowed`). The
+`start(opts)` table shape (`draft`, `timeout_ms`, unknown fields ignored)
+projects the round-trip inputs: the temp path itself never leaves Core, so
+the plugin contributes draft content and a bounded wait request only. Bounds
+are the reviewed values: 64 KiB edit-buffer and temp cap, 13-byte
+bracketed-paste framing overhead, 120 s default / 300 s ceiling editor wait,
+and the exact `nvim`/`vim`/`vi` bare-name allowlist with first-non-empty-wins
+and no fallback. `terminal.submit` lives under the already-wired `terminal`
+namespace (no verdict move); `process.editor.start` records the new wired
+`process` namespace verdict while unconstrained `process.spawn` stays v1-OUT.
+`api_version` stays `1.0.0` (additive only) and the host pin stays `fb44a867`
+(#1641). The mock host enforces deny-by-default, the framing and charge
+rules (framed bytes charged only on live delivery; denials and buffered-only
+frames leave the window untouched), the lease gate, the allowlist before any
+temp state, Core-owned temp creation with removal on every path, and the
+harness-seeded child vocabulary (wall-clock waiting, tree kill, and
+crash-restart sweep stay Core-owned). Conformance cases `22-submit-terminal`,
+`23-process-editor`, `24-editor-allowlist`, `25-compat-mismatch`, and the
+`26`/`27` first-party/third-party parity-denial pair cover the surface; the
+parity legs run byte-identical steps under the two principals.
 
 ## Pending surface: targeting (W-29, CTX-0067)
 

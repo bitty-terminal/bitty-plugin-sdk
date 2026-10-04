@@ -38,6 +38,7 @@ const EXPECTED_FUNCTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ["L2", "ui.overlay.poll", "BittyOverlayPollResult"],
   ["L2", "ui.overlay.release", "boolean"],
   ["L2", "terminal.snapshot", "BittyTerminalSnapshot"],
+  ["L2", "terminal.submit", "BittySubmitOutcome"],
   ["L1", "tasks.spawn", "BittyTaskHandle"],
   ["L1", "tasks.cancel", "boolean"],
   ["L1", "timers.create", "BittyTimerHandle"],
@@ -53,6 +54,7 @@ const EXPECTED_FUNCTIONS: ReadonlyArray<readonly [string, string, string]> = [
   ["L1", "workspace.close", "boolean"],
   ["L1", "workspace.rename", "boolean"],
   ["L1", "workspace.move_panel", "boolean"],
+  ["L2", "process.editor.start", "BittyEditorOutcome"],
 ];
 
 const EXPECTED_EVENTS: ReadonlyArray<readonly [string, string, string]> = [
@@ -144,11 +146,13 @@ describe("surface table", () => {
     expect(gates.get("ui.overlay.poll")).toEqual(["ui.overlay.focus"]);
     expect(gates.get("ui.overlay.release")).toEqual(["ui.overlay.focus"]);
     expect(gates.get("terminal.snapshot")).toEqual(["terminal.semantic-read"]);
+    expect(gates.get("terminal.submit")).toEqual(["terminal.input.submit"]);
     expect(gates.get("debug.inspect")).toEqual(["debug.inspect"]);
     expect(gates.get("debug.trace")).toEqual(["debug.trace"]);
     expect(gates.get("debug.trace_get")).toEqual(["debug.trace"]);
     expect(gates.get("debug.control")).toEqual(["debug.control"]);
     expect(gates.get("workspace.list")).toEqual(["workspace.read"]);
+    expect(gates.get("process.editor.start")).toEqual(["process.editor"]);
     for (const path of [
       "workspace.focus",
       "workspace.new",
@@ -173,6 +177,8 @@ describe("surface table", () => {
           "ui.overlay.poll",
           "ui.overlay.release",
           "terminal.snapshot",
+          "terminal.submit",
+          "process.editor.start",
         ].includes(fn.path) &&
         !fn.path.startsWith("debug.") &&
         !fn.path.startsWith("workspace.")
@@ -200,7 +206,8 @@ describe("surface table", () => {
     expect(namespaces.env).toBe("deferred");
     expect(namespaces.debug).toBe("wired");
     expect(namespaces.workspace).toBe("wired");
-    expect(Object.keys(namespaces)).toHaveLength(14);
+    expect(namespaces.process).toBe("wired");
+    expect(Object.keys(namespaces)).toHaveLength(15);
     expect(surface.hostParity.functions).toEqual({
       "debug.control": "deferred",
     });
@@ -291,13 +298,16 @@ describe("generated definitions", () => {
     }));
     expect(parsed.length).toBe(surface.functions.length);
     for (const fn of surface.functions) {
-      // W-01 nested `ui.overlay.*` renders under `BittyUiOverlayNamespace`.
+      // Nested `ui.overlay.*` renders under `BittyUiOverlayNamespace` and
+      // nested `process.editor.*` under `BittyProcessEditorNamespace`.
       const segments = fn.path.split(".");
       const name = segments[segments.length - 1] ?? "";
       const namespaceType =
         fn.path.startsWith("ui.overlay.") === true
           ? "BittyUiOverlayNamespace"
-          : `Bitty${capitalized(segments[0] ?? "")}Namespace`;
+          : fn.path.startsWith("process.editor.") === true
+            ? "BittyProcessEditorNamespace"
+            : `Bitty${capitalized(segments[0] ?? "")}Namespace`;
       const found = parsed.find(
         (entry) => entry.namespace === namespaceType && entry.name === name,
       );

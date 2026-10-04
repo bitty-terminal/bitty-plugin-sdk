@@ -1,0 +1,63 @@
+{
+  "name": "First-party/third-party parity denial (first-party)",
+  "description": "W-103 S-2 parity proof, first-party leg: the official composer plugin (bitty.composer) sees the identical denials and success shapes as the third-party leg. Steps are byte-identical to 27-parity-denial-third-party.json; only the manifest differs.",
+  "manifest": "manifests/composer.toml",
+  "tags": ["capability", "deny-by-default", "parity", "terminal", "ui"],
+  "grants": [],
+  "environment": { "VISUAL": "vim" },
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "hi" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "parity" } },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "terminal.input.submit" },
+    { "op": "grant", "capability": "process.editor" },
+    { "op": "grant", "capability": "ui.overlay.focus" },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "hi" },
+      "expect": { "result": { "status": "accepted", "bytes": 15 } }
+    },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": {},
+      "expect": { "result": { "status": "cancelled" } }
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.acquire",
+      "args": { "spec": { "title": "parity" } },
+      "capture": "h1"
+    },
+    {
+      "op": "call",
+      "surface": "ui.overlay.release",
+      "args": { "handle": { "$ref": "h1" }, "reason": "cancelled" },
+      "expect": { "result": true }
+    },
+    { "op": "end-activation" }
+  ]
+}

@@ -107,6 +107,13 @@ export const CAPABILITY_GATED_SURFACE: readonly CapabilityGate[] = [
   { surface: "bitty.ui.overlay.poll", capability: "ui.overlay.focus" },
   { surface: "bitty.ui.overlay.release", capability: "ui.overlay.focus" },
   { surface: "bitty.terminal.snapshot", capability: "terminal.semantic-read" },
+  // CTX-0068 (W-82 accepted): composer submit path through the paste
+  // pipeline, gated by the additive v2 capability terminal.input.submit.
+  { surface: "bitty.terminal.submit", capability: "terminal.input.submit" },
+  // CTX-0068 (W-82 accepted): allowlisted external-editor round trip, gated
+  // by the additive v2 capability process.editor; the temp file never leaves
+  // Core and grants no general fs.write authority.
+  { surface: "bitty.process.editor.start", capability: "process.editor" },
   { surface: "bitty.env.get", capability: "env.read:<KEY>" },
   { surface: "bitty.env.has", capability: "env.read:<KEY>" },
   { surface: "bitty.debug.inspect", capability: "debug.inspect" },
@@ -149,6 +156,7 @@ export const V1_SURFACE_FUNCTIONS: readonly string[] = [
   "ui.overlay.poll",
   "ui.overlay.release",
   "terminal.snapshot",
+  "terminal.submit",
   "tasks.spawn",
   "tasks.cancel",
   "timers.create",
@@ -164,6 +172,7 @@ export const V1_SURFACE_FUNCTIONS: readonly string[] = [
   "workspace.close",
   "workspace.rename",
   "workspace.move_panel",
+  "process.editor.start",
 ];
 
 /** The only snapshot scope accepted in v1 (`scope = "raw"` is excluded). */
@@ -315,7 +324,72 @@ export const MOCK_LIMITS = {
   OVERLAY_PAYLOAD_MAX_BYTES: 4096,
   OVERLAY_CALL_MAX_BYTES: 4096,
   OVERLAY_IDLE_TIMEOUT_MS: 30_000,
+  // W-82 composer bounds (CTX-0068, accepted): 64 KiB edit-buffer and temp
+  // cap (`COMPOSER_MAX_BYTES`), 13-byte bracketed-paste framing overhead
+  // (`ESC[200~` + content + `ESC[201~` + `CR`), 120 s default / 300 s ceiling
+  // editor wait. The submit byte-window cap is caller-supplied per DEC-W103-4
+  // (Isolation/Resource lane owns the numeric policy); the mock default below
+  // is a harness convenience, never a contract value.
+  COMPOSER_MAX_BYTES: 64 * 1024,
+  SUBMIT_FRAME_OVERHEAD_BYTES: 13,
+  SUBMIT_BUDGET_DEFAULT_BYTES: 1024 * 1024,
+  EDITOR_TIMEOUT_DEFAULT_MS: 120_000,
+  EDITOR_TIMEOUT_MAX_MS: 300_000,
+  EDITOR_SPAWN_DETAIL_MAX_BYTES: 512,
 } as const;
+
+/** Closed editor program allowlist (W-82, CTX-0068): bare names only, exact match. */
+export const EDITOR_ALLOWLIST: readonly string[] = ["nvim", "vim", "vi"];
+
+/** terminal.submit outcome tags (W-82, CTX-0068); mirrors TerminalSubmitOutcome. */
+export const SUBMIT_OUTCOME_STATUSES: readonly string[] = [
+  "accepted",
+  "denied",
+  "unavailable",
+];
+
+/** terminal.submit denial details (W-82, CTX-0068); mirrors SubmitDeny. */
+export const SUBMIT_DENY_KINDS: readonly string[] = [
+  "too-large",
+  "lease-denied",
+  "budget-exceeded",
+];
+
+/** terminal.submit unavailability details (W-82, CTX-0068); mirrors TerminalSubmitUnavailable. */
+export const SUBMIT_UNAVAILABLE_REASONS: readonly string[] = [
+  "no-focused-view",
+  "buffered-only",
+];
+
+/** process.editor.start outcome tags (W-82, CTX-0068); mirrors EditorOutcome minus hosted-only Signal. */
+export const EDITOR_OUTCOME_STATUSES: readonly string[] = [
+  "edited",
+  "cancelled",
+  "denied",
+  "timeout",
+  "spawn-failed",
+  "non-zero",
+  "unavailable",
+];
+
+/** process.editor.start denial details (W-82, CTX-0068); mirrors EditorDeny. */
+export const EDITOR_DENY_KINDS: readonly string[] = [
+  "no-editor",
+  "not-allowed",
+];
+
+/**
+ * process.editor.start unavailability details (W-82, CTX-0068); SDK
+ * kebab-case projection of the static EditorOutcome::Unavailable reasons,
+ * never a path or payload.
+ */
+export const EDITOR_UNAVAILABLE_REASONS: readonly string[] = [
+  "temp-unavailable",
+  "read-unavailable",
+  "too-large",
+  "invalid-utf8",
+  "wait-unavailable",
+];
 
 /** Decided overlay input-event tags (W-01); field encodings stay parked. */
 export const OVERLAY_EVENT_TAGS: readonly string[] = [
@@ -470,6 +544,18 @@ export interface NamespaceHostParity {
  * and `bitty.ui.labels` bindings stay pending per W-120, deferred and not
  * wired (see the surface table exclusions `bitty.ui.targets`,
  * `bitty.ui.labels`).
+ * SDK task CTX-0068 (W-103 S-2) wires the accepted W-82 composer operations
+ * additively: `bitty.terminal.submit` (gated on the additive v2 capability
+ * `terminal.input.submit`, typed accepted/denied/unavailable outcomes with
+ * per-plugin byte-window charging) lives under the already-wired `terminal`
+ * namespace, so no verdict moves there; `bitty.process.editor.start` (gated
+ * on the additive v2 capability `process.editor`, typed
+ * edited/cancelled/denied/timeout/spawn-failed/non-zero/unavailable
+ * outcomes, Core-owned temp file that never leaves Core) records the new
+ * wired `process` namespace verdict above, while unconstrained
+ * `process.spawn` stays v1-OUT. Mechanism evidence is bitty #1661 (CTX-0929,
+ * `1df0459e`) and #1654 (CTX-0941, `2f49934d`); `api_version` stays `1.0.0`
+ * (additive only) and the pin stays `fb44a867` (#1641).
  * `commit` is the last re-verified bitty `main`; `pr` is the pin PR that
  * carries the re-verification (last v1 verdict move remains #1584). Mirrors
  * `surface/bitty-plugin-api-v1.json` `hostParity`; `just host-parity-check`
@@ -509,6 +595,13 @@ export const NAMESPACE_HOST_PARITY: readonly NamespaceHostParity[] = [
   { namespace: "timers", status: "wired" },
   { namespace: "debug", status: "wired" },
   { namespace: "workspace", status: "wired" },
+  // CTX-0068 (W-82 accepted, W-103 S-2): the constrained process namespace is
+  // wired for the allowlisted external-editor round trip only
+  // (`process.editor.start` gated on `process.editor`); unconstrained
+  // `process.spawn` stays v1-OUT (see the surface table exclusion
+  // `bitty.process.spawn`). Mechanism evidence: bitty #1661 (CTX-0929,
+  // 1df0459e).
+  { namespace: "process", status: "wired" },
 ];
 
 /** One per-function parity override inside a wired namespace. */

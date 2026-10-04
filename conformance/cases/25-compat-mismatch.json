@@ -1,0 +1,23 @@
+{
+  "name": "Compatibility mismatch fails closed",
+  "description": "W-82 declared compatibility: a manifest requiring Plugin API ^99.0 fails activation with a validation diagnostic and no partial activation (the generation never opens, so later calls fail as disposed).",
+  "manifest": "manifests/composer-compat-mismatch.toml",
+  "tags": ["lifecycle", "registration", "deny-by-default"],
+  "grants": ["terminal.input.submit", "process.editor"],
+  "steps": [
+    {
+      "op": "begin-activation",
+      "expect": {
+        "denial": { "code": "E_LIFECYCLE_STATE", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "hi" },
+      "expect": {
+        "denial": { "code": "E_GENERATION_DISPOSED", "class": "runtime" }
+      }
+    }
+  ]
+}

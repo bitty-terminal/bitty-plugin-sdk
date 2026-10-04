@@ -1,7 +1,7 @@
 --- Bitty Plugin API v1 LuaLS definitions.
 --- GENERATED FILE - DO NOT EDIT.
 --- Source: surface/bitty-plugin-api-v1.json
---- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md + bitty-docs:docs/development/overlay-input-capture-contract.md
+--- Contract: bitty-docs:docs/decisions/adrs/ADR-0009-plugin-api-v1-lua-surface.md + bitty-docs:docs/specifications/plugin-api-v1-lua-surface-rfc.md + bitty-docs:docs/decisions/adrs/ADR-0014-workspace-core-presentation-plugins.md + bitty-docs:docs/development/overlay-input-capture-contract.md + bitty-terminal-docs:specifications/composer-architecture.md
 --- Referenced (not authority): bitty-terminal-docs:specifications/search-selection-contract.md (draft) + bitty-plugins-docs:extensibility/history-and-storage-policy.md (draft) + bitty-plugins-docs:specifications/search-copy-mode-policy.md (draft)
 --- Regenerate: bun scripts/generate-lua-defs.ts --write
 --- Verify: just lua-defs-check
@@ -478,8 +478,8 @@ function BittyUiOverlayNamespace.release(handle, reason) end
 ---@field title string Bounded title text.
 ---@field zones? BittySemanticZone[] Semantic zones; may be absent.
 
---- Read-only terminal observation surface (L2) gated by terminal.semantic-read; there is no write
---- path to grid, cursor, modes, or scrollback in v1.
+--- Terminal observation plus the capability-gated PTY submit path (L2); submit writes only through
+--- the Core paste pipeline and never touches grid, cursor, modes, or scrollback.
 ---@class BittyTerminalNamespace
 local BittyTerminalNamespace = {}
 
@@ -490,6 +490,87 @@ local BittyTerminalNamespace = {}
 ---@param opts BittySnapshotOpts
 ---@return BittyTerminalSnapshot
 function BittyTerminalNamespace.snapshot(opts) end
+
+--- Submits text to the focused panel PTY through the capability-gated paste pipeline as one
+--- byte-exact bracketed-paste frame; over-cap, lease, and budget refusals return a denied outcome
+--- and emit nothing, and a frame that only buffers reports unavailable without charging the budget.
+--- Capabilities: terminal.input.submit.
+--- Errors: E_CAPABILITY_DENIED, E_DEF_INVALID.
+---@param text string
+---@return BittySubmitOutcome
+function BittyTerminalNamespace.submit(text) end
+
+--- terminal.submit outcome tag; mirrors TerminalSubmitOutcome at bitty 1df0459e (CTX-0929, W-103
+--- S-1b).
+---@alias BittySubmitStatus "accepted"|"denied"|"unavailable"
+
+--- terminal.submit denial detail; mirrors SubmitDeny at bitty 1df0459e (CTX-0929, W-103 S-1b) and
+--- never carries payload.
+---@alias BittySubmitDeny "too-large"|"lease-denied"|"budget-exceeded"
+
+--- terminal.submit unavailability detail; mirrors TerminalSubmitUnavailable at bitty 1df0459e
+--- (CTX-0929, W-103 S-1b).
+---@alias BittySubmitUnavailableReason "no-focused-view"|"buffered-only"
+
+--- terminal.submit typed outcome; mirrors TerminalSubmitOutcome at bitty 1df0459e (CTX-0929, W-103
+--- S-1b): denials emit nothing and leave the budget untouched.
+---@class BittySubmitOutcome
+---@field status BittySubmitStatus Outcome tag.
+---@field bytes? integer Present only with accepted; framed bytes delivered in one PTY write.
+---@field deny? BittySubmitDeny Present only with denied.
+---@field wanted? integer Present only with denied too-large; content bytes refused.
+---@field used? integer Present only with denied budget-exceeded; window bytes already charged.
+---@field cap? integer Present only with denied budget-exceeded; per-plugin window cap in bytes.
+---@field reason? BittySubmitUnavailableReason Present only with unavailable.
+
+--- Constrained process surface (L2); only the allowlisted external-editor round trip is wired and
+--- unconstrained process.spawn stays v1-OUT.
+---@class BittyProcessNamespace
+---@field editor BittyProcessEditorNamespace Allowlisted external-editor round trip (W-82); requires process.editor.
+local BittyProcessNamespace = {}
+
+--- Allowlisted external-editor round trip (L2, W-82); the single grant process.editor covers start
+--- and the temp file never leaves Core.
+---@class BittyProcessEditorNamespace
+local BittyProcessEditorNamespace = {}
+
+--- Runs one allowlisted external-editor round trip (nvim, vim, or vi matched exactly from $VISUAL
+--- then $EDITOR with no fallback) on a Core-owned 0600 temp file that is always removed; returns
+--- the typed outcome and never the temp path.
+--- Capabilities: process.editor.
+--- Errors: E_CAPABILITY_DENIED, E_DEF_INVALID.
+---@param opts? BittyEditorStartOpts
+---@return BittyEditorOutcome
+function BittyProcessEditorNamespace.start(opts) end
+
+--- Options for bitty.process.editor.start; every field is optional and unknown fields are ignored.
+---@class BittyEditorStartOpts
+---@field draft? string Initial draft text handed to the editor; defaults to empty and past the 64 KiB bound the round trip is unavailable with the file removed.
+---@field timeout_ms? integer Bounded editor wait in milliseconds; defaults to 120000 and larger requests clamp to 300000.
+
+--- process.editor.start outcome tag; mirrors EditorOutcome at bitty 1df0459e (CTX-0929, W-103 S-1b)
+--- minus the hosted-only Signal variant, which has no Lua spelling.
+---@alias BittyEditorStatus "edited"|"cancelled"|"denied"|"timeout"|"spawn-failed"|"non-zero"|"unavailable"
+
+--- process.editor.start denial detail; mirrors EditorDeny at bitty 1df0459e (CTX-0929, W-103 S-1b):
+--- no-editor when neither $VISUAL nor $EDITOR names an editor, not-allowed off the bare-name
+--- allowlist.
+---@alias BittyEditorDeny "no-editor"|"not-allowed"
+
+--- process.editor.start unavailability detail; SDK kebab-case projection of the static
+--- EditorOutcome::Unavailable reasons at bitty 1df0459e (CTX-0929, W-103 S-1b), never a path or
+--- payload.
+---@alias BittyEditorUnavailableReason "temp-unavailable"|"read-unavailable"|"too-large"|"invalid-utf8"|"wait-unavailable"
+
+--- process.editor.start typed outcome; mirrors EditorOutcome at bitty 1df0459e (CTX-0929, W-103
+--- S-1b): denials land before any temp file or child and failures preserve the previous draft.
+---@class BittyEditorOutcome
+---@field status BittyEditorStatus Outcome tag.
+---@field content? string Present only with edited; bounded UTF-8 text read back from the removed temp file.
+---@field deny? BittyEditorDeny Present only with denied.
+---@field detail? string Present only with spawn-failed; bounded host detail, never a path.
+---@field code? integer Present only with non-zero and only when the exit code is known.
+---@field reason? BittyEditorUnavailableReason Present only with unavailable.
 
 --- Host-owned task surface (L1) capped at 64 live tasks per plugin; exceeding the cap fails with
 --- E_BUDGET_TASK and never queues silently.
@@ -718,6 +799,7 @@ function BittyWorkspaceNamespace.move_panel(id) end
 ---@field services BittyServicesNamespace
 ---@field ui BittyUiNamespace
 ---@field terminal BittyTerminalNamespace
+---@field process BittyProcessNamespace
 ---@field tasks BittyTasksNamespace
 ---@field timers BittyTimersNamespace
 ---@field debug BittyDebugNamespace

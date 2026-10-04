@@ -1,0 +1,97 @@
+{
+  "name": "Terminal submit through the paste pipeline",
+  "description": "W-82 terminal.submit requires terminal.input.submit, frames one byte-exact bracketed-paste frame (content + 13 bytes), charges the per-plugin window only on live delivery, denies too-large/lease/budget with nothing emitted, and reports buffered-only/no-focused-view unavailable without charging.",
+  "manifest": "manifests/composer.toml",
+  "tags": ["terminal", "capability", "deny-by-default", "budgets"],
+  "grants": [],
+  "submitBudgetBytes": 60,
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "hi" },
+      "expect": {
+        "denial": { "code": "E_CAPABILITY_DENIED", "class": "runtime" }
+      }
+    },
+    { "op": "grant", "capability": "terminal.input.submit" },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": 7 },
+      "expect": {
+        "denial": { "code": "E_DEF_INVALID", "class": "validation" }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "hi" },
+      "expect": { "result": { "status": "accepted", "bytes": 15 } }
+    },
+    { "op": "set-submit-delivery", "delivery": "buffered" },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "x" },
+      "expect": {
+        "result": { "status": "unavailable", "reason": "buffered-only" }
+      }
+    },
+    { "op": "set-submit-delivery", "delivery": "live" },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "hello!" },
+      "expect": { "result": { "status": "accepted", "bytes": 19 } }
+    },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "0123456789abcdef" },
+      "expect": {
+        "result": {
+          "status": "denied",
+          "deny": "budget-exceeded",
+          "used": 34,
+          "cap": 60
+        }
+      }
+    },
+    { "op": "set-submit-lease", "granted": false },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "x" },
+      "expect": {
+        "result": { "status": "denied", "deny": "lease-denied" }
+      }
+    },
+    { "op": "set-submit-lease", "granted": true },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "0123456789abcd" },
+      "expect": {
+        "result": {
+          "status": "denied",
+          "deny": "budget-exceeded",
+          "used": 34,
+          "cap": 60
+        }
+      }
+    },
+    { "op": "set-submit-delivery", "delivery": "none" },
+    {
+      "op": "call",
+      "surface": "terminal.submit",
+      "args": { "text": "x" },
+      "expect": {
+        "result": { "status": "unavailable", "reason": "no-focused-view" }
+      }
+    },
+    { "op": "set-submit-delivery", "delivery": "live" },
+    { "op": "end-activation" }
+  ]
+}

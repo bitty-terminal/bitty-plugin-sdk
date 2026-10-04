@@ -1,0 +1,20 @@
+{
+  "name": "Editor allowlist denies before side effects",
+  "description": "W-82 editor allowlist: a hostile first $VISUAL value is denied with not-allowed before any temp file exists, with no silent fallback to a benign $EDITOR value.",
+  "manifest": "manifests/composer.toml",
+  "tags": ["process", "capability", "deny-by-default"],
+  "grants": ["process.editor"],
+  "environment": { "VISUAL": "nano -w", "EDITOR": "vim" },
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "call",
+      "surface": "process.editor.start",
+      "args": { "opts": { "draft": "hello" } },
+      "expect": {
+        "result": { "status": "denied", "deny": "not-allowed" }
+      }
+    },
+    { "op": "end-activation" }
+  ]
+}

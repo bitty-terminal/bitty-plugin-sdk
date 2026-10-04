@@ -43,6 +43,12 @@ export interface ConformanceCase {
    * Omitted means false.
    */
   readonly safeMode?: boolean;
+  /**
+   * Per-plugin submit byte-window cap for W-82 submit cases (CTX-0068):
+   * a non-negative safe integer forwarded to the mock host. Omitted means
+   * the mock-owned harness default.
+   */
+  readonly submitBudgetBytes?: number;
   readonly steps: readonly ConformanceStep[];
 }
 
@@ -99,6 +105,9 @@ const SUPPORTED_STEP_OPS: ReadonlySet<string> = new Set([
   "inject-overlay-input",
   "overlay-focus-switch",
   "overlay-crash",
+  "set-submit-delivery",
+  "set-submit-lease",
+  "set-editor-result",
 ]);
 
 class CaseFailure extends Error {}
@@ -207,6 +216,16 @@ function parseCase(source: string, file: string): ConformanceCase {
   if (safeMode !== undefined && typeof safeMode !== "boolean") {
     throw new CaseFailure("case.safeMode must be a boolean");
   }
+  const submitBudgetBytes = parsed.submitBudgetBytes;
+  if (
+    submitBudgetBytes !== undefined &&
+    (!Number.isSafeInteger(submitBudgetBytes) ||
+      (submitBudgetBytes as number) < 0)
+  ) {
+    throw new CaseFailure(
+      "case.submitBudgetBytes must be a non-negative safe integer",
+    );
+  }
   return {
     name,
     description,
@@ -239,6 +258,9 @@ function parseCase(source: string, file: string): ConformanceCase {
       ? {}
       : { toolsGitVersion: toolsGitVersion as string | null }),
     ...(safeMode === undefined ? {} : { safeMode }),
+    ...(submitBudgetBytes === undefined
+      ? {}
+      : { submitBudgetBytes: submitBudgetBytes as number }),
     steps: steps as ConformanceStep[],
   };
 }
@@ -354,6 +376,14 @@ function callSurface(
       );
     case "terminal.snapshot":
       return host.bitty.terminal.snapshot(table as never);
+    case "terminal.submit":
+      // The text argument passes through uncoerced so fixtures exercise the
+      // bridge's own argument-shape validation.
+      return host.bitty.terminal.submit(table.text as never);
+    case "process.editor.start":
+      // The opts table passes through uncoerced for the same reason; an
+      // omitted opts resolves to the start defaults.
+      return host.bitty.process.editor.start(table.opts as never);
     case "services.get":
       return (
         host.bitty.services.get(String(table.iface), table.opts as never) ??
@@ -522,6 +552,9 @@ export async function runConformanceCaseFile(
       ...(conformanceCase.safeMode === undefined
         ? {}
         : { safeMode: conformanceCase.safeMode }),
+      ...(conformanceCase.submitBudgetBytes === undefined
+        ? {}
+        : { submitBudgetBytes: conformanceCase.submitBudgetBytes }),
     });
     activeHost = host;
     for (const capability of conformanceCase.grants ?? []) {
@@ -971,6 +1004,54 @@ export async function runConformanceCaseFile(
             detail: "crash revoked capture",
           });
           break;
+        case "set-submit-delivery": {
+          const delivery = table.delivery;
+          if (
+            delivery !== "live" &&
+            delivery !== "buffered" &&
+            delivery !== "none"
+          ) {
+            throw new CaseFailure(
+              "set-submit-delivery.delivery must be live, buffered, or none",
+            );
+          }
+          host.setSubmitDelivery(delivery);
+          assertions.push({
+            op: "set-submit-delivery",
+            detail: `delivery ${delivery}`,
+          });
+          break;
+        }
+        case "set-submit-lease":
+          if (typeof table.granted !== "boolean") {
+            throw new CaseFailure("set-submit-lease.granted must be a boolean");
+          }
+          host.setSubmitLease(table.granted);
+          assertions.push({
+            op: "set-submit-lease",
+            detail: `lease granted=${String(table.granted)}`,
+          });
+          break;
+        case "set-editor-result": {
+          if (!isRecord(table.result)) {
+            throw new CaseFailure("set-editor-result.result must be an object");
+          }
+          try {
+            host.setEditorResult(
+              table.result as Parameters<typeof host.setEditorResult>[0],
+            );
+          } catch (cause) {
+            if (!(cause instanceof HostError)) throw cause;
+            throw new CaseFailure(
+              `set-editor-result rejected: ${cause.message}`,
+            );
+          }
+          assertions.push({
+            op: "set-editor-result",
+            detail: `seeded ${String((table.result as Record<string, unknown>).kind)}`,
+          });
+          break;
+        }
         default:
           throw new CaseFailure(`unsupported step op '${step.op}'`);
       }
