@@ -335,7 +335,9 @@ export const MOCK_LIMITS = {
   SUBMIT_BUDGET_DEFAULT_BYTES: 1024 * 1024,
   EDITOR_TIMEOUT_DEFAULT_MS: 120_000,
   EDITOR_TIMEOUT_MAX_MS: 300_000,
-  EDITOR_SPAWN_DETAIL_MAX_BYTES: 512,
+  // Editor spawn/wait detail truncation mirrors bitty `truncate_err`
+  // (composer.rs:1324, CTX-0929): over-long detail is cut at 256 bytes.
+  EDITOR_SPAWN_DETAIL_MAX_BYTES: 256,
 } as const;
 
 /** Closed editor program allowlist (W-82, CTX-0068): bare names only, exact match. */

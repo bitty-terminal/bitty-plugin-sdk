@@ -4291,14 +4291,14 @@ describe("external-editor round trip (W-82, CTX-0068)", () => {
     host.endActivation();
   });
 
-  test("spawn detail truncates to the 512-byte ceiling", () => {
+  test("spawn detail truncates to the 256-byte ceiling", () => {
     const host = composerHost();
     host.beginActivation();
     host.setEditorResult({ kind: "spawn-failed", detail: "y".repeat(600) });
     const outcome = host.bitty.process.editor.start();
     expect(outcome.status).toBe("spawn-failed");
     if (outcome.status === "spawn-failed") {
-      expect(Buffer.byteLength(outcome.detail, "utf8")).toBe(512);
+      expect(Buffer.byteLength(outcome.detail, "utf8")).toBe(256);
     }
     host.endActivation();
   });

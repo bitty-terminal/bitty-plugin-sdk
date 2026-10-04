@@ -462,7 +462,8 @@ function boundedWorkspaceName(name: string): string {
 
 /**
  * Truncate host detail to a byte ceiling (W-82, CTX-0068). Mirrors the Core
- * 512-byte truncation of editor spawn/wait detail: over-long detail is cut
+ * 256-byte truncation of editor spawn/wait detail (`truncate_err`,
+ * composer.rs:1324 at bitty 1df0459e): over-long detail is cut
  * at the byte boundary and undecodable tails decode leniently.
  */
 function truncateBytes(value: string, maxBytes: number): string {
