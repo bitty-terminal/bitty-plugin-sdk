@@ -46,6 +46,10 @@ export const EVENT_KINDS: readonly EventKindSpec[] = [
   // CTX-0065 (W-01 accepted): focusable-overlay lifecycle observation. Any
   // subscriber may observe it; no phase may intercept or veto it.
   { kind: "overlay.released", class: "observation", coalescable: false },
+  // CTX-0070 (W-01 accepted): coalescable level-nudge telling an overlay owner
+  // input is queued to drain. Ungated observation; no input bytes cross the
+  // boundary.
+  { kind: "overlay.input.available", class: "observation", coalescable: true },
   {
     kind: "intercept.command-dispatch",
     class: "interception",
@@ -570,6 +574,10 @@ export const EVENT_PAYLOAD_FIELDS: Readonly<
   "overlay.released": [
     { name: "owner", type: "string" },
     { name: "reason", type: "string" },
+  ],
+  "overlay.input.available": [
+    { name: "owner", type: "string" },
+    { name: "queued", type: "integer" },
   ],
   "intercept.command-dispatch": [
     { name: "action", type: "string" },

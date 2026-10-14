@@ -416,6 +416,7 @@ describe("accepted surface agreement", () => {
       "workspace.focused",
       "workspace.changed",
       "overlay.released",
+      "overlay.input.available",
       "intercept.command-dispatch",
       "intercept.terminal-spawn",
       "intercept.paste",

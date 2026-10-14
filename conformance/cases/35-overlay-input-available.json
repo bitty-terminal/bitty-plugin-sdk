@@ -1,0 +1,31 @@
+{
+  "name": "Overlay input-availability nudge is an ungated observation",
+  "description": "A plugin declares overlay.input.available in [lazy].events and subscribes without any capture grant; the coalescable level-nudge carries { owner, queued } (no input bytes) and round-trips through the frozen envelope.",
+  "manifest": "manifests/overlay-input.toml",
+  "tags": ["events", "overlay", "round-trip"],
+  "steps": [
+    { "op": "begin-activation" },
+    {
+      "op": "subscribe",
+      "event": "overlay.input.available",
+      "capture": "ev-input"
+    },
+    {
+      "op": "publish",
+      "event": "overlay.input.available",
+      "payload": { "owner": "conformance.overlay-input", "queued": 3 },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-input",
+      "events": [
+        {
+          "kind": "overlay.input.available",
+          "sequence": 1,
+          "payload": { "owner": "conformance.overlay-input", "queued": 3 }
+        }
+      ]
+    }
+  ]
+}

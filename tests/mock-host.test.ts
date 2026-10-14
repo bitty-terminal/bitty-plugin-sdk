@@ -32,6 +32,7 @@ import {
   UI_V1_NODE_KINDS,
 } from "../src/host-surface.js";
 import { MockHost, MOCK_PLUGIN_API_VERSION } from "../src/mock-host.js";
+import type { HostEvent } from "../src/mock-host.js";
 
 const MANIFEST = `
 [plugin]
@@ -72,6 +73,7 @@ events = [
   "selection.changed",
   "process.exited",
   "config.reloaded",
+  "overlay.input.available",
   "intercept.command-dispatch",
   "intercept.terminal-spawn",
   "intercept.paste",
@@ -126,10 +128,10 @@ describe("surface", () => {
   });
 
   test("closed v1 event set matches the accepted classes", () => {
-    expect(EVENT_KINDS).toHaveLength(23);
+    expect(EVENT_KINDS).toHaveLength(24);
     const byClass = { lifecycle: 0, observation: 0, interception: 0 };
     for (const spec of EVENT_KINDS) byClass[spec.class] += 1;
-    expect(byClass).toEqual({ lifecycle: 4, observation: 15, interception: 4 });
+    expect(byClass).toEqual({ lifecycle: 4, observation: 16, interception: 4 });
     expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
       "plugin.activated",
     );
@@ -139,6 +141,14 @@ describe("surface", () => {
     expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
       "overlay.released",
     );
+    const inputAvailable = EVENT_KINDS.find(
+      (entry) => entry.kind === "overlay.input.available",
+    );
+    expect(inputAvailable).toEqual({
+      kind: "overlay.input.available",
+      class: "observation",
+      coalescable: true,
+    });
   });
 
   test("accepted host codes stay separate from mock-owned codes", () => {
@@ -151,6 +161,43 @@ describe("surface", () => {
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.REGISTRATION_CLOSED)).toBe(false);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(false);
     expect(MOCK_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(true);
+  });
+
+  test("overlay.input.available declares and subscribes without a capture grant", () => {
+    const manifest = `
+[plugin]
+id = "conformance.input-available"
+name = "Input Available"
+version = "1.0.0"
+description = "Closed-set fixture for the overlay input-availability nudge."
+license = "MIT"
+
+[compat]
+plugin-api = "^1.0"
+
+[lazy]
+events = ["overlay.input.available"]
+`;
+    const host = makeHost(manifest);
+    host.beginActivation();
+    let observed: HostEvent | undefined;
+    expect(
+      host.bitty.events.subscribe("overlay.input.available", (envelope) => {
+        observed = envelope;
+        return false;
+      }),
+    ).toBeGreaterThan(0);
+    host.endActivation();
+    expect(
+      host.publish("overlay.input.available", {
+        owner: "conformance.input-available",
+        queued: 2,
+      }),
+    ).toMatchObject({ delivered: 1, vetoed: false });
+    expect(observed).toMatchObject({
+      kind: "overlay.input.available",
+      payload: { owner: "conformance.input-available", queued: 2 },
+    });
   });
 });
 
@@ -684,7 +731,9 @@ describe("suspended dispatch", () => {
                   ? { view_id: 1 }
                   : spec.kind === "process.exited"
                     ? { terminal_id: 1, runtime_id: 1, exit_code: 0 }
-                    : {};
+                    : spec.kind === "overlay.input.available"
+                      ? { owner: "fixture", queued: 1 }
+                      : {};
     expect(host.publish(spec.kind, payload)).toEqual({
       delivered: 0,
       vetoed: false,
