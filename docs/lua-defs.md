@@ -162,7 +162,7 @@ Semantics the annotations carry:
 The surface table covers L1 Control and the minimal L2 UI surface plus the
 accepted W-01 overlay surface, the accepted W-82 composer operations, and the
 accepted W-139 history-read family: 17 namespaces, 40 functions, and the
-closed 23-name event set.
+closed 24-name event set.
 
 | Namespace            | Functions                                                       | Level | Capability                                                    |
 | -------------------- | --------------------------------------------------------------- | ----- | ------------------------------------------------------------- |

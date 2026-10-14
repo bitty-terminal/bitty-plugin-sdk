@@ -1,0 +1,18 @@
+[plugin]
+id = "conformance.overlay-input"
+name = "Conformance Overlay Input"
+version = "1.0.0"
+description = "Overlay input-availability nudge manifest (W-01, CTX-0070) for mock-host conformance."
+license = "MIT"
+
+[compat]
+bitty = ">=0.5,<1.0"
+plugin-api = "^1.0"
+
+[capabilities]
+ui.overlay.focus = true
+
+[lazy]
+events = [
+  "overlay.input.available",
+]

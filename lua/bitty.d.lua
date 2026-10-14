@@ -58,7 +58,7 @@ function BittyCommandsNamespace.register(def) end
 
 --- Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error,
 --- and declaring any workspace.* name requires a granted workspace.read capability at activation.
----@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"workspace.created"|"workspace.closed"|"workspace.renamed"|"workspace.focused"|"workspace.changed"|"overlay.released"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
+---@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"workspace.created"|"workspace.closed"|"workspace.renamed"|"workspace.focused"|"workspace.changed"|"overlay.released"|"overlay.input.available"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
 
 --- Event payload with no fields for lifecycle, signal, and coalescable observation events.
 ---@class BittyEmptyPayload
@@ -121,7 +121,7 @@ function BittyCommandsNamespace.register(def) end
 ---@field preview string Bounded sanitized preview; intercept.paste never carries paste text without clipboard.read.
 
 --- Union of the closed v1 event payload shapes.
----@alias BittyEventPayload BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyOverlayReleasedPayload|BittyInterceptPayload
+---@alias BittyEventPayload BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyOverlayReleasedPayload|BittyInputAvailablePayload|BittyInterceptPayload
 
 --- Immutable bounded event envelope delivered to subscribed handlers.
 ---@class BittyEvent
@@ -352,6 +352,12 @@ function BittyUiNamespace.update(handle, component) end
 ---@class BittyOverlayReleasedPayload
 ---@field owner string Owning plugin id.
 ---@field reason string Terminal reason: released, submitted, cancelled, focus_switched, unloaded, crashed, or timeout.
+
+--- overlay.input.available payload; coalescable level-nudge observation, never intercepted, and
+--- carries no input bytes (W-01, CTX-0070).
+---@class BittyInputAvailablePayload
+---@field owner string Owning plugin id with a live capture session.
+---@field queued integer Depth of undrained queued input for the owner; a nudge to drain now, not a byte count delivered to the plugin.
 
 --- Focusable overlay and transient input-capture surface (L2, W-01); the single coupled grant
 --- ui.overlay.focus covers acquire, update, poll, and release.

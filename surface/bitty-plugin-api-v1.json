@@ -184,7 +184,7 @@
     {
       "name": "BittyEventName",
       "kind": "alias",
-      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"workspace.created\"|\"workspace.closed\"|\"workspace.renamed\"|\"workspace.focused\"|\"workspace.changed\"|\"overlay.released\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
+      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"workspace.created\"|\"workspace.closed\"|\"workspace.renamed\"|\"workspace.focused\"|\"workspace.changed\"|\"overlay.released\"|\"overlay.input.available\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
       "doc": "Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error, and declaring any workspace.* name requires a granted workspace.read capability at activation."
     },
     {
@@ -392,7 +392,7 @@
     {
       "name": "BittyEventPayload",
       "kind": "alias",
-      "type": "BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyOverlayReleasedPayload|BittyInterceptPayload",
+      "type": "BittyEmptyPayload|BittyTerminalOpenedPayload|BittyTerminalClosedPayload|BittyTerminalTitleChangedPayload|BittyTerminalCwdChangedPayload|BittyFocusChangedPayload|BittySelectionChangedPayload|BittyProcessExitedPayload|BittyWorkspaceEventPayload|BittyWorkspaceNamedEventPayload|BittyOverlayReleasedPayload|BittyInputAvailablePayload|BittyInterceptPayload",
       "doc": "Union of the closed v1 event payload shapes."
     },
     {
@@ -661,6 +661,23 @@
           "name": "reason",
           "type": "string",
           "doc": "Terminal reason: released, submitted, cancelled, focus_switched, unloaded, crashed, or timeout."
+        }
+      ]
+    },
+    {
+      "name": "BittyInputAvailablePayload",
+      "kind": "class",
+      "doc": "overlay.input.available payload; coalescable level-nudge observation, never intercepted, and carries no input bytes (W-01, CTX-0070).",
+      "fields": [
+        {
+          "name": "owner",
+          "type": "string",
+          "doc": "Owning plugin id with a live capture session."
+        },
+        {
+          "name": "queued",
+          "type": "integer",
+          "doc": "Depth of undrained queued input for the owner; a nudge to drain now, not a byte count delivered to the plugin."
         }
       ]
     },
@@ -2563,6 +2580,11 @@
       "name": "overlay.released",
       "class": "Observation",
       "payload": "BittyOverlayReleasedPayload"
+    },
+    {
+      "name": "overlay.input.available",
+      "class": "Observation",
+      "payload": "BittyInputAvailablePayload"
     },
     {
       "name": "intercept.command-dispatch",
