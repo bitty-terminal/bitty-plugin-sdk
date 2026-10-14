@@ -113,6 +113,7 @@ export type {
   LazyCommandSchema,
   ManifestModel,
   ServiceProvidedSchema,
+  SettingDeclaration,
   ToolsGitDeclaration,
 } from "./manifest-model.js";
 export { MockHost, MOCK_PLUGIN_API_VERSION } from "./mock-host.js";

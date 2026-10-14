@@ -1214,6 +1214,33 @@ function chordProblem(chord: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Whether a stored settings value agrees with its declared `[settings]` type.
+ *
+ * Strict, no coercion (mirrors the host merge in
+ * `plugin_runtime::plugin_settings::lua_value_matches_kind`): an integer is
+ * not a float, and a table is a string array only when every value is a
+ * string. A wrong-typed value fails to the shipped default at read time
+ * instead of serving garbage (the `read_settings` pattern, bitty#2010).
+ */
+function settingValueMatchesKind(value: unknown, kind: string): boolean {
+  switch (kind) {
+    case "bool":
+      return typeof value === "boolean";
+    case "int":
+      return typeof value === "number" && Number.isSafeInteger(value);
+    case "string":
+      return typeof value === "string";
+    case "string-array":
+      return (
+        Array.isArray(value) &&
+        value.every((entry) => typeof entry === "string")
+      );
+    default:
+      return false;
+  }
+}
+
 function quote(raw: string): string {
   return raw.length > 80 ? `'${raw.slice(0, 77)}...'` : `'${raw}'`;
 }
@@ -2556,8 +2583,35 @@ export class MockHost {
     if (problem !== undefined) {
       fail("validation", HOST_CODES.SETTINGS_KEY_INVALID, problem);
     }
+    // CTX-1225 (declared-keys model, bitty#2010 / CTX-1195): a manifest that
+    // declares `[settings]` reads exactly that set — presence of the table,
+    // not its size, arms the gate, so an explicit empty table denies every
+    // key exactly like the host's empty declared set. An undeclared key fails
+    // closed with `E_SETTINGS_UNDECLARED` (settings are never a side channel
+    // between plugins); a declared key serves its stored value, the shipped
+    // manifest default when unset, and the default again when the stored
+    // value disagrees with the declared type (garbage in, fail-to-default
+    // out). Manifests without `[settings]` keep the legacy open read so
+    // existing plugins and fixtures stay green.
+    const declared = this.manifest.settings;
+    const declaration = declared.get(key);
+    if (declaration === undefined) {
+      if (this.manifest.hasSettingsTable) {
+        fail(
+          "validation",
+          HOST_CODES.SETTINGS_UNDECLARED,
+          `settings key '${key}' is not declared in this plugin's manifest [settings]`,
+        );
+      }
+      const value = this.settings.get(key);
+      return value === undefined ? null : deepCopy(value);
+    }
     const value = this.settings.get(key);
-    return value === undefined ? null : deepCopy(value);
+    if (value === undefined) return deepCopy(declaration.default);
+    if (!settingValueMatchesKind(value, declaration.kind)) {
+      return deepCopy(declaration.default);
+    }
+    return deepCopy(value);
   }
 
   private settingsSet(key: string, value: JsonValue): boolean {
@@ -2569,6 +2623,17 @@ export class MockHost {
     const valueProblem = storeValueProblem(value);
     if (valueProblem !== undefined) {
       fail("validation", HOST_CODES.STORE_VALUE_INVALID, valueProblem);
+    }
+    // Writes to an undeclared key fail at the same declared-keys gate as
+    // reads; a wrong-typed write to a declared key is stored and fails to
+    // the shipped default at read time (see `settingsGet`).
+    const declared = this.manifest.settings;
+    if (this.manifest.hasSettingsTable && !declared.has(key)) {
+      fail(
+        "validation",
+        HOST_CODES.SETTINGS_UNDECLARED,
+        `settings key '${key}' is not declared in this plugin's manifest [settings]`,
+      );
     }
     this.settings.set(key, deepCopy(value));
     return true;

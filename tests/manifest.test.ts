@@ -118,13 +118,13 @@ version = "0.1.0"
     expect(codes(result)).toContain("manifest.unknown-key");
   });
 
-  test("rejected host-only [services.required] table is not accepted", () => {
+  test("accepted [services.required] table is not rejected", () => {
     const result = lint(`
 [services.required]
-"xuepoo.bar" = "1.0.0"
+"system.cpu" = "^1.0"
 `);
-    expect(result.valid).toBe(false);
-    expect(codes(result)).toContain("manifest.unknown-key");
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
   });
 
   test("unknown [plugin] key is rejected", () => {
@@ -477,6 +477,81 @@ empty = {}
     );
     expect(codes(rejected)).toContain("manifest.limit");
   });
+
+  test("required services accept the bar sensor string form (SDK#150)", () => {
+    const result = lint(`
+[services.required]
+"system.cpu" = "^1.0"
+"system.memory" = "^1.0"
+"system.battery" = "^1.0"
+`);
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("required services accept the table form with a version range", () => {
+    const result = lint(`
+[services.required]
+"audio.state" = { version = ">=1.0" }
+"audio.spectrum" = { version = "^1.0" }
+`);
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("required services reject provider-side schema keys", () => {
+    const result = lint(`
+[services.required]
+"audio.state" = { version = "^1.0", args_schema = { type = "string" } }
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.unknown-key");
+  });
+
+  test("required services require a version requirement string", () => {
+    const missing = lint(`
+[services.required]
+"audio.state" = {}
+`);
+    expect(codes(missing)).toContain("manifest.type");
+    const badRange = lint(`
+[services.required]
+"audio.state" = "not a range !!!"
+`);
+    expect(codes(badRange)).toContain("services.version.invalid");
+    const badTableRange = lint(`
+[services.required]
+"audio.state" = { version = "not a range !!!" }
+`);
+    expect(codes(badTableRange)).toContain("services.version.invalid");
+  });
+
+  test("required services reject bad interface names and enforce the cap", () => {
+    const badIface = lint(`
+[services.required]
+"Audio.State" = "^1.0"
+`);
+    expect(codes(badIface)).toContain("services.interface.invalid");
+    const rows = Array.from(
+      { length: 17 },
+      (_value, index) => `"req.svc${index}" = "^1.0"`,
+    ).join("\n");
+    const overCap = lint(`\n[services.required]\n${rows}\n`);
+    expect(codes(overCap)).toContain("manifest.limit");
+  });
+
+  test("required services share one namespace across dotted and quoted keys", () => {
+    const source = `${PLUGIN}
+[services.required.ns]
+"a" = "^1.0"
+"b" = { version = ">=1.0" }
+`;
+    const linted = lintManifestSource(source);
+    expect(linted.diagnostics).toEqual([]);
+    const model = loadManifestModel(source);
+    expect(model.requiredServices.get("ns.a")).toBe("^1.0");
+    expect(model.requiredServices.get("ns.b")).toBe(">=1.0");
+  });
 });
 
 describe("manifest model provided services", () => {
@@ -499,6 +574,131 @@ describe("manifest model provided services", () => {
       },
     });
     expect(model.providedServiceSchemas.get("markdown.render")).toBeUndefined();
+  });
+});
+
+describe("settings", () => {
+  test("typed declarations for all four kinds are accepted (SDK#150)", () => {
+    const result = lint(`
+[settings]
+newline = { type = "string", default = "enter" }
+name_max_chars = { type = "int", default = 32 }
+show = { type = "bool", default = true }
+modules = { type = "string-array", default = ["workspaces", "clock"] }
+`);
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  test("composer five-key declarations are accepted (composer#19)", () => {
+    const result = lint(`
+[settings]
+newline = { type = "string", default = "enter" }
+submit = { type = "string", default = "ctrl+enter" }
+close = { type = "string", default = "escape" }
+external_editor = { type = "string", default = "alt+e" }
+open_chord = { type = "string", default = "alt+e" }
+`);
+    expect(result.valid).toBe(true);
+    expect(result.diagnostics).toEqual([]);
+    const model = loadManifestModel(`${PLUGIN}
+[settings]
+newline = { type = "string", default = "enter" }
+submit = { type = "string", default = "ctrl+enter" }
+`);
+    expect(model.settings.get("newline")).toEqual({
+      kind: "string",
+      default: "enter",
+    });
+    expect(model.settings.get("submit")).toEqual({
+      kind: "string",
+      default: "ctrl+enter",
+    });
+    expect(model.settings.has("close")).toBe(false);
+  });
+
+  test("bare values instead of entry tables are rejected", () => {
+    const result = lint(`
+[settings]
+newline = "enter"
+`);
+    expect(result.valid).toBe(false);
+    expect(codes(result)).toContain("manifest.type");
+  });
+
+  test("unknown types and type/default disagreements are rejected", () => {
+    const badType = lint(`
+[settings]
+show = { type = "boolean", default = true }
+`);
+    expect(codes(badType)).toContain("settings.type.invalid");
+    for (const entry of [
+      `flag = { type = "bool", default = "yes" }`,
+      `count = { type = "int", default = "32" }`,
+      `count = { type = "int", default = 3.5 }`,
+      `name = { type = "string", default = 7 }`,
+      `mods = { type = "string-array", default = ["a", 7] }`,
+      `mods = { type = "string-array", default = "a" }`,
+    ]) {
+      const result = lint(`\n[settings]\n${entry}\n`);
+      expect(result.valid).toBe(false);
+      expect(codes(result)).toContain("settings.default.invalid");
+    }
+  });
+
+  test("missing type/default and extra entry keys are rejected", () => {
+    const missingType = lint(`
+[settings]
+show = { default = true }
+`);
+    expect(codes(missingType)).toContain("manifest.missing-key");
+    const missingDefault = lint(`
+[settings]
+show = { type = "bool" }
+`);
+    expect(codes(missingDefault)).toContain("manifest.missing-key");
+    const extra = lint(`
+[settings]
+show = { type = "bool", default = true, exec = "evil" }
+`);
+    expect(codes(extra)).toContain("manifest.unknown-key");
+  });
+
+  test("key grammar and quota are enforced", () => {
+    for (const key of ["Show", "9lives", "has.dot", "has-dash", ""]) {
+      const result = lint(
+        `\n[settings]\n${JSON.stringify(key)} = { type = "bool", default = true }\n`,
+      );
+      expect(codes(result)).toContain("settings.key.invalid");
+    }
+    const overlong = lint(`
+[settings]
+${"k".repeat(65)} = { type = "bool", default = true }
+`);
+    expect(codes(overlong)).toContain("settings.key.invalid");
+    const rows = Array.from(
+      { length: 33 },
+      (_value, index) => `k${index} = { type = "bool", default = true }`,
+    ).join("\n");
+    const overQuota = lint(`\n[settings]\n${rows}\n`);
+    expect(codes(overQuota)).toContain("manifest.limit");
+  });
+
+  test("default bounds are enforced", () => {
+    const longString = lint(`
+[settings]
+name = { type = "string", default = "${"x".repeat(513)}" }
+`);
+    expect(codes(longString)).toContain("settings.default.invalid");
+    const tooManyItems = lint(
+      `\n[settings]\nmods = { type = "string-array", default = [${Array.from({ length: 33 }, (_, i) => `"m${i}"`).join(", ")}] }\n`,
+    );
+    expect(codes(tooManyItems)).toContain("settings.default.invalid");
+    const emptyItem = lint(`
+[settings]
+mods = { type = "string-array", default = [""] }
+`);
+    expect(codes(emptyItem)).toContain("settings.default.invalid");
   });
 });
 
@@ -525,6 +725,61 @@ ${JSON.stringify(head)} = true
 `);
       expect(result.valid).toBe(false);
     }
+  });
+
+  test("Phase-B provider heads are accepted with exact host spellings (SDK#150)", () => {
+    const heads = [
+      // Sensors: dash-form two-segment heads (bitty#2019/#2011/#2016).
+      "platform.cpu-read",
+      "platform.memory-read",
+      "platform.battery-read",
+      // Devices: eight heads (bitty#2012/#2017/#2020).
+      "platform.network.read",
+      "platform.essid.read",
+      "platform.bluetooth.read",
+      "platform.bluetooth.control",
+      "platform.backlight.read",
+      "platform.backlight.control",
+      "platform.idle.read",
+      "platform.idle.control",
+      // Audio monitor family (bitty#2009/#2013).
+      "audio.spectrum",
+      "audio.state.read",
+      "audio.state.control",
+    ];
+    const body = heads.map((head) => `${head} = true`).join("\n");
+    const accepted = lint(`\n[capabilities]\n${body}\n`);
+    expect(accepted.valid).toBe(true);
+    expect(accepted.diagnostics).toEqual([]);
+    expect(CLOSED_CAPABILITY_HEADS).toEqual(expect.arrayContaining(heads));
+  });
+
+  test("near-miss provider spellings stay rejected", () => {
+    // Dots instead of dashes on the sensor heads and the unscoped audio
+    // state/control heads are unknown to the closed set.
+    for (const head of [
+      "platform.cpu.read",
+      "platform.memory.read",
+      "platform.battery.read",
+      "audio.state",
+      "audio.control",
+    ]) {
+      const result = lint(`
+[capabilities]
+${head} = true
+`);
+      expect(result.valid).toBe(false);
+      expect(codes(result)).toContain("capabilities.unknown");
+    }
+    // The four-segment registry spelling for ESSID cannot enter the closed
+    // `family.resource[.scope]` grammar; the bridge maps it to
+    // `platform.essid.read`, so the linter fails the shape first.
+    const essid = lint(`
+[capabilities]
+platform.network.essid.read = true
+`);
+    expect(essid.valid).toBe(false);
+    expect(codes(essid)).toContain("capabilities.invalid");
   });
 
   test("wildcard capability is rejected", () => {

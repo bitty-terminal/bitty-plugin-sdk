@@ -133,6 +133,83 @@ is byte-identical to the minimal table form, so no validator can tell them
 apart. An empty table (`empty = {}`) is never a namespace: it is rejected
 with `manifest.type` because the table form requires `version`.
 
+### `[services.required]` (optional)
+
+Broker interfaces the plugin consumes, as interface name to version-range
+pairs, at most 16. Interface names use the same grammar as provided services.
+Values are version requirements (`^1.0`, `>=1.0`), never concrete versions:
+
+```toml
+[services.required]
+"system.cpu" = "^1.0"
+"system.memory" = "^1.0"
+"system.battery" = "^1.0"
+"audio.state" = { version = ">=1.0" }
+```
+
+Each entry uses the accepted string form or the table form `{ version =
+"range" }`; both may be mixed in one table. Table-form rules (fail-closed):
+
+- Keys are limited to `version`; any other key (in particular the
+  provider-side `args_schema` / `result_schema`) is `manifest.unknown-key`, so
+  a consumer can never smuggle a provider shape.
+- `version` is required, must be a string, and is validated with the shared
+  structural range grammar used for `compat.*`, `dependencies.*`, and
+  `tools.git.version` (shorthand such as `1.0` is accepted here, unlike the
+  concrete versions in `[services.provided]`); a missing or non-string version
+  is `manifest.type`, and an invalid range is `services.version.invalid`.
+- A table entry counts toward the same 16-service limit as a string entry.
+
+The same form-key quoting caveat as `[services.provided]` applies: quote
+interface names whose segments collide with the form key (`"foo.version" =
+"^1.0"`). A table value without a `version` key walks as a namespace (again,
+same as provided), so a misspelled form key such as `{ versoin = "^1.0" }`
+reads as a nested interface name (`audio.state.versoin`) instead of failing
+at lint; it fails closed downstream at resolution, where no provider serves
+that name. Telling the typo apart from a genuine namespace would require
+line-level source tracking, which would fork the SDK's TOML-faithful reading
+from `[services.provided]`; the two tables intentionally share one walker.
+The manifest model exposes required ranges as
+`ManifestModel.requiredServices`.
+
+### `[settings]` (optional)
+
+Declared settings keys the plugin reads through `bitty.settings.get`, at most 32. Each key declares its value type plus its shipped built-in default
+(CTX-1195, bitty#2010):
+
+```toml
+[settings]
+newline = { type = "string", default = "enter" }
+name_max_chars = { type = "int", default = 32 }
+show = { type = "bool", default = true }
+modules = { type = "string-array", default = ["workspaces", "clock"] }
+```
+
+Rules (fail-closed, mirroring the host `SettingDecl::validate`):
+
+- Keys match `^[a-z][a-z0-9_]*$` (1..64 bytes); anything else is
+  `settings.key.invalid`.
+- Each value must be an inline table with exactly the keys `type` and
+  `default`; a bare value is `manifest.type`, an extra key is
+  `manifest.unknown-key`, and a missing `type` or `default` is
+  `manifest.missing-key`.
+- `type` is one of `bool`, `int`, `string`, or `string-array`; anything else
+  is `settings.type.invalid`.
+- `default` must agree with `type` exactly (bool literal, bare integer,
+  quoted string, or string array) or it is `settings.default.invalid` — no
+  coercion, ever. String defaults are bounded to 512 bytes, string-array
+  defaults to 32 items of 1..128 bytes; NUL bytes are rejected. One
+  fail-open corner stays documented: the linter sees parsed TOML values, so
+  a float spelling that evaluates to an integer (`default = 1.0` for an
+  `int` key) is accepted here while the host's bare-integer check rejects
+  it. Preserving the spelling would require line-level source tracking;
+  authors must write bare integers.
+
+Reading an undeclared key fails closed on the host
+(`E_SETTINGS_UNDECLARED`); the mock host models the same declared-keys gate
+(see [`docs/mock-host.md`](mock-host.md)). The manifest model exposes
+declarations as `ManifestModel.settings` (`key` to `{ kind, default }`).
+
 ### `[capabilities]` (optional)
 
 Requested authorities; absent means none. Every key is a closed-set capability
@@ -286,26 +363,27 @@ Deny by default, no wildcards, closed identifier set. An unknown head fails
 validation instead of being ignored. Parameterized heads must carry a
 `:PARAMETER`; all others must not.
 
-| Family      | Identifiers                                                                                                                            |
-| ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `terminal`  | `terminal.semantic-read`, `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`, `terminal.manage`, `terminal.input.submit` |
-| `ui`        | `ui.rich`, `ui.overlay`, `ui.overlay.focus`, `ui.protocol-register`                                                                    |
-| `clipboard` | `clipboard.read`, `clipboard.write`                                                                                                    |
-| `fs`        | `fs.read:PATTERN`, `fs.write:PATTERN`                                                                                                  |
-| `process`   | `process.spawn:CONSTRAINT`, `process.editor`                                                                                           |
-| `network`   | `network.connect:DESTINATION`                                                                                                          |
-| `runtime`   | `runtime.inspect`, `runtime.configure`, `runtime.plugin-manage`                                                                        |
-| `debug`     | `debug.inspect`, `debug.trace`, `debug.control`                                                                                        |
-| `platform`  | `platform.notify`, `platform.open-url`, `platform.image-file`                                                                          |
-| `protocol`  | `protocol.register`                                                                                                                    |
-| `panel`     | `panel.provider`, `panel.create`, `panel.focus`, `panel.overlay`                                                                       |
-| `browser`   | `browser.embed`, `browser.navigation`, `browser.file-url`, `browser.storage`                                                           |
-| `agent`     | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`                                                          |
-| `env`       | `env.read:KEY`, `env.read:PREFIX_*`                                                                                                    |
-| `mcp`       | `mcp.invoke:TOOL`                                                                                                                      |
-| `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                                                 |
-| `workspace` | `workspace.read`, `workspace.control`                                                                                                  |
-| `history`   | `history.transcript.read`, `history.commands.read`, `history.kv.read`                                                                  |
+| Family      | Identifiers                                                                                                                                                                                                                                                                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `terminal`  | `terminal.semantic-read`, `terminal.raw-read`, `terminal.input.self`, `terminal.input.all`, `terminal.manage`, `terminal.input.submit`                                                                                                                                                                                                               |
+| `ui`        | `ui.rich`, `ui.overlay`, `ui.overlay.focus`, `ui.protocol-register`                                                                                                                                                                                                                                                                                  |
+| `clipboard` | `clipboard.read`, `clipboard.write`                                                                                                                                                                                                                                                                                                                  |
+| `fs`        | `fs.read:PATTERN`, `fs.write:PATTERN`                                                                                                                                                                                                                                                                                                                |
+| `process`   | `process.spawn:CONSTRAINT`, `process.editor`                                                                                                                                                                                                                                                                                                         |
+| `network`   | `network.connect:DESTINATION`                                                                                                                                                                                                                                                                                                                        |
+| `runtime`   | `runtime.inspect`, `runtime.configure`, `runtime.plugin-manage`                                                                                                                                                                                                                                                                                      |
+| `debug`     | `debug.inspect`, `debug.trace`, `debug.control`                                                                                                                                                                                                                                                                                                      |
+| `platform`  | `platform.notify`, `platform.open-url`, `platform.image-file`, `platform.cpu-read`, `platform.memory-read`, `platform.battery-read`, `platform.network.read`, `platform.essid.read`, `platform.bluetooth.read`, `platform.bluetooth.control`, `platform.backlight.read`, `platform.backlight.control`, `platform.idle.read`, `platform.idle.control` |
+| `protocol`  | `protocol.register`                                                                                                                                                                                                                                                                                                                                  |
+| `panel`     | `panel.provider`, `panel.create`, `panel.focus`, `panel.overlay`                                                                                                                                                                                                                                                                                     |
+| `browser`   | `browser.embed`, `browser.navigation`, `browser.file-url`, `browser.storage`                                                                                                                                                                                                                                                                         |
+| `agent`     | `agent.context.terminal`, `agent.context.workspace`, `agent.memory:PARAMETER`                                                                                                                                                                                                                                                                        |
+| `env`       | `env.read:KEY`, `env.read:PREFIX_*`                                                                                                                                                                                                                                                                                                                  |
+| `mcp`       | `mcp.invoke:TOOL`                                                                                                                                                                                                                                                                                                                                    |
+| `ai`        | `ai.provider`, `ai.stream`, `ai.model`                                                                                                                                                                                                                                                                                                               |
+| `workspace` | `workspace.read`, `workspace.control`                                                                                                                                                                                                                                                                                                                |
+| `history`   | `history.transcript.read`, `history.commands.read`, `history.kv.read`                                                                                                                                                                                                                                                                                |
+| `audio`     | `audio.spectrum`, `audio.state.read`, `audio.state.control`                                                                                                                                                                                                                                                                                          |
 
 The `workspace` family mirrors the host closed set (`bitty-package`
 `CLOSED_CAPABILITY_HEADS`, ADR 0014, bitty CTX-0889): `workspace.read` lists
@@ -347,6 +425,33 @@ corresponding `bitty.history.*.query` fails with the typed
 `E_HISTORY_MISSING_GRANT` (revoked/expired, scope, bound, capture,
 safe-mode, trust, and purge denials use their own `E_HISTORY_*` codes; see
 `docs/mock-host.md`).
+
+The `platform.cpu-read`, `platform.memory-read`, and `platform.battery-read`
+heads (Phase B sensors, CTX-1225, bitty#2019/#2011/#2016) are the read-only
+bar-module grants: one head per provider, no parameter, never high-risk.
+Ungranted consumption is indistinguishable from an absent source (fail-closed
+hide, never fabricated values). Note the dash form: `platform.cpu.read`
+(with dots) is unknown to the closed set.
+
+The eight `platform.network.read`, `platform.essid.read`,
+`platform.bluetooth.read`, `platform.bluetooth.control`,
+`platform.backlight.read`, `platform.backlight.control`, `platform.idle.read`,
+and `platform.idle.control` heads (Phase B devices, CTX-1225,
+bitty#2012/#2017/#2020) are the privilege-sensitive bar-module grants. Read
+vs control never share an interface; ESSID carries its own head
+(`platform.essid.read`: the `#2056` registry spelling
+`platform.network.essid.read` carries four dot segments and cannot enter the
+closed `family.resource[.scope]` grammar, so the linter rejects it with
+`capabilities.invalid` and the bridge maps it). None takes a parameter and
+none is high-risk.
+
+The `audio.spectrum`, `audio.state.read`, and `audio.state.control` heads
+(Phase B audio monitor, CTX-1225, bitty#2009/#2013) are the additive audio
+grants in the NEW `audio` family: `audio.spectrum` is the cava-lite fast-poll
+level meter (provider-side 5 Hz ceiling), `audio.state.read` is the
+volume/mute/port snapshot, and `audio.state.control` is the separate bounded
+volume/mute control head (defaults to deny; read grants never imply
+control). None takes a parameter and none is high-risk.
 
 A flat `fs.read:PATTERN` / `fs.write:PATTERN` capability applies the same
 pattern rules as the structured `[[capabilities.filesystem]]` form (relative
@@ -424,42 +529,45 @@ diagnostic is `{ "severity", "code", "path", "message" }`.
 
 ### Diagnostic codes
 
-| Code                               | Meaning                                             |
-| ---------------------------------- | --------------------------------------------------- |
-| `manifest.size`                    | Manifest exceeds 256 KiB                            |
-| `manifest.encoding`                | File is not valid UTF-8                             |
-| `manifest.parse`                   | TOML syntax or duplicate-key error                  |
-| `manifest.type`                    | Wrong TOML type for a field                         |
-| `manifest.unknown-key`             | Key outside the accepted schema                     |
-| `manifest.missing-key`             | Required table or key missing                       |
-| `manifest.limit`                   | Count, length, or depth bound exceeded              |
-| `plugin.id.invalid`                | Plugin id grammar violation                         |
-| `plugin.name.invalid`              | Empty name or NUL/ESC in a display string           |
-| `plugin.version.invalid`           | Version is not SemVer 2                             |
-| `plugin.license.invalid`           | License present but empty                           |
-| `plugin.description.invalid`       | NUL/ESC in description                              |
-| `compat.range.invalid`             | Version range is not structurally valid             |
-| `dependencies.id.invalid`          | Dependency id grammar violation                     |
-| `dependencies.version.invalid`     | Dependency range is not structurally valid          |
-| `dependencies.self`                | Plugin depends on itself                            |
-| `services.interface.invalid`       | Interface name grammar violation                    |
-| `services.version.invalid`         | Service version is not complete SemVer 2            |
-| `capabilities.invalid`             | Capability id shape/character violation             |
-| `capabilities.wildcard`            | Wildcard in a capability id                         |
-| `capabilities.unknown`             | Capability head outside the closed set              |
-| `capabilities.param-required`      | Required `:PARAMETER` missing                       |
-| `capabilities.param-forbidden`     | `:PARAMETER` on a non-parameterized head            |
-| `capabilities.value`               | Capability not declared as `= true`                 |
-| `capabilities.filesystem.invalid`  | Filesystem request problem                          |
-| `capabilities.high-risk` (warning) | High-risk capability declared                       |
-| `lazy.commands.invalid`            | Qualified command name invalid                      |
-| `lazy.commands.owner`              | Command outside the plugin's own namespace          |
-| `lazy.commands.schema`             | Table-form command schema outside the subset        |
-| `lazy.events.invalid`              | Event type malformed (empty, oversized, whitespace) |
-| `lazy.events.unknown`              | Event kind outside the closed v1 set                |
-| `lazy.claims.invalid`              | Claim name invalid                                  |
-| `tools.tool.unknown`               | Tool outside the accepted Layer 2 slice             |
-| `tools.version.invalid`            | Tool version range is not structurally valid        |
+| Code                               | Meaning                                                  |
+| ---------------------------------- | -------------------------------------------------------- |
+| `manifest.size`                    | Manifest exceeds 256 KiB                                 |
+| `manifest.encoding`                | File is not valid UTF-8                                  |
+| `manifest.parse`                   | TOML syntax or duplicate-key error                       |
+| `manifest.type`                    | Wrong TOML type for a field                              |
+| `manifest.unknown-key`             | Key outside the accepted schema                          |
+| `manifest.missing-key`             | Required table or key missing                            |
+| `manifest.limit`                   | Count, length, or depth bound exceeded                   |
+| `plugin.id.invalid`                | Plugin id grammar violation                              |
+| `plugin.name.invalid`              | Empty name or NUL/ESC in a display string                |
+| `plugin.version.invalid`           | Version is not SemVer 2                                  |
+| `plugin.license.invalid`           | License present but empty                                |
+| `plugin.description.invalid`       | NUL/ESC in description                                   |
+| `compat.range.invalid`             | Version range is not structurally valid                  |
+| `dependencies.id.invalid`          | Dependency id grammar violation                          |
+| `dependencies.version.invalid`     | Dependency range is not structurally valid               |
+| `dependencies.self`                | Plugin depends on itself                                 |
+| `services.interface.invalid`       | Interface name grammar violation                         |
+| `services.version.invalid`         | Provided version not SemVer 2, or required range invalid |
+| `settings.key.invalid`             | Settings key grammar violation                           |
+| `settings.type.invalid`            | Settings type outside bool/int/string/string-array       |
+| `settings.default.invalid`         | Shipped default disagrees with its type or bound         |
+| `capabilities.invalid`             | Capability id shape/character violation                  |
+| `capabilities.wildcard`            | Wildcard in a capability id                              |
+| `capabilities.unknown`             | Capability head outside the closed set                   |
+| `capabilities.param-required`      | Required `:PARAMETER` missing                            |
+| `capabilities.param-forbidden`     | `:PARAMETER` on a non-parameterized head                 |
+| `capabilities.value`               | Capability not declared as `= true`                      |
+| `capabilities.filesystem.invalid`  | Filesystem request problem                               |
+| `capabilities.high-risk` (warning) | High-risk capability declared                            |
+| `lazy.commands.invalid`            | Qualified command name invalid                           |
+| `lazy.commands.owner`              | Command outside the plugin's own namespace               |
+| `lazy.commands.schema`             | Table-form command schema outside the subset             |
+| `lazy.events.invalid`              | Event type malformed (empty, oversized, whitespace)      |
+| `lazy.events.unknown`              | Event kind outside the closed v1 set                     |
+| `lazy.claims.invalid`              | Claim name invalid                                       |
+| `tools.tool.unknown`               | Tool outside the accepted Layer 2 slice                  |
+| `tools.version.invalid`            | Tool version range is not structurally valid             |
 
 ## Examples
 

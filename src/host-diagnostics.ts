@@ -30,6 +30,7 @@ export const HOST_CODES = {
   STORE_VALUE_INVALID: "E_STORE_VALUE_INVALID",
   STORE_QUOTA: "E_STORE_QUOTA",
   SETTINGS_KEY_INVALID: "E_SETTINGS_KEY_INVALID",
+  SETTINGS_UNDECLARED: "E_SETTINGS_UNDECLARED",
   UI_COMPONENT_INVALID: "E_UI_COMPONENT_INVALID",
   UI_BLOCK_BUDGET: "E_UI_BLOCK_BUDGET",
   UI_CLAIM_REQUIRED: "E_UI_CLAIM_REQUIRED",
@@ -97,9 +98,12 @@ export type HostCode = (typeof HOST_CODES)[keyof typeof HOST_CODES];
  * `E_SERVICE_RESOLUTION`, `E_SERVICE_GONE`, `E_BUDGET_TASK`,
  * `E_BUDGET_TIMER`), the OQ-056-frozen v1 vocabulary
  * (`E_UI_UNAVAILABLE`, class `runtime`: bitty `bitty_lua::host::E_UI_UNAVAILABLE`,
- * raised for an accepted slot the host does not present, CTX-0923), and the
+ * raised for an accepted slot the host does not present, CTX-0923), the
  * accepted W-01 overlay-input-capture contract (`E_UI_ALREADY_CAPTURED`,
- * `E_UI_NOT_OWNER`, class `runtime`, CTX-0065).
+ * `E_UI_NOT_OWNER`, class `runtime`, CTX-0065), and the accepted CTX-1195
+ * per-plugin settings contract (`E_SETTINGS_UNDECLARED`, class `validation`:
+ * bitty `plugin_runtime::services::PluginServices::settings_get` fails a key
+ * outside the generation's manifest `[settings]` set, bitty#2010).
  */
 export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
   HOST_CODES.CAPABILITY_DENIED,
@@ -107,6 +111,7 @@ export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
   HOST_CODES.ENV_VALUE_TOO_LARGE,
   HOST_CODES.STORE_VALUE_INVALID,
   HOST_CODES.STORE_QUOTA,
+  HOST_CODES.SETTINGS_UNDECLARED,
   HOST_CODES.UI_COMPONENT_INVALID,
   HOST_CODES.UI_UNAVAILABLE,
   HOST_CODES.UI_ALREADY_CAPTURED,

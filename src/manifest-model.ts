@@ -12,9 +12,10 @@
 import { parse } from "smol-toml";
 
 import { error, type Diagnostic } from "./diagnostics.js";
-import type { JsonSchema } from "./json-schema.js";
+import type { JsonSchema, JsonValue } from "./json-schema.js";
 import { lintManifestSource } from "./manifest.js";
 import {
+  ALLOWED_SETTING_TYPES,
   MANIFEST_MAX_DEPTH,
   collectProvidedServices,
   type ProvidedServiceEntry,
@@ -40,6 +41,14 @@ export interface ToolsGitDeclaration {
   readonly version: string;
 }
 
+/** One declared settings key: value type plus shipped default (CTX-1195). */
+export interface SettingDeclaration {
+  /** Declared value type (`bool` / `int` / `string` / `string-array`). */
+  readonly kind: string;
+  /** Shipped built-in default, always of exactly `kind`. */
+  readonly default: JsonValue;
+}
+
 /** Closed declaration set read from an accepted manifest. */
 export interface ManifestModel {
   readonly pluginId: string;
@@ -53,6 +62,17 @@ export interface ManifestModel {
   readonly claims: readonly string[];
   readonly providedServices: ReadonlyMap<string, string>;
   readonly providedServiceSchemas: ReadonlyMap<string, ServiceProvidedSchema>;
+  /** Required broker interfaces (`[services.required]`, interface to range). */
+  readonly requiredServices: ReadonlyMap<string, string>;
+  /** Declared settings keys (`[settings]`, key to type plus default). */
+  readonly settings: ReadonlyMap<string, SettingDeclaration>;
+  /**
+   * Whether the manifest contained a `[settings]` table at all (even an
+   * empty one). An explicit table opts into the host declared-keys gate —
+   * an empty one therefore denies every key — while an absent table keeps
+   * the legacy open read.
+   */
+  readonly hasSettingsTable: boolean;
   readonly toolsGit?: ToolsGitDeclaration;
 }
 
@@ -199,6 +219,55 @@ function readProvidedServices(services: unknown): {
 }
 
 /**
+ * Read `[services.required]` from both accepted forms: the string form
+ * (`"iface" = "range"`) and the table form (`"iface" = { version = "range"
+ * }`). Ranges are exposed per interface so consumers can negotiate broker
+ * providers; the accepted linter already rejects provider-side schemas here.
+ */
+function readRequiredServices(services: unknown): Map<string, string> {
+  const versions = new Map<string, string>();
+  if (!isTable(services)) return versions;
+  const table = services.required;
+  if (!isTable(table)) return versions;
+  // Shared walker with provided services (same dotted-key reconstruction and
+  // the same `version`-form-key quoting caveat); the linter has already
+  // rejected every non-`version` table key by the time this runs.
+  const entries: ProvidedServiceEntry[] = [];
+  collectProvidedServices(table, "", entries);
+  for (const entry of entries) {
+    if (typeof entry.value === "string") {
+      versions.set(entry.path, entry.value);
+      continue;
+    }
+    if (!isTable(entry.value)) continue;
+    const version = entry.value.version;
+    if (typeof version === "string") versions.set(entry.path, version);
+  }
+  return versions;
+}
+
+/**
+ * Read the `[settings]` declarations. The accepted linter already enforces
+ * the closed shape (`key = { type, default }` with an agreeing default), so
+ * only well-formed declarations are exposed for the mock host's
+ * declared-keys gate.
+ */
+function readSettings(value: unknown): Map<string, SettingDeclaration> {
+  const declared = new Map<string, SettingDeclaration>();
+  if (!isTable(value)) return declared;
+  for (const [key, entry] of Object.entries(value)) {
+    if (!isTable(entry)) continue;
+    const kind = entry.type;
+    if (typeof kind !== "string" || !ALLOWED_SETTING_TYPES.has(kind)) {
+      continue;
+    }
+    if (!("default" in entry)) continue;
+    declared.set(key, { kind, default: entry.default as JsonValue });
+  }
+  return declared;
+}
+
+/**
  * Read the accepted Layer-2 `[tools.git]` declaration. The accepted R-SDK-2
  * linter already enforces the closed shape (`required: boolean`,
  * `version: range string`); only a well-formed declaration is exposed so the
@@ -241,6 +310,9 @@ export function loadManifestModel(source: string): ManifestModel {
     typeof compat["plugin-api"] === "string" ? compat["plugin-api"] : undefined;
   const lazyCommands = readLazyCommands(lazy.commands);
   const providedServices = readProvidedServices(parsed.services);
+  const requiredServices = readRequiredServices(parsed.services);
+  const settings = readSettings(parsed.settings);
+  const hasSettingsTable = isTable(parsed.settings);
   const toolsGit = readToolsGit(parsed.tools);
 
   return {
@@ -255,6 +327,9 @@ export function loadManifestModel(source: string): ManifestModel {
     claims: readStringArray(lazy.claims),
     providedServices: providedServices.versions,
     providedServiceSchemas: providedServices.schemas,
+    requiredServices,
+    settings,
+    hasSettingsTable,
     ...(toolsGit === undefined ? {} : { toolsGit }),
   };
 }
