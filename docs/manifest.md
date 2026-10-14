@@ -162,7 +162,14 @@ Each entry uses the accepted string form or the table form `{ version =
 
 The same form-key quoting caveat as `[services.provided]` applies: quote
 interface names whose segments collide with the form key (`"foo.version" =
-"^1.0"`). The manifest model exposes required ranges as
+"^1.0"`). A table value without a `version` key walks as a namespace (again,
+same as provided), so a misspelled form key such as `{ versoin = "^1.0" }`
+reads as a nested interface name (`audio.state.versoin`) instead of failing
+at lint; it fails closed downstream at resolution, where no provider serves
+that name. Telling the typo apart from a genuine namespace would require
+line-level source tracking, which would fork the SDK's TOML-faithful reading
+from `[services.provided]`; the two tables intentionally share one walker.
+The manifest model exposes required ranges as
 `ManifestModel.requiredServices`.
 
 ### `[settings]` (optional)
@@ -191,7 +198,12 @@ Rules (fail-closed, mirroring the host `SettingDecl::validate`):
 - `default` must agree with `type` exactly (bool literal, bare integer,
   quoted string, or string array) or it is `settings.default.invalid` — no
   coercion, ever. String defaults are bounded to 512 bytes, string-array
-  defaults to 32 items of 1..128 bytes; NUL bytes are rejected.
+  defaults to 32 items of 1..128 bytes; NUL bytes are rejected. One
+  fail-open corner stays documented: the linter sees parsed TOML values, so
+  a float spelling that evaluates to an integer (`default = 1.0` for an
+  `int` key) is accepted here while the host's bare-integer check rejects
+  it. Preserving the spelling would require line-level source tracking;
+  authors must write bare integers.
 
 Reading an undeclared key fails closed on the host
 (`E_SETTINGS_UNDECLARED`); the mock host models the same declared-keys gate

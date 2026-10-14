@@ -2271,6 +2271,30 @@ modules = { type = "string-array", default = ["workspaces", "clock"] }
       HOST_CODES.SETTINGS_KEY_INVALID,
     );
   });
+
+  test("an explicit empty [settings] table denies every key", () => {
+    const source = `
+[plugin]
+id = "conformance.settings-empty"
+name = "Conformance Settings Empty"
+version = "1.0.0"
+description = "Empty declared-keys fixture."
+license = "MIT"
+
+[settings]
+`;
+    const host = makeHost(source, {});
+    expect(host.manifest.hasSettingsTable).toBe(true);
+    expect(host.manifest.settings.size).toBe(0);
+    activate(host);
+    expect(denial(() => host.bitty.settings.get("anything")).code).toBe(
+      HOST_CODES.SETTINGS_UNDECLARED,
+    );
+    expect(denial(() => host.bitty.settings.set("anything", 1)).code).toBe(
+      HOST_CODES.SETTINGS_UNDECLARED,
+    );
+    expect(makeHost().manifest.hasSettingsTable).toBe(false);
+  });
 });
 
 describe("contract alignment", () => {

@@ -307,7 +307,9 @@ A manifest that declares `[settings]` opts into the declared-keys gate
 (CTX-1225, bitty#2010 / CTX-1195), mirroring the host generation gate
 (`PluginServices::settings_get`): reading or writing a key outside the
 declared set fails closed with `E_SETTINGS_UNDECLARED` (`validation` class),
-so settings are never a side channel between plugins. A declared key serves
+so settings are never a side channel between plugins. Presence of the table
+arms the gate, so an explicit empty `[settings]` denies every key exactly
+like the host's empty declared set (`ManifestModel.hasSettingsTable`). A declared key serves
 its stored value, the shipped manifest default when nothing was stored, and
 the default again when the stored value disagrees with the declared type —
 strict, no coercion (an integer is not a float, a table is a string array

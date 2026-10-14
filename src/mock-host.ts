@@ -2584,7 +2584,9 @@ export class MockHost {
       fail("validation", HOST_CODES.SETTINGS_KEY_INVALID, problem);
     }
     // CTX-1225 (declared-keys model, bitty#2010 / CTX-1195): a manifest that
-    // declares `[settings]` reads exactly that set. An undeclared key fails
+    // declares `[settings]` reads exactly that set — presence of the table,
+    // not its size, arms the gate, so an explicit empty table denies every
+    // key exactly like the host's empty declared set. An undeclared key fails
     // closed with `E_SETTINGS_UNDECLARED` (settings are never a side channel
     // between plugins); a declared key serves its stored value, the shipped
     // manifest default when unset, and the default again when the stored
@@ -2594,7 +2596,7 @@ export class MockHost {
     const declared = this.manifest.settings;
     const declaration = declared.get(key);
     if (declaration === undefined) {
-      if (declared.size > 0) {
+      if (this.manifest.hasSettingsTable) {
         fail(
           "validation",
           HOST_CODES.SETTINGS_UNDECLARED,
@@ -2626,7 +2628,7 @@ export class MockHost {
     // reads; a wrong-typed write to a declared key is stored and fails to
     // the shipped default at read time (see `settingsGet`).
     const declared = this.manifest.settings;
-    if (declared.size > 0 && !declared.has(key)) {
+    if (this.manifest.hasSettingsTable && !declared.has(key)) {
       fail(
         "validation",
         HOST_CODES.SETTINGS_UNDECLARED,

@@ -66,6 +66,13 @@ export interface ManifestModel {
   readonly requiredServices: ReadonlyMap<string, string>;
   /** Declared settings keys (`[settings]`, key to type plus default). */
   readonly settings: ReadonlyMap<string, SettingDeclaration>;
+  /**
+   * Whether the manifest contained a `[settings]` table at all (even an
+   * empty one). An explicit table opts into the host declared-keys gate —
+   * an empty one therefore denies every key — while an absent table keeps
+   * the legacy open read.
+   */
+  readonly hasSettingsTable: boolean;
   readonly toolsGit?: ToolsGitDeclaration;
 }
 
@@ -305,6 +312,7 @@ export function loadManifestModel(source: string): ManifestModel {
   const providedServices = readProvidedServices(parsed.services);
   const requiredServices = readRequiredServices(parsed.services);
   const settings = readSettings(parsed.settings);
+  const hasSettingsTable = isTable(parsed.settings);
   const toolsGit = readToolsGit(parsed.tools);
 
   return {
@@ -321,6 +329,7 @@ export function loadManifestModel(source: string): ManifestModel {
     providedServiceSchemas: providedServices.schemas,
     requiredServices,
     settings,
+    hasSettingsTable,
     ...(toolsGit === undefined ? {} : { toolsGit }),
   };
 }
