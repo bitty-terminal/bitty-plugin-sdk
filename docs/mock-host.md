@@ -197,7 +197,7 @@ in `tests/mock-host.test.ts`.
 | `commands`       | Registration during activation; manifest reservation; duplicate rejection; schema-validated dispatch; 128-byte title / 1024-byte description bounds                                                                                                                                                                                                                                                                                                                                                                                        |
 | `events`         | Activation-only subscription; closed set + manifest declaration; envelope with sequence and payload                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `keymaps`        | Activation-only suggestion; shipped config chord grammar (trimmed, case-insensitive, modifier/key aliases); `when = "global"` only; same-generation target                                                                                                                                                                                                                                                                                                                                                                                 |
-| `settings`       | Plugin-owned dot paths only; a leading `plugins` segment is rejected                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `settings`       | Declared-keys gate (CTX-1225, bitty#2010): manifests with `[settings]` read exactly that set — undeclared keys fail `E_SETTINGS_UNDECLARED`, unset declared keys serve the shipped default, wrong-typed stored values fail to the default; manifests without `[settings]` keep the legacy open read                                                                                                                                                                                                                                        |
 | `store`          | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `notify`         | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `env`            | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -302,6 +302,21 @@ the plugin's own namespace. A nested `plugins` component remains a legal key.
 Settings values use the same JSON-compatible contract as store values and are
 rejected with `E_STORE_VALUE_INVALID` for cycles, depth, node, or byte bound
 violations.
+
+A manifest that declares `[settings]` opts into the declared-keys gate
+(CTX-1225, bitty#2010 / CTX-1195), mirroring the host generation gate
+(`PluginServices::settings_get`): reading or writing a key outside the
+declared set fails closed with `E_SETTINGS_UNDECLARED` (`validation` class),
+so settings are never a side channel between plugins. A declared key serves
+its stored value, the shipped manifest default when nothing was stored, and
+the default again when the stored value disagrees with the declared type —
+strict, no coercion (an integer is not a float, a table is a string array
+only when every value is a string), modeling the host merge that drops
+wrong-typed file values to the default (garbage in, fail-to-default out).
+Manifests without `[settings]` keep the legacy open read (absent keys serve
+nil) so plugins and fixtures that predate the gate stay green. Regression
+evidence lives in the `declared settings keys` group in
+`tests/mock-host.test.ts`.
 
 Every recursive traversal of a value (store and settings values, UI
 components, and the injected terminal snapshot) is cycle-aware and bounded. A
@@ -550,6 +565,7 @@ exported as `ACCEPTED_HOST_CODES`:
 | `E_ENV_VALUE_TOO_LARGE`  | `validation` | ADR 0006                                                                                           |
 | `E_STORE_VALUE_INVALID`  | `validation` | ADR 0009                                                                                           |
 | `E_STORE_QUOTA`          | `budget`     | ADR 0009                                                                                           |
+| `E_SETTINGS_UNDECLARED`  | `validation` | Per-plugin settings (CTX-1195, bitty#2010)                                                         |
 | `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                                                                           |
 | `E_UI_UNAVAILABLE`       | `runtime`    | Plugin API v1 frozen vocabulary (OQ-056); bitty `bitty_lua::host::E_UI_UNAVAILABLE`                |
 | `E_UI_ALREADY_CAPTURED`  | `runtime`    | W-01 overlay contract (CTX-0065)                                                                   |

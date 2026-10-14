@@ -36,6 +36,10 @@ export const CAPABILITY_FAMILIES: readonly string[] = [
   // open Core host PR bitty#1673 heads (alignment, RFC wins on conflict);
   // exact Lua spellings are minted by this SDK task under the new root.
   "history",
+  // CTX-1225 (Phase B audio monitor, bitty#2009/#2013): the cava-lite
+  // fast-poll level meter plus the volume/mute/port snapshot read and the
+  // separate bounded control head. Read never implies control.
+  "audio",
 ];
 
 /** Every closed capability head; parameterized heads carry a `:PARAMETER`. */
@@ -77,6 +81,29 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "platform.notify",
   "platform.open-url",
   "platform.image-file",
+  // CTX-1225 (Phase B sensors, bitty#2019/#2011/#2016): read-only
+  // cpu/memory/battery heads for bar modules. One head per provider, no
+  // parameter, never high-risk; ungranted consumption is indistinguishable
+  // from an absent source. Dash-form two-segment spellings mirror the host
+  // closed set exactly (`bitty-plugin-host` `capability.rs`).
+  "platform.cpu-read",
+  "platform.memory-read",
+  "platform.battery-read",
+  // CTX-1225 (Phase B devices, bitty#2012/#2017/#2020): privilege-sensitive
+  // network/bluetooth/backlight/idle heads for bar modules. Read vs control
+  // never share an interface; ESSID carries its own head
+  // (`platform.essid.read`: the `#2056` registry spelling
+  // `platform.network.essid.read` carries four dot segments and cannot enter
+  // the closed `family.resource[.scope]` set; the bridge maps it). None takes
+  // a parameter and none is high-risk.
+  "platform.network.read",
+  "platform.essid.read",
+  "platform.bluetooth.read",
+  "platform.bluetooth.control",
+  "platform.backlight.read",
+  "platform.backlight.control",
+  "platform.idle.read",
+  "platform.idle.control",
   "protocol.register",
   "panel.provider",
   "panel.create",
@@ -110,6 +137,15 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "history.transcript.read",
   "history.commands.read",
   "history.kv.read",
+  // CTX-1225 (Phase B audio monitor, bitty#2009/#2013): `audio.spectrum` is
+  // the cava-lite fast-poll level meter (provider-side 5 Hz ceiling);
+  // `audio.state.read` is the volume/mute/port snapshot;
+  // `audio.state.control` is the separate bounded volume/mute control head
+  // (defaults to deny; read grants never imply control). None takes a
+  // parameter and none is high-risk.
+  "audio.spectrum",
+  "audio.state.read",
+  "audio.state.control",
 ];
 
 /** Heads that must carry a `:PARAMETER` constraint. */

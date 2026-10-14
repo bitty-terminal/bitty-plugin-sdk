@@ -35,6 +35,24 @@ export const MAX_FS_PATTERNS_PER_ACCESS = 32;
 /** Maximum provided services. */
 export const MAX_PROVIDED_SERVICES = 16;
 
+/** Maximum required services (host `MAX_REQUIRED_SERVICES`, CTX-1193+). */
+export const MAX_REQUIRED_SERVICES = 16;
+
+/** Maximum declared settings keys per manifest (`[settings]`, CTX-1195). */
+export const MAX_SETTINGS_KEYS = 32;
+
+/** Maximum bytes of one declared settings key. */
+export const MAX_SETTING_KEY_LEN = 64;
+
+/** Maximum bytes of one string-typed shipped default value. */
+export const MAX_SETTING_STRING_BYTES = 512;
+
+/** Maximum default items of a string-array setting. */
+export const MAX_SETTING_ARRAY_ITEMS = 32;
+
+/** Maximum bytes of one string-array default item. */
+export const MAX_SETTING_ARRAY_ITEM_BYTES = 128;
+
 /** Maximum plugin dependencies. */
 export const MAX_DEPENDENCIES = 8;
 
@@ -98,6 +116,7 @@ export const ALLOWED_ROOT_KEYS: ReadonlySet<string> = new Set([
   "capabilities",
   "lazy",
   "tools",
+  "settings",
 ]);
 
 /** `[plugin]` keys accepted by the manifest schema. */
@@ -124,7 +143,15 @@ export const ALLOWED_COMPAT_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /** `[services]` keys accepted by the manifest schema. */
-export const ALLOWED_SERVICES_KEYS: ReadonlySet<string> = new Set(["provided"]);
+export const ALLOWED_SERVICES_KEYS: ReadonlySet<string> = new Set([
+  "provided",
+  "required",
+]);
+
+/** Keys accepted in one table-form `[services.required]` entry. */
+export const ALLOWED_SERVICES_REQUIRED_KEYS: ReadonlySet<string> = new Set([
+  "version",
+]);
 
 /** Keys accepted in one table-form `[services.provided]` entry (ADR 0009). */
 export const ALLOWED_SERVICES_PROVIDED_KEYS: ReadonlySet<string> = new Set([
@@ -165,6 +192,20 @@ export const ALLOWED_TOOLS_KEYS: ReadonlySet<string> = new Set(["git"]);
 export const ALLOWED_TOOLS_GIT_KEYS: ReadonlySet<string> = new Set([
   "required",
   "version",
+]);
+
+/** Keys accepted in one `[settings]` entry table (`{ type, default }`). */
+export const ALLOWED_SETTINGS_ENTRY_KEYS: ReadonlySet<string> = new Set([
+  "type",
+  "default",
+]);
+
+/** Value types accepted for one `[settings]` entry (`SettingKind`, CTX-1195). */
+export const ALLOWED_SETTING_TYPES: ReadonlySet<string> = new Set([
+  "bool",
+  "int",
+  "string",
+  "string-array",
 ]);
 
 /** One flattened `[services.provided]` entry: dotted path plus raw value. */

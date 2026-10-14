@@ -2197,6 +2197,80 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
       HOST_CODES.SETTINGS_KEY_INVALID,
     );
   });
+
+  test("manifests without [settings] keep the legacy open read", () => {
+    // No declarations means no declared-keys gate: existing plugins and
+    // fixtures that predate CTX-1195 stay green.
+    const host = makeHost();
+    activate(host);
+    expect(host.bitty.settings.get("undeclared.legacy")).toBeNull();
+    expect(host.bitty.settings.set("undeclared.legacy", 1)).toBe(true);
+    expect(host.bitty.settings.get("undeclared.legacy")).toBe(1);
+  });
+});
+
+describe("declared settings keys ([settings], CTX-1225)", () => {
+  const SETTINGS_MANIFEST = `
+[plugin]
+id = "conformance.settings"
+name = "Conformance Settings"
+version = "1.0.0"
+description = "Declared-keys fixture."
+license = "MIT"
+
+[settings]
+newline = { type = "string", default = "enter" }
+name_max_chars = { type = "int", default = 32 }
+show = { type = "bool", default = true }
+modules = { type = "string-array", default = ["workspaces", "clock"] }
+`;
+
+  test("declared keys pass, unset keys serve the shipped default", () => {
+    const host = makeHost(SETTINGS_MANIFEST, {});
+    activate(host);
+    expect(host.bitty.settings.get("newline")).toBe("enter");
+    expect(host.bitty.settings.get("name_max_chars")).toBe(32);
+    expect(host.bitty.settings.get("show")).toBe(true);
+    expect(host.bitty.settings.get("modules")).toEqual(["workspaces", "clock"]);
+    expect(host.bitty.settings.set("newline", "ctrl+enter")).toBe(true);
+    expect(host.bitty.settings.get("newline")).toBe("ctrl+enter");
+  });
+
+  test("undeclared keys fail closed with E_SETTINGS_UNDECLARED", () => {
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.SETTINGS_UNDECLARED)).toBe(true);
+    const host = makeHost(SETTINGS_MANIFEST, {});
+    activate(host);
+    const get = denial(() => host.bitty.settings.get("other"));
+    expect(get.code).toBe(HOST_CODES.SETTINGS_UNDECLARED);
+    expect(get.class).toBe("validation");
+    expect(get.message).toContain("[settings]");
+    const set = denial(() => host.bitty.settings.set("other", 1));
+    expect(set.code).toBe(HOST_CODES.SETTINGS_UNDECLARED);
+  });
+
+  test("wrong-typed stored values fail to the shipped default", () => {
+    const host = makeHost(SETTINGS_MANIFEST, {});
+    activate(host);
+    expect(host.bitty.settings.set("newline", 42 as never)).toBe(true);
+    expect(host.bitty.settings.get("newline")).toBe("enter");
+    expect(host.bitty.settings.set("name_max_chars", 3.5 as never)).toBe(true);
+    expect(host.bitty.settings.get("name_max_chars")).toBe(32);
+    expect(host.bitty.settings.set("show", "yes" as never)).toBe(true);
+    expect(host.bitty.settings.get("show")).toBe(true);
+    expect(host.bitty.settings.set("modules", ["ok", 7] as never)).toBe(true);
+    expect(host.bitty.settings.get("modules")).toEqual(["workspaces", "clock"]);
+  });
+
+  test("key-shape errors keep their own code before the declared gate", () => {
+    const host = makeHost(SETTINGS_MANIFEST, {});
+    activate(host);
+    expect(denial(() => host.bitty.settings.get("")).code).toBe(
+      HOST_CODES.SETTINGS_KEY_INVALID,
+    );
+    expect(denial(() => host.bitty.settings.get("plugins.x")).code).toBe(
+      HOST_CODES.SETTINGS_KEY_INVALID,
+    );
+  });
 });
 
 describe("contract alignment", () => {

@@ -25,6 +25,9 @@ import {
   ALLOWED_ROOT_KEYS,
   ALLOWED_SERVICES_KEYS,
   ALLOWED_SERVICES_PROVIDED_KEYS,
+  ALLOWED_SERVICES_REQUIRED_KEYS,
+  ALLOWED_SETTING_TYPES,
+  ALLOWED_SETTINGS_ENTRY_KEYS,
   ALLOWED_TOOLS_GIT_KEYS,
   ALLOWED_TOOLS_KEYS,
   MANIFEST_MAX_BYTES,
@@ -44,8 +47,14 @@ import {
   MAX_PROVIDED_SERVICES,
   MAX_QUALIFIED_NAME_LEN,
   MAX_QUALIFIED_RESOURCE_LEN,
+  MAX_REQUIRED_SERVICES,
   MAX_SERVICE_IFACE_LEN,
   MAX_SERVICE_IFACE_SEGMENT_LEN,
+  MAX_SETTINGS_KEYS,
+  MAX_SETTING_ARRAY_ITEM_BYTES,
+  MAX_SETTING_ARRAY_ITEMS,
+  MAX_SETTING_KEY_LEN,
+  MAX_SETTING_STRING_BYTES,
   MAX_VERSION_LEN,
   REQUIRED_PLUGIN_KEYS,
   collectProvidedServices,
@@ -627,34 +636,288 @@ function validateServices(value: unknown, diagnostics: Diagnostic[]): void {
   }
   checkUnknownKeys(table, ALLOWED_SERVICES_KEYS, "services", diagnostics);
   const provided = checkTable(table.provided, "services.provided", diagnostics);
-  if (provided === undefined) {
+  if (provided !== undefined) {
+    const entries: ProvidedServiceEntry[] = [];
+    collectProvidedServices(provided, "services.provided", entries);
+    if (entries.length > MAX_PROVIDED_SERVICES) {
+      diagnostics.push(
+        error(
+          "manifest.limit",
+          "services.provided",
+          `too many provided services (${entries.length} > ${MAX_PROVIDED_SERVICES})`,
+        ),
+      );
+    }
+    for (const entry of entries) {
+      const iface = entry.path.slice("services.provided.".length);
+      const problem = serviceInterfaceProblem(iface);
+      if (problem !== undefined) {
+        diagnostics.push(
+          error(
+            "services.interface.invalid",
+            entry.path,
+            `interface ${quote(iface)} is invalid: ${problem}`,
+          ),
+        );
+        continue;
+      }
+      validateProvidedServiceEntry(entry.path, entry.value, diagnostics);
+    }
+  }
+  if (table.required !== undefined) {
+    const required = checkTable(
+      table.required,
+      "services.required",
+      diagnostics,
+    );
+    if (required !== undefined) {
+      // The required walker is shared with provided services: a string leaf
+      // is the accepted string form (`"iface" = "range"`), while a table
+      // carrying the `version` key is the table form (`"iface" = { version =
+      // "range" }`). The same quoting caveat applies: quote interface names
+      // whose segments collide with the form key (`"foo.version" = "^1.0"`),
+      // since a bare `foo.version = "^1.0"` reads as the table form for `foo`.
+      const entries: ProvidedServiceEntry[] = [];
+      collectProvidedServices(required, "services.required", entries);
+      if (entries.length > MAX_REQUIRED_SERVICES) {
+        diagnostics.push(
+          error(
+            "manifest.limit",
+            "services.required",
+            `too many required services (${entries.length} > ${MAX_REQUIRED_SERVICES})`,
+          ),
+        );
+      }
+      for (const entry of entries) {
+        const iface = entry.path.slice("services.required.".length);
+        const problem = serviceInterfaceProblem(iface);
+        if (problem !== undefined) {
+          diagnostics.push(
+            error(
+              "services.interface.invalid",
+              entry.path,
+              `interface ${quote(iface)} is invalid: ${problem}`,
+            ),
+          );
+          continue;
+        }
+        validateRequiredServiceEntry(entry.path, entry.value, diagnostics);
+      }
+    }
+  }
+}
+
+/**
+ * Validate one `[services.required]` entry: the accepted string form
+ * (`"iface" = "range"`) or the table form `{ version = "range" }` with a
+ * version requirement (never a concrete version). Schemas are provider-side
+ * only: `args_schema` / `result_schema` keys fail closed here so a consumer
+ * can never smuggle a provider shape.
+ */
+function validateRequiredServiceEntry(
+  path: string,
+  value: unknown,
+  diagnostics: Diagnostic[],
+): void {
+  if (typeof value === "string") {
+    const problem = versionReqProblem(value);
+    if (problem !== undefined) {
+      diagnostics.push(error("services.version.invalid", path, problem));
+    }
     return;
   }
-  const entries: ProvidedServiceEntry[] = [];
-  collectProvidedServices(provided, "services.provided", entries);
-  if (entries.length > MAX_PROVIDED_SERVICES) {
+  if (!isTable(value)) {
+    diagnostics.push(
+      error(
+        "manifest.type",
+        path,
+        "expected a version requirement string or a table with version",
+      ),
+    );
+    return;
+  }
+  checkUnknownKeys(value, ALLOWED_SERVICES_REQUIRED_KEYS, path, diagnostics);
+  const version = value.version;
+  if (version === undefined) {
+    diagnostics.push(
+      error(
+        "manifest.type",
+        `${path}.version`,
+        "expected a version requirement string (required by the table form)",
+      ),
+    );
+  } else if (typeof version !== "string") {
+    diagnostics.push(
+      error(
+        "manifest.type",
+        `${path}.version`,
+        "expected a version requirement string",
+      ),
+    );
+  } else {
+    const problem = versionReqProblem(version);
+    if (problem !== undefined) {
+      diagnostics.push(
+        error("services.version.invalid", `${path}.version`, problem),
+      );
+    }
+  }
+}
+
+const SETTING_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
+
+/** Validate a declared `[settings]` key and return a reason when invalid. */
+function settingKeyProblem(raw: string): string | undefined {
+  if (byteLength(raw) === 0 || byteLength(raw) > MAX_SETTING_KEY_LEN) {
+    return `settings key must be 1..=${MAX_SETTING_KEY_LEN} bytes`;
+  }
+  if (!SETTING_KEY_PATTERN.test(raw)) {
+    return "settings keys must match ^[a-z][a-z0-9_]*$ starting with a lowercase letter";
+  }
+  return undefined;
+}
+
+/** Validate a shipped default against its declared type; reason when invalid. */
+function settingDefaultProblem(
+  type: string,
+  value: unknown,
+  key: string,
+): string | undefined {
+  switch (type) {
+    case "bool":
+      return typeof value === "boolean"
+        ? undefined
+        : `'${key}' field 'default' must be 'true' or 'false' for type 'bool'`;
+    case "int":
+      return typeof value === "number" && Number.isSafeInteger(value)
+        ? undefined
+        : `'${key}' field 'default' must be a bare integer for type 'int'`;
+    case "string": {
+      if (typeof value !== "string") {
+        return `'${key}' field 'default' must be a string for type 'string'`;
+      }
+      if (byteLength(value) > MAX_SETTING_STRING_BYTES) {
+        return `'${key}' field 'default' too long (${byteLength(value)} > ${MAX_SETTING_STRING_BYTES})`;
+      }
+      if (value.includes("\0")) {
+        return `'${key}' field 'default' must not contain NUL`;
+      }
+      return undefined;
+    }
+    case "string-array": {
+      if (
+        !Array.isArray(value) ||
+        !value.every((item) => typeof item === "string")
+      ) {
+        return `'${key}' field 'default' must be an array of strings for type 'string-array'`;
+      }
+      if (value.length > MAX_SETTING_ARRAY_ITEMS) {
+        return `'${key}' field 'default' has too many items (${value.length} > ${MAX_SETTING_ARRAY_ITEMS})`;
+      }
+      for (const item of value) {
+        if (
+          item.length === 0 ||
+          byteLength(item) > MAX_SETTING_ARRAY_ITEM_BYTES
+        ) {
+          return `'${key}' field 'default' items must be 1..=${MAX_SETTING_ARRAY_ITEM_BYTES} bytes`;
+        }
+        if (item.includes("\0")) {
+          return `'${key}' field 'default' items must not contain NUL`;
+        }
+      }
+      return undefined;
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Validate the `[settings]` table: quota plus one `{ type, default }`
+ * declaration per key (CTX-1195, bitty#2010).
+ *
+ * Keys use `^[a-z][a-z0-9_]*$` (1..=64 bytes); `type` is one of `bool` /
+ * `int` / `string` / `string-array`; `default` is the shipped built-in
+ * default of exactly that type (bool literal, bare integer, quoted string,
+ * or string array). Any other shape — a bare value instead of an inline
+ * table, an unknown `type`, a type/default mismatch, or an extra key —
+ * fails closed. Bounds mirror the host (`SettingDecl::validate`).
+ */
+function validateSettings(value: unknown, diagnostics: Diagnostic[]): void {
+  const table = checkTable(value, "settings", diagnostics);
+  if (table === undefined) {
+    return;
+  }
+  const keys = Object.keys(table);
+  if (keys.length > MAX_SETTINGS_KEYS) {
     diagnostics.push(
       error(
         "manifest.limit",
-        "services.provided",
-        `too many provided services (${entries.length} > ${MAX_PROVIDED_SERVICES})`,
+        "settings",
+        `too many settings keys (${keys.length} > ${MAX_SETTINGS_KEYS})`,
       ),
     );
   }
-  for (const entry of entries) {
-    const iface = entry.path.slice("services.provided.".length);
-    const problem = serviceInterfaceProblem(iface);
-    if (problem !== undefined) {
+  for (const [key, entry] of Object.entries(table)) {
+    const path = `settings.${key}`;
+    const keyProblem = settingKeyProblem(key);
+    if (keyProblem !== undefined) {
+      diagnostics.push(error("settings.key.invalid", path, keyProblem));
+      continue;
+    }
+    if (!isTable(entry)) {
       diagnostics.push(
         error(
-          "services.interface.invalid",
-          entry.path,
-          `interface ${quote(iface)} is invalid: ${problem}`,
+          "manifest.type",
+          path,
+          'expected an inline table { type = "...", default = ... }',
         ),
       );
       continue;
     }
-    validateProvidedServiceEntry(entry.path, entry.value, diagnostics);
+    checkUnknownKeys(entry, ALLOWED_SETTINGS_ENTRY_KEYS, path, diagnostics);
+    let type: string | undefined;
+    const typeRaw = entry.type;
+    if (typeRaw === undefined) {
+      diagnostics.push(
+        error(
+          "manifest.missing-key",
+          `${path}.type`,
+          "required key is missing",
+        ),
+      );
+    } else if (typeof typeRaw !== "string") {
+      diagnostics.push(
+        error("manifest.type", `${path}.type`, "expected a string"),
+      );
+    } else if (!ALLOWED_SETTING_TYPES.has(typeRaw)) {
+      diagnostics.push(
+        error(
+          "settings.type.invalid",
+          `${path}.type`,
+          `unknown settings type ${quote(typeRaw)} (expected bool, int, string, or string-array)`,
+        ),
+      );
+    } else {
+      type = typeRaw;
+    }
+    const defaultRaw = entry.default;
+    if (defaultRaw === undefined) {
+      diagnostics.push(
+        error(
+          "manifest.missing-key",
+          `${path}.default`,
+          "required key is missing",
+        ),
+      );
+    } else if (type !== undefined) {
+      const problem = settingDefaultProblem(type, defaultRaw, key);
+      if (problem !== undefined) {
+        diagnostics.push(
+          error("settings.default.invalid", `${path}.default`, problem),
+        );
+      }
+    }
   }
 }
 
@@ -1157,6 +1420,7 @@ export function lintManifestSource(source: string): LintResult {
   validateCompat(parsed.compat, diagnostics);
   validateDependencies(parsed.dependencies, pluginId, diagnostics);
   validateServices(parsed.services, diagnostics);
+  validateSettings(parsed.settings, diagnostics);
   validateCapabilities(parsed.capabilities, diagnostics);
   validateLazy(parsed.lazy, pluginId, diagnostics);
   validateTools(parsed.tools, diagnostics);
