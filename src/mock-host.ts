@@ -1363,6 +1363,7 @@ export class MockHost {
   }> = [];
   private readonly blocks = new Map<number, UiBlock>();
   private aggregatedTextBytes = 0;
+  private uiCallExpired = false;
   private readonly tasks = new Map<number, TaskRecord>();
   private readonly timers = new Map<number, TimerRecord>();
   private readonly services = new Map<string, ServiceRecord>();
@@ -2745,6 +2746,7 @@ export class MockHost {
 
   private uiMount(slot: string, component: Record<string, unknown>): number {
     this.assertRegistrationOpen("bitty.ui.mount");
+    this.assertUiCallNotExpired();
     this.assertCapability("bitty.ui.mount", "ui.rich");
     if (slot === "overlay") {
       this.assertCapability("bitty.ui.mount:overlay", "ui.overlay");
@@ -2851,6 +2853,7 @@ export class MockHost {
     component: Record<string, unknown>,
   ): boolean {
     this.assertAlive();
+    this.assertUiCallNotExpired();
     this.assertCapability("bitty.ui.update", "ui.rich");
     const block = this.blocks.get(handle);
     if (block === undefined || block.generation !== this.generation) {
@@ -3328,6 +3331,26 @@ export class MockHost {
     this.assertAlive();
     this.expireOverlayIfIdle();
     this.terminateOverlayForCause("crashed");
+  }
+
+  /**
+   * Harness-only bridge-deadline expiry for the next UI mutation (not a Lua
+   * surface). The mock runs no wall clock, so this one-shot flag reproduces
+   * the check-then-act expiry path at bitty `75ec169f`: the next
+   * `ui.mount`/`ui.update` fails closed with `E_TIMEOUT` (`budget`) before
+   * any block is admitted or replaced, and a later call proceeds normally.
+   * `ui.mount` consumes the flag after its registration guard and before the
+   * capability gates; `ui.update` consumes it after the generation check.
+   */
+  expireNextUiCall(): void {
+    this.assertAlive();
+    this.uiCallExpired = true;
+  }
+
+  private assertUiCallNotExpired(): void {
+    if (!this.uiCallExpired) return;
+    this.uiCallExpired = false;
+    fail("budget", HOST_CODES.TIMEOUT, "host call exceeded its deadline");
   }
 
   private terminalSnapshotRead(

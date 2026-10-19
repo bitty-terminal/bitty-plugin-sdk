@@ -158,6 +158,9 @@ describe("surface", () => {
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_UNAVAILABLE)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_ALREADY_CAPTURED)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_NOT_OWNER)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.TIMEOUT)).toBe(true);
+    expect(ACCEPTED_HOST_CODES.has(HOST_CODES.UI_BLOCK_BUDGET)).toBe(false);
+    expect(MOCK_HOST_CODES.has(HOST_CODES.UI_BLOCK_BUDGET)).toBe(true);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.REGISTRATION_CLOSED)).toBe(false);
     expect(ACCEPTED_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(false);
     expect(MOCK_HOST_CODES.has(HOST_CODES.NOT_IMPLEMENTED)).toBe(true);
@@ -3272,6 +3275,44 @@ describe("mock boundary hardening (SDK-006..SDK-012)", () => {
         text: "x".repeat(remaining),
       }),
     ).toBe(true);
+  });
+
+  test("expired UI calls fail E_TIMEOUT and commit nothing (issue #154)", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+
+    const handle = host.bitty.ui.mount("top", { kind: "Text", text: "v1" });
+
+    // An expired update fails before committing and the block stays live.
+    host.expireNextUiCall();
+    const updateDenial = denial(() =>
+      host.bitty.ui.update(handle, { kind: "Text", text: "v2" }),
+    );
+    expect(updateDenial.class).toBe("budget");
+    expect(updateDenial.code).toBe(HOST_CODES.TIMEOUT);
+    expect(host.bitty.ui.update(handle, { kind: "Text", text: "v3" })).toBe(
+      true,
+    );
+
+    // An expired mount admits no block: every attempt is followed by a
+    // successful mount, and the generation still reaches the exact 64-block
+    // cap before E_UI_BLOCK_BUDGET.
+    for (let i = 1; i < MOCK_LIMITS.UI_MAX_BLOCKS; i += 1) {
+      host.expireNextUiCall();
+      expect(
+        denial(() => host.bitty.ui.mount("top", { kind: "Text", text: "x" }))
+          .code,
+      ).toBe(HOST_CODES.TIMEOUT);
+      expect(
+        typeof host.bitty.ui.mount("top", { kind: "Text", text: "x" }),
+      ).toBe("number");
+    }
+    const budgetDenial = denial(() =>
+      host.bitty.ui.mount("top", { kind: "Text", text: "x" }),
+    );
+    expect(budgetDenial.class).toBe("budget");
+    expect(budgetDenial.code).toBe(HOST_CODES.UI_BLOCK_BUDGET);
   });
 
   test("command metadata byte/type bounds (SDK-012)", () => {

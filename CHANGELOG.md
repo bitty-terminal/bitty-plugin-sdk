@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Declare `E_UI_BLOCK_BUDGET` and `E_TIMEOUT` in the `ui.mount` and
+  `ui.update` surface error arrays (issue #154). Both arrive in Lua as
+  catchable `class`/`code`/`message` error tables; the per-generation
+  block/aggregate-text caps and the pre-commit bridge-deadline path fail
+  closed without admitting or replacing a block (`bitty@75ec169f`). The mock
+  host models the expiry with the one-shot `expireNextUiCall()` hook and the
+  conformance `expire-next-ui-call` step, and `lua/bitty.d.lua` is
+  regenerated. `api_version` stays `1.0.0`: additive error vocabulary only.
+
 - Re-pin host parity to bitty `main` `fb44a867` (PR #1641, CTX-0067, W-43;
   verified as the remote tip): bitty #1633 (W-28, CTX-0941) and bitty #1641
   (W-29, CTX-0942) moved no v1 verdict. The provisional
