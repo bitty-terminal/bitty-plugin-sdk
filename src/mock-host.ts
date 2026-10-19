@@ -1769,6 +1769,7 @@ export class MockHost {
     this.keymaps.length = 0;
     this.blocks.clear();
     this.aggregatedTextBytes = 0;
+    this.uiCallExpired = false;
     this.tasks.clear();
     this.timers.clear();
     for (const record of this.services.values()) record.alive = false;
@@ -3341,6 +3342,8 @@ export class MockHost {
    * any block is admitted or replaced, and a later call proceeds normally.
    * `ui.mount` consumes the flag after its registration guard and before the
    * capability gates; `ui.update` consumes it after the generation check.
+   * Disposal clears an unconsumed flag with the rest of the generation state,
+   * so it can never leak into the next generation.
    */
   expireNextUiCall(): void {
     this.assertAlive();

@@ -3315,6 +3315,21 @@ describe("mock boundary hardening (SDK-006..SDK-012)", () => {
     expect(budgetDenial.code).toBe(HOST_CODES.UI_BLOCK_BUDGET);
   });
 
+  test("an unconsumed UI expiry flag does not leak into the next generation (issue #154)", () => {
+    const host = makeHost();
+    host.grant("ui.rich");
+    activate(host);
+    // Arm the expiry, then dispose without a consuming UI call.
+    host.expireNextUiCall();
+    host.endActivation();
+    host.dispose();
+    activate(host);
+    host.grant("ui.rich");
+    expect(typeof host.bitty.ui.mount("top", { kind: "Text", text: "x" })).toBe(
+      "number",
+    );
+  });
+
   test("command metadata byte/type bounds (SDK-012)", () => {
     const accepting = makeHost();
     activate(accepting);
