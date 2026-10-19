@@ -67,3 +67,8 @@ nothing and L4 standing access denies with trust-denied. Cases
 the first-party (`manifests/history.toml`, `bitty.history-keeper`) and
 third-party (`manifests/history-thirdparty.toml`, `example.history-clone`)
 principals, proving granted vs foreign-manifest identical denials (W-139).
+Case `36-ui-error-vocabulary.json` covers the declared UI denial vocabulary:
+`ui.update` and `ui.mount` fail `E_TIMEOUT` (`budget`) before committing when
+the bridge deadline has expired (the `expire-next-ui-call` harness step), the
+last good block stays live, and the per-generation 64-block cap reports
+`E_UI_BLOCK_BUDGET` (`budget`).

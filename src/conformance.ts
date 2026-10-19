@@ -112,6 +112,7 @@ const SUPPORTED_STEP_OPS: ReadonlySet<string> = new Set([
   "inject-overlay-input",
   "overlay-focus-switch",
   "overlay-crash",
+  "expire-next-ui-call",
   "set-submit-delivery",
   "set-submit-lease",
   "set-editor-result",
@@ -1027,6 +1028,13 @@ export async function runConformanceCaseFile(
           assertions.push({
             op: "overlay-crash",
             detail: "crash revoked capture",
+          });
+          break;
+        case "expire-next-ui-call":
+          host.expireNextUiCall();
+          assertions.push({
+            op: "expire-next-ui-call",
+            detail: "next ui mutation fails E_TIMEOUT",
           });
           break;
         case "set-submit-delivery": {

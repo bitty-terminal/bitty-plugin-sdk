@@ -303,11 +303,13 @@ local BittyUiNamespace = {}
 --- ui.rich, the overlay slot additionally requires ui.overlay, and the exclusive tabline slot
 --- requires a matching [lazy].claims entry (E_UI_CLAIM_REQUIRED). After those gates, an accepted
 --- slot the host does not present (tabline, overlay, terminal) fails closed with E_UI_UNAVAILABLE
---- (runtime). Host layout owns placement and decoration, and there are no global coordinates,
+--- (runtime). Exceeding the per-generation block or aggregate-text cap fails with E_UI_BLOCK_BUDGET
+--- (budget), and an expired bridge deadline fails closed with E_TIMEOUT (budget) before any block
+--- is admitted. Host layout owns placement and decoration, and there are no global coordinates,
 --- shaders, pipelines, glyph injection, native windows, or renderer handles.
 --- Capabilities: ui.rich.
 --- Conditional capabilities: ui.overlay (when slot == "overlay").
---- Errors: E_CAPABILITY_DENIED, E_UI_CLAIM_REQUIRED, E_UI_UNAVAILABLE, E_UI_COMPONENT_INVALID.
+--- Errors: E_CAPABILITY_DENIED, E_UI_CLAIM_REQUIRED, E_UI_UNAVAILABLE, E_UI_COMPONENT_INVALID, E_UI_BLOCK_BUDGET, E_TIMEOUT.
 ---@param slot BittyUiSlot
 ---@param component BittySceneNode
 ---@return BittyBlockHandle
@@ -315,9 +317,11 @@ function BittyUiNamespace.mount(slot, component) end
 
 --- Replaces a block's scene subtree under the same block_id with an incremented version; returns
 --- false for a stale or foreign handle and raises E_UI_COMPONENT_INVALID for a component that
---- violates the scene contract.
+--- violates the scene contract. Growing the generation's aggregate text past the cap fails with
+--- E_UI_BLOCK_BUDGET (budget) and leaves the last good subtree intact; an expired bridge deadline
+--- fails closed with E_TIMEOUT (budget) without committing.
 --- Capabilities: ui.rich.
---- Errors: E_CAPABILITY_DENIED, E_UI_COMPONENT_INVALID.
+--- Errors: E_CAPABILITY_DENIED, E_UI_COMPONENT_INVALID, E_UI_BLOCK_BUDGET, E_TIMEOUT.
 ---@param handle BittyBlockHandle
 ---@param component BittySceneNode
 ---@return boolean

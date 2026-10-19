@@ -67,6 +67,7 @@ export const HOST_CODES = {
   HANDLER_VIOLATION: "E_HANDLER_VIOLATION",
   DEF_INVALID: "E_DEF_INVALID",
   DEF_LIMIT: "E_DEF_LIMIT",
+  TIMEOUT: "E_TIMEOUT",
   NOT_IMPLEMENTED: "E_NOT_IMPLEMENTED",
   // W-139 (CTX-0066, accepted RFC-0004): the complete 8-category typed-denial
   // taxonomy for the read-only history/search/selection family. Minted by this
@@ -100,10 +101,13 @@ export type HostCode = (typeof HOST_CODES)[keyof typeof HOST_CODES];
  * (`E_UI_UNAVAILABLE`, class `runtime`: bitty `bitty_lua::host::E_UI_UNAVAILABLE`,
  * raised for an accepted slot the host does not present, CTX-0923), the
  * accepted W-01 overlay-input-capture contract (`E_UI_ALREADY_CAPTURED`,
- * `E_UI_NOT_OWNER`, class `runtime`, CTX-0065), and the accepted CTX-1195
+ * `E_UI_NOT_OWNER`, class `runtime`, CTX-0065), the accepted CTX-1195
  * per-plugin settings contract (`E_SETTINGS_UNDECLARED`, class `validation`:
  * bitty `plugin_runtime::services::PluginServices::settings_get` fails a key
- * outside the generation's manifest `[settings]` set, bitty#2010).
+ * outside the generation's manifest `[settings]` set, bitty#2010), and the
+ * accepted Plugin Host Runtime RFC (`E_TIMEOUT`, class `budget`: every bounded
+ * bridge call, including the pre-commit `ui.mount`/`ui.update` path, fails
+ * closed with `BridgeError::timeout`; bitty `75ec169f`).
  */
 export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
   HOST_CODES.CAPABILITY_DENIED,
@@ -121,6 +125,7 @@ export const ACCEPTED_HOST_CODES: ReadonlySet<string> = new Set<string>([
   HOST_CODES.SERVICE_GONE,
   HOST_CODES.BUDGET_TASK,
   HOST_CODES.BUDGET_TIMER,
+  HOST_CODES.TIMEOUT,
 ]);
 
 /**

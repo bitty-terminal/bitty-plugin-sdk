@@ -440,6 +440,11 @@ freeze is never silent and never more permissive than the host.
   the aggregate as a delta so shrinking one block releases budget for another.
   Component shape/node/text failures use `E_UI_COMPONENT_INVALID`; the
   per-generation block and aggregate-text caps use `E_UI_BLOCK_BUDGET`.
+  An expired bridge deadline (the pre-commit check-then-act path at bitty
+  `75ec169f`) fails `ui.mount`/`ui.update` closed with `E_TIMEOUT` (`budget`)
+  before any block is admitted or replaced, leaving the last good subtree
+  live. The mock runs no wall clock, so the harness-only
+  `expire-next-ui-call` step makes exactly the next UI mutation expire.
 - Tasks and timers are generation-owned and created only during the activation
   window (ADR 0009 LUA-OQ-12). After `endActivation()`, `tasks.spawn` and
   `timers.create` fail with `E_REGISTRATION_CLOSED`; a new generation's
@@ -571,6 +576,7 @@ exported as `ACCEPTED_HOST_CODES`:
 | `E_UI_COMPONENT_INVALID` | `validation` | ADR 0009                                                                                           |
 | `E_UI_UNAVAILABLE`       | `runtime`    | Plugin API v1 frozen vocabulary (OQ-056); bitty `bitty_lua::host::E_UI_UNAVAILABLE`                |
 | `E_UI_ALREADY_CAPTURED`  | `runtime`    | W-01 overlay contract (CTX-0065)                                                                   |
+| `E_TIMEOUT`              | `budget`     | Plugin Host Runtime RFC (bounded bridge call deadline; pre-commit UI path at bitty `75ec169f`)     |
 | `E_UI_NOT_OWNER`         | `runtime`    | W-01 overlay contract (CTX-0065)                                                                   |
 | `E_SNAPSHOT_TOO_LARGE`   | `validation` | ADR 0009                                                                                           |
 | `E_SERVICE_RESOLUTION`   | `resolution` | ADR 0009                                                                                           |
@@ -597,7 +603,8 @@ the host bridge bound code for an over-long `workspace.rename` name
 (`E_STORE_KEY_INVALID`, `E_SETTINGS_KEY_INVALID`), snapshot scope
 (`E_SNAPSHOT_SCOPE_UNSUPPORTED`), UI exclusivity (`E_UI_CLAIM_REQUIRED`) and the
 per-generation UI block budget (`E_UI_BLOCK_BUDGET`, matching the host's own
-`budget` code for the 64-block and 2 MiB aggregate-text caps), services
+`budget` code for the 64-block and 2 MiB aggregate-text caps and declared in the
+`ui.mount`/`ui.update` surface error arrays, issue #154), services
 (`E_SERVICE_UNDECLARED`; a missing
 `opts` or `opts.version` fails the accepted required-argument validation with
 `E_SERVICE_VERSION_INVALID`), `E_HANDLER_VIOLATION` for recorded handler
@@ -670,6 +677,7 @@ enforces this agreement and forbids `E_NOT_IMPLEMENTED` expectations on
 | `expect-capture`                      | Assert a captured value (handles, counters)                                                                           |
 | `expect-bitty-env`                    | Assert `bitty.env` presence or absence                                                                                |
 | `advance-time` / `drain-tasks`        | Virtual clock and cooperative task execution                                                                          |
+| `expire-next-ui-call`                 | Mark the next `ui.mount`/`ui.update` as past the bridge deadline (`E_TIMEOUT`) without committing                     |
 | `set-terminal-snapshot`               | Inject host snapshot data                                                                                             |
 | `remove-service`                      | Simulate provider disappearance                                                                                       |
 | `set-workspaces`                      | Inject the Core workspace summary served to `workspace.list`                                                          |

@@ -278,6 +278,25 @@ describe("surface table", () => {
     expect(provide?.errors).toEqual(["E_DEF_INVALID", "E_SERVICE_UNDECLARED"]);
   });
 
+  test("ui.mount and ui.update declare the full UI denial vocabulary", () => {
+    const mount = surface.functions.find((fn) => fn.path === "ui.mount");
+    expect(mount?.errors).toEqual([
+      "E_CAPABILITY_DENIED",
+      "E_UI_CLAIM_REQUIRED",
+      "E_UI_UNAVAILABLE",
+      "E_UI_COMPONENT_INVALID",
+      "E_UI_BLOCK_BUDGET",
+      "E_TIMEOUT",
+    ]);
+    const update = surface.functions.find((fn) => fn.path === "ui.update");
+    expect(update?.errors).toEqual([
+      "E_CAPABILITY_DENIED",
+      "E_UI_COMPONENT_INVALID",
+      "E_UI_BLOCK_BUDGET",
+      "E_TIMEOUT",
+    ]);
+  });
+
   test("records the overlay conditional capability on ui.mount only", () => {
     const mount = surface.functions.find((fn) => fn.path === "ui.mount");
     const update = surface.functions.find((fn) => fn.path === "ui.update");

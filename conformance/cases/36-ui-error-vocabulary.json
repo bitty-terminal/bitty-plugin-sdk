@@ -1,0 +1,795 @@
+{
+  "name": "UI block budget and bridge deadline denials",
+  "description": "ui.update and ui.mount fail closed with E_TIMEOUT (budget) before committing when the bridge deadline has expired, the last good block stays live, and the per-generation 64-block cap reports E_UI_BLOCK_BUDGET (issue #154).",
+  "manifest": "manifests/full.toml",
+  "tags": ["ui", "budget"],
+  "steps": [
+    {
+      "op": "grant",
+      "capability": "ui.rich"
+    },
+    {
+      "op": "begin-activation"
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "one"
+        }
+      },
+      "capture": "block"
+    },
+    {
+      "op": "expire-next-ui-call"
+    },
+    {
+      "op": "call",
+      "surface": "ui.update",
+      "args": {
+        "handle": {
+          "$ref": "block"
+        },
+        "component": {
+          "kind": "Text",
+          "text": "two"
+        }
+      },
+      "expect": {
+        "denial": {
+          "code": "E_TIMEOUT",
+          "class": "budget"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.update",
+      "args": {
+        "handle": {
+          "$ref": "block"
+        },
+        "component": {
+          "kind": "Text",
+          "text": "three"
+        }
+      },
+      "expect": {
+        "result": true
+      }
+    },
+    {
+      "op": "expire-next-ui-call"
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      },
+      "expect": {
+        "denial": {
+          "code": "E_TIMEOUT",
+          "class": "budget"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      }
+    },
+    {
+      "op": "call",
+      "surface": "ui.mount",
+      "args": {
+        "slot": "top",
+        "component": {
+          "kind": "Text",
+          "text": "x"
+        }
+      },
+      "expect": {
+        "denial": {
+          "code": "E_UI_BLOCK_BUDGET",
+          "class": "budget"
+        }
+      }
+    }
+  ]
+}
