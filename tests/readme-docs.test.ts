@@ -247,6 +247,19 @@ describe("renderSettingsTable", () => {
     );
   });
 
+  test("escapes pipes and backslashes in table cells", () => {
+    const manifest = MANIFEST.replace(
+      'greeting = { type = "string", default = "Hello" }',
+      'greeting = { type = "string", default = "a|b\\\\c" }',
+    );
+    const table = renderSettingsTable(loadManifestModel(manifest), {
+      greeting: "left | right",
+    });
+    expect(table).toContain(
+      '| `greeting` | string | "a\\|b\\\\c" | left \\| right |',
+    );
+  });
+
   test("renders the no-settings sentence for an empty declaration set", () => {
     const model = loadManifestModel(
       MANIFEST.replace(/\n\[settings\][\s\S]*$/, "\n"),

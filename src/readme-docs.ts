@@ -471,22 +471,23 @@ function checkSettingsTable(
 }
 
 function escapeCell(value: string): string {
-  return value.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+  return value
+    .replace(/\r?\n/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|");
 }
 
 /** Render one setting default as a table cell fragment. */
 function renderDefault(declaration: SettingDeclaration): string {
   const value = declaration.default;
   if (declaration.kind === "string" && typeof value === "string") {
-    return escapeCell(JSON.stringify(value));
+    return escapeCell(`"${value}"`);
   }
   if (declaration.kind === "string-array" && Array.isArray(value)) {
     const items = value.filter(
       (entry): entry is string => typeof entry === "string",
     );
-    return escapeCell(
-      `[${items.map((entry) => JSON.stringify(entry)).join(", ")}]`,
-    );
+    return escapeCell(`[${items.map((entry) => `"${entry}"`).join(", ")}]`);
   }
   return escapeCell(String(value));
 }
