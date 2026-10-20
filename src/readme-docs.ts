@@ -87,7 +87,40 @@ interface FenceState {
 }
 
 const ANY_HEADING = /^(#{1,6})\s+(.*)$/;
-const FENCE = /^\s*(`{3,}|~{3,})/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
+
+interface FenceStep {
+  readonly fence: FenceState | undefined;
+  readonly fenced: boolean;
+}
+
+/**
+ * Advance CommonMark fence state for one line. An opener allows at most three
+ * leading spaces; a closer uses the same marker character, is at least as long
+ * as the opener, and carries only spaces or tabs after the marker.
+ */
+function stepFence(line: string, fence: FenceState | undefined): FenceStep {
+  if (fence !== undefined) {
+    const close = FENCE_CLOSE.exec(line);
+    if (
+      close !== null &&
+      close[1]![0] === fence.marker &&
+      close[1]!.length >= fence.length
+    ) {
+      return { fence: undefined, fenced: true };
+    }
+    return { fence, fenced: true };
+  }
+  const open = FENCE.exec(line);
+  if (open !== null) {
+    return {
+      fence: { marker: open[1]![0]!, length: open[1]!.length },
+      fenced: true,
+    };
+  }
+  return { fence: undefined, fenced: false };
+}
 
 function stripClosingHashes(text: string): string {
   return text.replace(/\s+#+\s*$/, "").trim();
@@ -102,21 +135,9 @@ function scanHeadings(source: string): Heading[] {
   const headings: Heading[] = [];
   let fence: FenceState | undefined;
   for (const [index, line] of source.split(/\r?\n/).entries()) {
-    const fenceMatch = FENCE.exec(line);
-    if (fence !== undefined) {
-      if (
-        fenceMatch !== null &&
-        fenceMatch[1]?.startsWith(fence.marker) === true &&
-        fenceMatch[1].length >= fence.length
-      ) {
-        fence = undefined;
-      }
-      continue;
-    }
-    if (fenceMatch !== null) {
-      fence = { marker: fenceMatch[1]![0]!, length: fenceMatch[1]!.length };
-      continue;
-    }
+    const step = stepFence(line, fence);
+    fence = step.fence;
+    if (step.fenced) continue;
     const match = ANY_HEADING.exec(line);
     if (match === null) continue;
     headings.push({
@@ -200,21 +221,9 @@ function findSettingsTable(
   let fence: FenceState | undefined;
   let headerLine = -1;
   for (const [index, line] of lines.entries()) {
-    const fenceMatch = FENCE.exec(line);
-    if (fence !== undefined) {
-      if (
-        fenceMatch !== null &&
-        fenceMatch[1]?.startsWith(fence.marker) === true &&
-        fenceMatch[1].length >= fence.length
-      ) {
-        fence = undefined;
-      }
-      continue;
-    }
-    if (fenceMatch !== null) {
-      fence = { marker: fenceMatch[1]![0]!, length: fenceMatch[1]!.length };
-      continue;
-    }
+    const step = stepFence(line, fence);
+    fence = step.fence;
+    if (step.fenced) continue;
     const cells = splitTableRow(line);
     if (cells === undefined) continue;
     const header = cells.map(plainCell);
@@ -236,24 +245,13 @@ function findSettingsTable(
   }
 
   const rows: TableRow[] = [];
-  let bodyFence: FenceState | undefined;
   for (let index = headerLine + 2; index < lines.length; index += 1) {
     const line = lines[index]!;
-    const fenceMatch = FENCE.exec(line);
-    if (bodyFence !== undefined) {
-      if (
-        fenceMatch !== null &&
-        fenceMatch[1]?.startsWith(bodyFence.marker) === true &&
-        fenceMatch[1].length >= bodyFence.length
-      ) {
-        bodyFence = undefined;
-      }
-      continue;
-    }
-    if (fenceMatch !== null) break;
+    const step = stepFence(line, undefined);
+    if (step.fenced) break;
     const cells = splitTableRow(line);
     if (cells === undefined) break;
-    rows.push({ cells, line: headerLine + 2 + rows.length });
+    rows.push({ cells, line: index });
   }
   return { headerLine, rows };
 }
@@ -268,10 +266,9 @@ function checkHeadings(
   diagnostics: ReadmeDiagnostic[],
 ): void {
   const h2 = headings.filter((heading) => heading.level === 2);
-  const firstSix = h2.slice(0, REQUIRED_README_SECTIONS.length);
+  const present = new Set(h2.map((heading) => heading.text));
   for (const [index, required] of REQUIRED_README_SECTIONS.entries()) {
-    const actual = firstSix[index];
-    if (actual === undefined) {
+    if (!present.has(required)) {
       diagnostics.push({
         ...error(
           "readme.section.missing",
@@ -280,8 +277,14 @@ function checkHeadings(
         ),
         file: readmePath,
       });
-      continue;
     }
+  }
+
+  const expected = REQUIRED_README_SECTIONS.filter((name) => present.has(name));
+  const leading = h2.slice(0, expected.length);
+  for (const [index, required] of expected.entries()) {
+    const actual = leading[index];
+    if (actual === undefined) continue;
     if (actual.text !== required) {
       diagnostics.push({
         ...error(
@@ -313,7 +316,9 @@ function checkHeadings(
 
 function checkSettingsTable(
   model: ManifestModel,
-  configuration: { readonly lines: readonly string[] } | undefined,
+  configuration:
+    | { readonly heading: Heading; readonly lines: readonly string[] }
+    | undefined,
   readmePath: string,
   diagnostics: ReadmeDiagnostic[],
 ): void {
@@ -325,6 +330,8 @@ function checkSettingsTable(
   const report = (diagnostic: Diagnostic): void => {
     diagnostics.push({ ...diagnostic, file: readmePath });
   };
+  const lineOf = (row: TableRow): number =>
+    configuration.heading.line + row.line + 2;
 
   const table = findSettingsTable(configuration.lines);
   if (declared.length === 0) {
@@ -370,7 +377,7 @@ function checkSettingsTable(
         error(
           "readme.settings.columns",
           "Configuration",
-          `table row ${row.line + 1} has ${row.cells.length} column(s); expected ${SETTINGS_TABLE_COLUMNS.length}`,
+          `settings table line ${lineOf(row)} has ${row.cells.length} column(s); expected ${SETTINGS_TABLE_COLUMNS.length}`,
         ),
       );
       continue;
@@ -384,7 +391,7 @@ function checkSettingsTable(
         error(
           "readme.settings.key",
           "Configuration",
-          `table row ${row.line + 1} has an empty Setting cell`,
+          `settings table line ${lineOf(row)} has an empty Setting cell`,
         ),
       );
       continue;
@@ -395,12 +402,12 @@ function checkSettingsTable(
         error(
           "readme.settings.duplicate",
           key,
-          `setting ${describeKey(key)} appears in rows ${previous + 1} and ${row.line + 1}`,
+          `setting ${describeKey(key)} appears at lines ${previous} and ${lineOf(row)}`,
         ),
       );
       continue;
     }
-    seen.set(key, row.line);
+    seen.set(key, lineOf(row));
     rowKeys.push(key);
     const declaration = model.settings.get(key);
     if (declaration === undefined) {

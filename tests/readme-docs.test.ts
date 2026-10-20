@@ -195,7 +195,25 @@ describe("checkPluginReadme", () => {
       readmeSource: source,
     });
     expect(result.valid).toBe(false);
-    expect(codes(result)).toContain("readme.section.order");
+    expect(codes(result)).toContain("readme.section.missing");
+    expect(codes(result)).not.toContain("readme.section.order");
+    expect(
+      result.diagnostics.some(
+        (diagnostic) => diagnostic.path === "Keybindings",
+      ),
+    ).toBe(true);
+  });
+
+  test("does not close a four-backtick fence on a nested three-backtick line", () => {
+    const source = readme().replace(
+      "What the plugin does.",
+      "````markdown\n```lua\nprint('x')\n```\n````",
+    );
+    const result = checkPluginReadme({
+      manifestSource: MANIFEST,
+      readmeSource: source,
+    });
+    expect(result.diagnostics).toEqual([]);
   });
 
   test("accepts the no-settings sentence when [settings] is absent", () => {
