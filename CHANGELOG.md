@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Add the plugin README user-documentation contract and the
+  `bitty-plugin-docs-check` CLI. Each plugin repository's root `README.md` is
+  the single canonical user document; six H2 sections lead it in fixed order
+  (`Overview`, `Install`, `Commands`, `Configuration`, `Keybindings`,
+  `Troubleshooting`), and the `Configuration` table must match the manifest
+  `[settings]` key set, types, and declaration order. The check fails on a
+  missing or extra key. `renderSettingsTable` and
+  `--print-settings-table` generate the checked columns. Documented in
+  `docs/user-documentation.md`.
+
 - Declare `E_UI_BLOCK_BUDGET` and `E_TIMEOUT` in the `ui.mount` and
   `ui.update` surface error arrays (issue #154). Both arrive in Lua as
   catchable `class`/`code`/`message` error tables; the per-generation

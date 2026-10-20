@@ -97,6 +97,32 @@ Bun/TypeScript consumers, not Node.js or registry publication. See
 [`docs/mock-host.md`](docs/mock-host.md#usage) for construction and lifecycle
 usage.
 
+## Plugin README user documentation
+
+Every plugin repository's root `README.md` is its single canonical user
+document: there is no `docs/` tree for user content. Six H2 sections lead the
+file in fixed order — `Overview`, `Install`, `Commands`, `Configuration`,
+`Keybindings`, `Troubleshooting` — and developer or architecture sections
+follow. The `Configuration` section carries one table row per declared
+`bitty-plugin.toml` `[settings]` key.
+
+`bitty-plugin-docs-check` validates that contract, including the settings table
+key set, types, and declaration order:
+
+```sh
+bun src/docs-cli.ts path/to/plugin
+bunx --bun --package github:bitty-terminal/bitty-plugin-sdk#<commit-sha> \
+  bitty-plugin-docs-check .
+bunx --bun --package github:bitty-terminal/bitty-plugin-sdk#<commit-sha> \
+  bitty-plugin-docs-check --print-settings-table path/to/plugin
+```
+
+The checker exits non-zero on a missing or extra settings key, a wrong type or
+row order, or a missing/misordered required section. The full convention, the
+diagnostic codes, and a copyable template live in
+[`docs/user-documentation.md`](docs/user-documentation.md). Generated plugin
+repositories wire it into `just check` as the `docs` recipe.
+
 ## Plugin API v1 LuaLS definitions
 
 `lua/bitty.d.lua` is generated from the accepted Plugin API v1 surface in

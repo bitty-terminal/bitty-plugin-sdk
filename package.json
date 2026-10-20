@@ -13,7 +13,8 @@
     }
   },
   "bin": {
-    "bitty-plugin-lint": "./src/cli.ts"
+    "bitty-plugin-lint": "./src/cli.ts",
+    "bitty-plugin-docs-check": "./src/docs-cli.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.3",
