@@ -210,6 +210,10 @@ Reading an undeclared key fails closed on the host
 (see [`docs/mock-host.md`](mock-host.md)). The manifest model exposes
 declarations as `ManifestModel.settings` (`key` to `{ kind, default }`).
 
+Every declared key also appears in the plugin README's `Configuration` table,
+and `bitty-plugin-docs-check` fails when a key is missing or extra. See
+[Plugin README user documentation](user-documentation.md).
+
 ### `[capabilities]` (optional)
 
 Requested authorities; absent means none. Every key is a closed-set capability

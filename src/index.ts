@@ -109,6 +109,20 @@ export {
 } from "./manifest.js";
 export type { LintResult } from "./manifest.js";
 export { loadManifestModel, ManifestModelError } from "./manifest-model.js";
+export {
+  NO_SETTINGS_SENTENCE,
+  README_FILE_NAME,
+  README_MAX_BYTES,
+  REQUIRED_README_SECTIONS,
+  SETTINGS_TABLE_COLUMNS,
+  checkPluginReadme,
+  renderSettingsTable,
+} from "./readme-docs.js";
+export type {
+  ReadmeDiagnostic,
+  ReadmeDocsOptions,
+  ReadmeDocsResult,
+} from "./readme-docs.js";
 export type {
   LazyCommandSchema,
   ManifestModel,
