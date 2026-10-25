@@ -784,14 +784,14 @@ explicitly.
   revoked). Queued
   workspace requests are recorded for `drainWorkspaceRequests()` and never
   applied, matching the bridge, which only enqueues.
-- **Overlay and targeting candidates (pending per W-120).** The W-28
+- **Overlay and targeting candidates (historical).** The W-28
   `bitty.ui.overlay.acquire`/`release`/`poll` mechanism (bitty #1633) and the
   W-29 `bitty.ui.targets.*` and `bitty.ui.labels.*` bindings (bitty #1641)
-  are provisional host candidates with no new capability identifier and no
-  Event-Bus exposure. They stay deferred and not wired into v1, recorded as
-  explicit surface exclusions with no mock method; the mock `ui.mount`
-  behavior for the overlay slot is unchanged (granted overlay still fails
-  `E_UI_UNAVAILABLE` until the W-28 application wiring lands).
+  began as provisional host candidates with no new capability identifier and
+  no Event-Bus exposure. W-28 is now the accepted W-01 overlay surface
+  (CTX-0065: `ui.overlay.focus`, `bitty.ui.overlay.*`, `overlay.released`), so
+  the mock implements it. The W-29 targeting bindings remain deferred and not
+  wired into v1, recorded as explicit surface exclusions with no mock method.
 - **High-risk capabilities.** The lint-side escalation set is documented in
   [`docs/manifest.md`](manifest.md); the mock does not re-derive it.
 - **Version-range structural grammar.** The mock and the linter share one
