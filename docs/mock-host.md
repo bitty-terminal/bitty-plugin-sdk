@@ -201,7 +201,7 @@ in `tests/mock-host.test.ts`.
 | `store`          | Key grammar, bounded JSON values, 256 KiB quota, delete via `nil`, persistence across generations                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `notify`         | `platform.notify` gate; bounded payload; captured host-side for assertions                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `env`            | DEFERRED (bitty #1303): present when declared, absent otherwise; every call fails `E_NOT_IMPLEMENTED`; the allowlist returns when the namespace wires                                                                                                                                                                                                                                                                                                                                                                                      |
-| `ui`             | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; unhosted `tabline`/`overlay`/`terminal` then fail `E_UI_UNAVAILABLE`; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                                                                                                                                                                             |
+| `ui`             | `ui.rich` gate; `ui.overlay` for the overlay slot; exclusive `tabline` needs a `[lazy].claims` entry; unhosted `tabline`/`terminal` then fail `E_UI_UNAVAILABLE`; the retired `statusline` name fails `E_UI_COMPONENT_INVALID`; v1 node kinds only; 2048 nodes / 256 KiB per component; 64 blocks / 2 MiB aggregate per generation; generation-owned block handles                                                                                                                                                                         |
 | `ui.overlay`     | W-01 (CTX-0065): `ui.overlay.focus` coupled grant for `acquire`/`update`/`poll`/`release`; single global owner (`E_UI_ALREADY_CAPTURED`); 256-event queue with drop-oldest plus sticky `overflowed`; 4096-byte per-event and per-call ceilings plus v1 scene budgets; 30s idle timeout on the virtual clock; idempotent release (`submitted`/`cancelled`, defaults to `released`); non-owners and stale handles fail `E_UI_NOT_OWNER`; safe mode fails `E_UI_UNAVAILABLE` with no bus event; `overlay.released` observation-only bus event |
 | `terminal`       | `terminal.semantic-read` gate for `snapshot` (`scope` defaults to `"semantic"`; 256 KiB bound; read-only copy); `terminal.input.submit` gate for `submit` (W-82, CTX-0068): one byte-exact bracketed-paste frame per call, per-plugin byte window charged only on live delivery, too-large/lease/budget denials emit nothing, buffered-only/no-view report unavailable uncharged                                                                                                                                                           |
 | `services`       | WIRED (bitty #1391): `provide` registers manifest-declared implementations during activation; `get` resolves pinned providers (`E_SERVICE_RESOLUTION`/`E_SERVICE_VERSION_INVALID` fail closed, `optional:true` yields nil); calls validate schemas and fail `E_SERVICE_GONE` when the provider disappears                                                                                                                                                                                                                                  |
@@ -407,20 +407,24 @@ freeze is never silent and never more permissive than the host.
   capability and component validation. During activation, mounts still require
   declared and granted `ui.rich`, plus `ui.overlay` for the overlay slot, and
   an exclusive slot claim where applicable.
-- `ui.mount` presents only the slots the bitty band host renders (bitty #1609,
-  CTX-0923): `top`, `bottom`, `left`, `right`, and `statusline`. The accepted
-  `tabline` (reserved for PW-10 panel tabs), `overlay` (no plugin overlay
-  host), and `terminal` (no terminal-attached block host) slots fail closed
-  with the accepted v1 code `E_UI_UNAVAILABLE` (`runtime`, path `slot`), and
-  the message names the slot and reason
-  (`UI_UNAVAILABLE_SLOT_REASONS`). The check runs after the capability and
-  claim gates, so a missing `ui.overlay` grant still yields
-  `E_CAPABILITY_DENIED` and an unclaimed `tabline` still yields
-  `E_UI_CLAIM_REQUIRED`, while a granted `overlay` or claimed `tabline` gets
-  `E_UI_UNAVAILABLE` instead of a block. It runs before component validation
-  and budgets, and a rejected mount admits no block. `UI_HOSTED_SLOTS` and
+- `ui.mount` presents only the slots the bitty band and overlay hosts render
+  (bitty #1609, CTX-0923; bitty #1633, CTX-0941): `top`, `bottom`, `left`,
+  `right`, and `overlay`. An overlay block is retained by the Core focusable
+  overlay surface; transient input capture is a separate `ui.overlay.focus`
+  session. The accepted `tabline` (reserved for PW-10 panel tabs) and
+  `terminal` (no terminal-attached block host) slots fail closed with the
+  accepted v1 code `E_UI_UNAVAILABLE` (`runtime`, path `slot`), and the message
+  names the slot and reason (`UI_UNAVAILABLE_SLOT_REASONS`). The check runs
+  after the capability and claim gates, so a missing `ui.overlay` grant still
+  yields `E_CAPABILITY_DENIED` and an unclaimed `tabline` still yields
+  `E_UI_CLAIM_REQUIRED`, while a claimed `tabline` gets `E_UI_UNAVAILABLE`
+  instead of a block. It runs before component validation and budgets, and a
+  rejected mount admits no block. `UI_HOSTED_SLOTS` and
   `UI_UNAVAILABLE_SLOTS` partition `UI_SLOTS`; conformance case
-  `10-ui-terminal.json` covers all three unhosted slots.
+  `10-ui-terminal.json` covers both unhosted slots and a granted overlay mount.
+  The retired `statusline` slot is no longer in the closed set: `ui.mount`
+  rejects the name with `E_UI_COMPONENT_INVALID` (`validation`, path `slot`),
+  matching Core, and status-style presentation composes on `bottom`.
 - `ui.update` is not a new registration: a live block mounted during activation
   can still be updated after `endActivation()`. Its existing capability,
   component-validation, and generation checks remain independent; revoking
@@ -730,13 +734,14 @@ explicitly.
   other explicit value still fail with `E_SNAPSHOT_SCOPE_UNSUPPORTED`. The
   R-SDK-1 surface table marks `scope` optional and `lua/bitty.d.lua` renders
   `---@field scope? "semantic"`, matching this default.
-- **UI exclusivity claims.** The surface table says `tabline` is an exclusive
-  claim while status components compose. The mock therefore requires a
+- **UI exclusivity claims.** The surface table says `tabline` is the only
+  exclusive claim while status-style presentation composes on `bottom` and
+  overlay is hosted presentation content. The mock therefore requires a
   `lazy.claims` entry named exactly `tabline` before mounting to `tabline`
-  (`E_UI_CLAIM_REQUIRED`); other slots, including `statusline` and `overlay`,
-  need no claim. A satisfied claim does not make `tabline` mountable: the slot
-  is unhosted and then fails with `E_UI_UNAVAILABLE`. The accepted corpus does not yet define a claim grammar beyond
-  the slot name.
+  (`E_UI_CLAIM_REQUIRED`); every other accepted slot needs no claim. A
+  satisfied claim does not make `tabline` mountable: the slot is unhosted and
+  then fails with `E_UI_UNAVAILABLE`. The accepted corpus does not yet define
+  a claim grammar beyond the slot name.
 - **Cross-generation grants (deliberate harness simplification; diverges from
   the accepted persistent grant record).** The accepted grant lifecycle
   (`bitty-plugins-docs`
@@ -779,14 +784,14 @@ explicitly.
   revoked). Queued
   workspace requests are recorded for `drainWorkspaceRequests()` and never
   applied, matching the bridge, which only enqueues.
-- **Overlay and targeting candidates (pending per W-120).** The W-28
+- **Overlay and targeting candidates (historical).** The W-28
   `bitty.ui.overlay.acquire`/`release`/`poll` mechanism (bitty #1633) and the
   W-29 `bitty.ui.targets.*` and `bitty.ui.labels.*` bindings (bitty #1641)
-  are provisional host candidates with no new capability identifier and no
-  Event-Bus exposure. They stay deferred and not wired into v1, recorded as
-  explicit surface exclusions with no mock method; the mock `ui.mount`
-  behavior for the overlay slot is unchanged (granted overlay still fails
-  `E_UI_UNAVAILABLE` until the W-28 application wiring lands).
+  began as provisional host candidates with no new capability identifier and
+  no Event-Bus exposure. W-28 is now the accepted W-01 overlay surface
+  (CTX-0065: `ui.overlay.focus`, `bitty.ui.overlay.*`, `overlay.released`), so
+  the mock implements it. The W-29 targeting bindings remain deferred and not
+  wired into v1, recorded as explicit surface exclusions with no mock method.
 - **High-risk capabilities.** The lint-side escalation set is documented in
   [`docs/manifest.md`](manifest.md); the mock does not re-derive it.
 - **Version-range structural grammar.** The mock and the linter share one

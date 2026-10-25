@@ -1,6 +1,6 @@
 {
   "name": "UI slot/node gate and semantic terminal snapshot",
-  "description": "UI mount/update require ui.rich, the overlay slot additionally requires ui.overlay, the unhosted tabline (claimed), overlay (granted), and terminal slots fail closed with E_UI_UNAVAILABLE, excluded node kinds and unknown slots are validation failures, ui.update returns false for stale handles, and terminal snapshots require terminal.semantic-read and reject the raw scope.",
+  "description": "UI mount/update require ui.rich, the overlay slot additionally requires ui.overlay and mounts once granted, the unhosted tabline (claimed) and terminal slots fail closed with E_UI_UNAVAILABLE, the retired statusline slot and unknown slots are E_UI_COMPONENT_INVALID validation failures, excluded node kinds are validation failures, ui.update returns false for stale handles, and terminal snapshots require terminal.semantic-read and reject the raw scope.",
   "manifest": "manifests/full.toml",
   "tags": ["ui", "terminal", "capability"],
   "steps": [
@@ -32,7 +32,7 @@
       "surface": "ui.mount",
       "args": {
         "slot": "statusline",
-        "component": { "kind": "Image", "src": "x" }
+        "component": { "kind": "Text", "text": "retired" }
       },
       "expect": {
         "denial": { "code": "E_UI_COMPONENT_INVALID", "class": "validation" }
@@ -68,9 +68,16 @@
         "slot": "overlay",
         "component": { "kind": "Text", "text": "x" }
       },
-      "expect": {
-        "denial": { "code": "E_UI_UNAVAILABLE", "class": "runtime" }
-      }
+      "capture": "overlay-block"
+    },
+    {
+      "op": "call",
+      "surface": "ui.update",
+      "args": {
+        "handle": { "$ref": "overlay-block" },
+        "component": { "kind": "Text", "text": "y" }
+      },
+      "expect": { "result": true }
     },
     {
       "op": "call",
