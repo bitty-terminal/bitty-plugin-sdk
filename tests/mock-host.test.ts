@@ -454,7 +454,7 @@ describe("registration window and lifecycle", () => {
   );
 
   test("hosted and unavailable slots partition the accepted slot set", () => {
-    expect(UI_UNAVAILABLE_SLOTS).toEqual(["tabline", "overlay", "terminal"]);
+    expect(UI_UNAVAILABLE_SLOTS).toEqual(["tabline", "terminal"]);
     expect([...UI_HOSTED_SLOTS, ...UI_UNAVAILABLE_SLOTS].sort()).toEqual(
       [...UI_SLOTS].sort(),
     );
@@ -463,8 +463,8 @@ describe("registration window and lifecycle", () => {
   test.each([...UI_UNAVAILABLE_SLOTS])(
     "ui.mount on unhosted slot %s fails closed with E_UI_UNAVAILABLE",
     (slot) => {
-      // Every gate before placement is satisfied: ui.rich and ui.overlay are
-      // granted and tabline is claimed, so only the unhosted slot remains.
+      // Every gate before placement is satisfied: ui.rich is granted and
+      // tabline is claimed, so only the unhosted slot remains.
       const host = makeHost(
         MANIFEST.replace("[lazy]", '[lazy]\nclaims = ["tabline"]'),
       );
@@ -1933,7 +1933,7 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     );
   });
 
-  test("ui accepts v1 nodes and rejects excluded node kinds and slots", () => {
+  test("ui accepts v1 nodes and rejects excluded node kinds and retired or unknown slots", () => {
     const host = makeHost();
     host.grant("ui.rich");
     activate(host);
@@ -1945,10 +1945,17 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     expect(UI_V1_NODE_KINDS).toContain("List");
     expect(UI_V1_EXCLUDED_NODE_KINDS).toContain("Image");
     expect(UI_SLOTS).toContain("overlay");
+    // Core retired the `statusline` slot (it now rejects the name), so the SDK
+    // closed set must not list it and the mock must reject it as unknown.
+    expect(UI_SLOTS).not.toContain("statusline");
     expect(
       denial(() =>
-        host.bitty.ui.mount("statusline", { kind: "Image", src: "x" }),
+        host.bitty.ui.mount("statusline", { kind: "Text", text: "x" }),
       ).code,
+    ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
+    expect(
+      denial(() => host.bitty.ui.mount("top", { kind: "Image", src: "x" }))
+        .code,
     ).toBe(HOST_CODES.UI_COMPONENT_INVALID);
     expect(
       denial(() =>
@@ -1985,14 +1992,17 @@ describe("store, ui, terminal, services, tasks, and timers", () => {
     ).toBeGreaterThan(0);
   });
 
-  test("overlay stays unavailable even with ui.overlay granted", () => {
+  test("overlay mounts when ui.overlay is granted", () => {
     const host = makeHost();
     host.grant("ui.rich");
     host.grant("ui.overlay");
     activate(host);
-    expect(
-      denial(() => host.bitty.ui.mount("overlay", { kind: "Text", text: "x" })),
-    ).toMatchObject({ code: HOST_CODES.UI_UNAVAILABLE, class: "runtime" });
+    const block = host.bitty.ui.mount("overlay", {
+      kind: "Text",
+      text: "x",
+    });
+    expect(block).toBeGreaterThan(0);
+    expect(host.bitty.ui.update(block, { kind: "Text", text: "y" })).toBe(true);
   });
 
   test("terminal snapshot rejects raw scope and oversized snapshots", () => {
@@ -2399,9 +2409,9 @@ describe("contract alignment", () => {
       denial(() => host.bitty.ui.mount("tabline", { kind: "Text", text: "x" }))
         .code,
     ).toBe(HOST_CODES.UI_CLAIM_REQUIRED);
-    // statusline composes and needs no exclusive claim
+    // bottom composes status-style presentation and needs no exclusive claim
     expect(
-      host.bitty.ui.mount("statusline", { kind: "Text", text: "x" }),
+      host.bitty.ui.mount("bottom", { kind: "Text", text: "x" }),
     ).toBeGreaterThan(0);
 
     const withClaim = makeHost(

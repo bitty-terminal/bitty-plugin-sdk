@@ -221,7 +221,6 @@ export const UI_SLOTS: readonly string[] = [
   "left",
   "right",
   "tabline",
-  "statusline",
   "overlay",
 ];
 
@@ -230,10 +229,10 @@ export const UI_SLOTS: readonly string[] = [
  * `[lazy].claims` declaration before mounting.
  *
  * `surface/bitty-plugin-api-v1.json` (`BittyUiSlot`) states that `tabline` is
- * an exclusive claim while status components compose and overlay is
- * non-focusable presentation content. The accepted corpus does not yet name a
- * separate claim grammar, so a claim is matched to its slot by the identical
- * accepted slot name.
+ * the only exclusive claim while status-style presentation composes on
+ * `bottom` and `overlay` is presentation content for the focusable overlay
+ * surface. The accepted corpus does not yet name a separate claim grammar, so
+ * a claim is matched to its slot by the identical accepted slot name.
  */
 export const EXCLUSIVE_CLAIM_SLOTS: readonly string[] = ["tabline"];
 
@@ -244,14 +243,14 @@ export const EXCLUSIVE_CLAIM_SLOTS: readonly string[] = ["tabline"];
  * Mirrors bitty `bitty_runtime::runtime::band_slots::ui_slot_placement`
  * (CTX-0923, bitty #1609): `ui.mount` fails closed on these slots with the
  * existing v1 code `E_UI_UNAVAILABLE` (class `runtime`), after the capability
- * (`ui.rich` / `ui.overlay`) and `tabline` exclusive-claim gates, so a granted
- * `overlay` or a claimed `tabline` still fails. The message is
+ * (`ui.rich` / `ui.overlay`) and `tabline` exclusive-claim gates, so a claimed
+ * `tabline` still fails. `overlay` is hosted by the Core focusable-overlay
+ * surface (CTX-0941, bitty #1633), so it is not listed here. The message is
  * `UI slot '<slot>' <reason>`.
  */
 export const UI_UNAVAILABLE_SLOT_REASONS: Readonly<Record<string, string>> =
   Object.freeze({
     tabline: "is reserved for panel tabs (PW-10) and has no host surface yet",
-    overlay: "has no plugin overlay host in this build yet",
     terminal: "has no terminal-attached block host in this build yet",
   });
 

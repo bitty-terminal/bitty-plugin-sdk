@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- Drop the retired `statusline` slot from the accepted surface and mock host
+  (issue #153). Core removed the slot and rejects the name with
+  `E_UI_COMPONENT_INVALID`, and status-style presentation composes on
+  `bottom`. `UI_SLOTS` carries the Core seven-slot set, the mock rejects
+  `statusline` as an unknown slot, and the shipped Lua example mounts
+  `bottom`. The mock also accepts the `overlay` slot once `ui.overlay` is
+  granted, matching the Core focusable overlay surface (CTX-0941, bitty
+  #1633); `tabline` and `terminal` stay unhosted. No capability identifier
+  changes, and `lua/bitty.d.lua` is regenerated from the surface table.
+
 - Add the plugin README user-documentation contract and the
   `bitty-plugin-docs-check` CLI. Each plugin repository's root `README.md` is
   the single canonical user document; six H2 sections lead it in fixed order

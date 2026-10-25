@@ -282,11 +282,12 @@ function BittyServicesNamespace.get(iface, opts) end
 ---@return BittyServiceHandle
 function BittyServicesNamespace.provide(iface, impl) end
 
---- Accepted closed slot set. tabline is an exclusive claim; status components compose; overlay is
---- non-focusable presentation content. The host presents top, bottom, left, right, and statusline;
---- tabline, overlay, and terminal have no host surface yet and ui.mount rejects them with
+--- Accepted closed slot set. tabline is an exclusive claim; status-style presentation composes on
+--- bottom; overlay is presentation content for the focusable overlay surface, whose transient input
+--- capture is the separate ui.overlay.focus session. The host presents top, bottom, left, right,
+--- and overlay; tabline and terminal have no host surface yet and ui.mount rejects them with
 --- E_UI_UNAVAILABLE.
----@alias BittyUiSlot "terminal"|"top"|"bottom"|"left"|"right"|"tabline"|"statusline"|"overlay"
+---@alias BittyUiSlot "terminal"|"top"|"bottom"|"left"|"right"|"tabline"|"overlay"
 
 --- Bounded declarative component table shaped by the accepted SceneNode contract; v1 accepts Text,
 --- Row, Column, and List subtrees only. Exact table encoding is owned by the accepted Rich
@@ -302,11 +303,12 @@ local BittyUiNamespace = {}
 --- Mounts declarative component content into an accepted semantic slot; rich content requires
 --- ui.rich, the overlay slot additionally requires ui.overlay, and the exclusive tabline slot
 --- requires a matching [lazy].claims entry (E_UI_CLAIM_REQUIRED). After those gates, an accepted
---- slot the host does not present (tabline, overlay, terminal) fails closed with E_UI_UNAVAILABLE
---- (runtime). Exceeding the per-generation block or aggregate-text cap fails with E_UI_BLOCK_BUDGET
---- (budget), and an expired bridge deadline fails closed with E_TIMEOUT (budget) before any block
---- is admitted. Host layout owns placement and decoration, and there are no global coordinates,
---- shaders, pipelines, glyph injection, native windows, or renderer handles.
+--- slot the host does not present (tabline, terminal) fails closed with E_UI_UNAVAILABLE (runtime);
+--- the retired statusline slot is outside the closed set and fails with E_UI_COMPONENT_INVALID
+--- (validation). Exceeding the per-generation block or aggregate-text cap fails with
+--- E_UI_BLOCK_BUDGET (budget), and an expired bridge deadline fails closed with E_TIMEOUT (budget)
+--- before any block is admitted. Host layout owns placement and decoration, and there are no global
+--- coordinates, shaders, pipelines, glyph injection, native windows, or renderer handles.
 --- Capabilities: ui.rich.
 --- Conditional capabilities: ui.overlay (when slot == "overlay").
 --- Errors: E_CAPABILITY_DENIED, E_UI_CLAIM_REQUIRED, E_UI_UNAVAILABLE, E_UI_COMPONENT_INVALID, E_UI_BLOCK_BUDGET, E_TIMEOUT.

@@ -34,7 +34,7 @@ local snapshot = bitty.terminal.snapshot({ scope = "semantic" })
 print(snapshot.terminal_id, snapshot.width, snapshot.height, #snapshot.rows)
 
 -- UI components carry an explicit node kind and updates reuse the mount handle.
-local block = bitty.ui.mount("statusline", { kind = "Text", text = "hello" })
+local block = bitty.ui.mount("bottom", { kind = "Text", text = "hello" })
 bitty.ui.update(block, { kind = "Text", text = "hello again" })
 
 bitty.store.set("seen", { count = 1 })
