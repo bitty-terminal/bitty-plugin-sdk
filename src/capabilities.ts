@@ -75,6 +75,10 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "runtime.inspect",
   "runtime.configure",
   "runtime.plugin-manage",
+  // CTX-1744: the bounded configuration write surface (preview -> digest
+  // -> set) for the first-party configuration dashboard. Host-management
+  // authority: it changes the user layer that every later start reads.
+  "config.manage",
   "debug.inspect",
   "debug.trace",
   "debug.control",
@@ -197,6 +201,7 @@ export const HIGH_RISK_HEADS: ReadonlySet<string> = new Set([
   "network.connect",
   "protocol.register",
   "runtime.plugin-manage",
+  "config.manage",
   "debug.control",
   "browser.embed",
   "agent.context.terminal",
