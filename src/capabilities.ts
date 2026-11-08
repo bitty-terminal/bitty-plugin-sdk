@@ -59,6 +59,10 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   // coupled grant for the focusable overlay plus transient input-capture
   // session. No separate `input.capture` head, no wildcard, no family grant.
   "ui.overlay.focus",
+  // bitty#2849 (CTX-1689): draw a non-focusable presentation surface above
+  // the focused view. Separate from `ui.overlay` (mount) and `ui.overlay.focus`
+  // (input capture), so a manifest cannot gain input authority by asking to draw.
+  "ui.present",
   "ui.protocol-register",
   "clipboard.read",
   "clipboard.write",
@@ -73,6 +77,10 @@ export const CLOSED_CAPABILITY_HEADS: readonly string[] = [
   "process.editor",
   "network.connect",
   "runtime.inspect",
+  // bitty#2405 (CTX-1430): bounded read-only keymap/action registry pages
+  // for presentation plugins (help/which-key). Deny by default, distinct from
+  // `runtime.inspect` and `runtime.configure`.
+  "runtime.keymaps.read",
   "runtime.configure",
   "runtime.plugin-manage",
   // CTX-1744: the bounded configuration write surface (preview -> digest
