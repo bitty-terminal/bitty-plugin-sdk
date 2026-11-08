@@ -50,6 +50,9 @@ export const EVENT_KINDS: readonly EventKindSpec[] = [
   // input is queued to drain. Ungated observation; no input bytes cross the
   // boundary.
   { kind: "overlay.input.available", class: "observation", coalescable: true },
+  // bitty#2406 / bitty#2849 (CTX-1431 / CTX-1689): presentation-overlay
+  // dismissal observation (`escape` or `view-closed`), ungated and non-coalescable.
+  { kind: "overlay.dismissed", class: "observation", coalescable: false },
   {
     kind: "intercept.command-dispatch",
     class: "interception",
@@ -577,6 +580,11 @@ export const EVENT_PAYLOAD_FIELDS: Readonly<
   "overlay.input.available": [
     { name: "owner", type: "string" },
     { name: "queued", type: "integer" },
+  ],
+  "overlay.dismissed": [
+    { name: "owner", type: "string" },
+    { name: "handle", type: "integer" },
+    { name: "reason", type: "string" },
   ],
   "intercept.command-dispatch": [
     { name: "action", type: "string" },

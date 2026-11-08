@@ -58,7 +58,7 @@ function BittyCommandsNamespace.register(def) end
 
 --- Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error,
 --- and declaring any workspace.* name requires a granted workspace.read capability at activation.
----@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"workspace.created"|"workspace.closed"|"workspace.renamed"|"workspace.focused"|"workspace.changed"|"overlay.released"|"overlay.input.available"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
+---@alias BittyEventName "plugin.activated"|"plugin.suspended"|"plugin.disposed"|"handler.violation"|"terminal.opened"|"terminal.closed"|"terminal.title-changed"|"terminal.cwd-changed"|"terminal.bell"|"focus.changed"|"selection.changed"|"process.exited"|"config.reloaded"|"workspace.created"|"workspace.closed"|"workspace.renamed"|"workspace.focused"|"workspace.changed"|"overlay.released"|"overlay.input.available"|"overlay.dismissed"|"intercept.command-dispatch"|"intercept.terminal-spawn"|"intercept.paste"|"intercept.open-url"
 
 --- Event payload with no fields for lifecycle, signal, and coalescable observation events.
 ---@class BittyEmptyPayload
@@ -364,6 +364,13 @@ function BittyUiNamespace.update(handle, component) end
 ---@class BittyInputAvailablePayload
 ---@field owner string Owning plugin id with a live capture session.
 ---@field queued integer Depth of undrained queued input for the owner; a nudge to drain now, not a byte count delivered to the plugin.
+
+--- overlay.dismissed payload; observation when a presentation-only overlay is dismissed by Esc or
+--- view closure (bitty#2406, bitty#2849).
+---@class BittyOverlayDismissedPayload
+---@field owner string Owning plugin id of the dismissed presentation overlay.
+---@field handle integer Opaque generation-owned block handle that was dismissed.
+---@field reason string Dismissal reason: escape or view-closed.
 
 --- Focusable overlay and transient input-capture surface (L2, W-01); the single coupled grant
 --- ui.overlay.focus covers acquire, update, poll, and release.

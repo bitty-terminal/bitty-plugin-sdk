@@ -11,9 +11,24 @@
       "capture": "ev-input"
     },
     {
+      "op": "subscribe",
+      "event": "overlay.dismissed",
+      "capture": "ev-dismissed"
+    },
+    {
       "op": "publish",
       "event": "overlay.input.available",
       "payload": { "owner": "conformance.overlay-input", "queued": 3 },
+      "expect": { "result": { "delivered": 1, "vetoed": false } }
+    },
+    {
+      "op": "publish",
+      "event": "overlay.dismissed",
+      "payload": {
+        "owner": "conformance.overlay-input",
+        "handle": 1,
+        "reason": "escape"
+      },
       "expect": { "result": { "delivered": 1, "vetoed": false } }
     },
     {
@@ -24,6 +39,21 @@
           "kind": "overlay.input.available",
           "sequence": 1,
           "payload": { "owner": "conformance.overlay-input", "queued": 3 }
+        }
+      ]
+    },
+    {
+      "op": "expect-event",
+      "capture": "ev-dismissed",
+      "events": [
+        {
+          "kind": "overlay.dismissed",
+          "sequence": 2,
+          "payload": {
+            "owner": "conformance.overlay-input",
+            "handle": 1,
+            "reason": "escape"
+          }
         }
       ]
     }

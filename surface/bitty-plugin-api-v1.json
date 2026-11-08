@@ -184,7 +184,7 @@
     {
       "name": "BittyEventName",
       "kind": "alias",
-      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"workspace.created\"|\"workspace.closed\"|\"workspace.renamed\"|\"workspace.focused\"|\"workspace.changed\"|\"overlay.released\"|\"overlay.input.available\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
+      "type": "\"plugin.activated\"|\"plugin.suspended\"|\"plugin.disposed\"|\"handler.violation\"|\"terminal.opened\"|\"terminal.closed\"|\"terminal.title-changed\"|\"terminal.cwd-changed\"|\"terminal.bell\"|\"focus.changed\"|\"selection.changed\"|\"process.exited\"|\"config.reloaded\"|\"workspace.created\"|\"workspace.closed\"|\"workspace.renamed\"|\"workspace.focused\"|\"workspace.changed\"|\"overlay.released\"|\"overlay.input.available\"|\"overlay.dismissed\"|\"intercept.command-dispatch\"|\"intercept.terminal-spawn\"|\"intercept.paste\"|\"intercept.open-url\"",
       "doc": "Closed v1 event-name set; subscribing to an undeclared or unknown name is a registration error, and declaring any workspace.* name requires a granted workspace.read capability at activation."
     },
     {
@@ -678,6 +678,28 @@
           "name": "queued",
           "type": "integer",
           "doc": "Depth of undrained queued input for the owner; a nudge to drain now, not a byte count delivered to the plugin."
+        }
+      ]
+    },
+    {
+      "name": "BittyOverlayDismissedPayload",
+      "kind": "class",
+      "doc": "overlay.dismissed payload; observation when a presentation-only overlay is dismissed by Esc or view closure (bitty#2406, bitty#2849).",
+      "fields": [
+        {
+          "name": "owner",
+          "type": "string",
+          "doc": "Owning plugin id of the dismissed presentation overlay."
+        },
+        {
+          "name": "handle",
+          "type": "integer",
+          "doc": "Opaque generation-owned block handle that was dismissed."
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "doc": "Dismissal reason: escape or view-closed."
         }
       ]
     },
@@ -2592,6 +2614,11 @@
       "name": "overlay.input.available",
       "class": "Observation",
       "payload": "BittyInputAvailablePayload"
+    },
+    {
+      "name": "overlay.dismissed",
+      "class": "Observation",
+      "payload": "BittyOverlayDismissedPayload"
     },
     {
       "name": "intercept.command-dispatch",

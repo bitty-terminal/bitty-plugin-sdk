@@ -82,6 +82,7 @@ const EXPECTED_EVENTS: ReadonlyArray<readonly [string, string, string]> = [
   ["workspace.changed", "Observation", "BittyWorkspaceEventPayload"],
   ["overlay.released", "Observation", "BittyOverlayReleasedPayload"],
   ["overlay.input.available", "Observation", "BittyInputAvailablePayload"],
+  ["overlay.dismissed", "Observation", "BittyOverlayDismissedPayload"],
   ["intercept.command-dispatch", "Interception", "BittyInterceptPayload"],
   ["intercept.terminal-spawn", "Interception", "BittyInterceptPayload"],
   ["intercept.paste", "Interception", "BittyInterceptPayload"],

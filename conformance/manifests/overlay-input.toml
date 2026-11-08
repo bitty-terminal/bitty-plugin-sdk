@@ -15,4 +15,5 @@ ui.overlay.focus = true
 [lazy]
 events = [
   "overlay.input.available",
+  "overlay.dismissed",
 ]

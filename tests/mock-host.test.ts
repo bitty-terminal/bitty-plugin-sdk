@@ -74,6 +74,7 @@ events = [
   "process.exited",
   "config.reloaded",
   "overlay.input.available",
+  "overlay.dismissed",
   "intercept.command-dispatch",
   "intercept.terminal-spawn",
   "intercept.paste",
@@ -128,10 +129,10 @@ describe("surface", () => {
   });
 
   test("closed v1 event set matches the accepted classes", () => {
-    expect(EVENT_KINDS).toHaveLength(24);
+    expect(EVENT_KINDS).toHaveLength(25);
     const byClass = { lifecycle: 0, observation: 0, interception: 0 };
     for (const spec of EVENT_KINDS) byClass[spec.class] += 1;
-    expect(byClass).toEqual({ lifecycle: 4, observation: 16, interception: 4 });
+    expect(byClass).toEqual({ lifecycle: 4, observation: 17, interception: 4 });
     expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
       "plugin.activated",
     );
@@ -140,6 +141,9 @@ describe("surface", () => {
     );
     expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
       "overlay.released",
+    );
+    expect(EVENT_KINDS.map((entry) => entry.kind)).toContain(
+      "overlay.dismissed",
     );
     const inputAvailable = EVENT_KINDS.find(
       (entry) => entry.kind === "overlay.input.available",
@@ -736,7 +740,9 @@ describe("suspended dispatch", () => {
                     ? { terminal_id: 1, runtime_id: 1, exit_code: 0 }
                     : spec.kind === "overlay.input.available"
                       ? { owner: "fixture", queued: 1 }
-                      : {};
+                      : spec.kind === "overlay.dismissed"
+                        ? { owner: "fixture", handle: 1, reason: "escape" }
+                        : {};
     expect(host.publish(spec.kind, payload)).toEqual({
       delivered: 0,
       vetoed: false,
