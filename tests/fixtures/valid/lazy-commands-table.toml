@@ -11,7 +11,5 @@ description = "Example plugin with table-form lazy commands."
 [lazy]
 commands = [
   "xuepoo.example:ping",
-  { id = "xuepoo.example:toggle", args_schema = { type = "object", properties = { value = { type = "string" } }, required = [
-    "value",
-  ], additionalProperties = false }, result_schema = { type = "boolean" } },
+  { id = "xuepoo.example:toggle", args_schema = { type = "object", properties = { value = { type = "string" } }, required = ["value"], additionalProperties = false }, result_schema = { type = "boolean" } },
 ]

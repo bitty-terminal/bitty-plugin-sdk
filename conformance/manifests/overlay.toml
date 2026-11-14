@@ -13,6 +13,4 @@ plugin-api = "^1.0"
 ui.overlay.focus = true
 
 [lazy]
-events = [
-  "overlay.released",
-]
+events = ["overlay.released"]
