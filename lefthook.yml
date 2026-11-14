@@ -1,13 +1,5 @@
-commit-msg:
-  commands:
-    commitlint:
-      run: just commit-check "{1}"
-
+# Lefthook owns pre-commit; CarryCtx owns prepare-commit-msg and post-commit.
 pre-commit:
   commands:
-    markdownlint:
-      glob: "*.md"
-      run: just lint-files {staged_files}
-    prettier:
-      glob: "*.md"
+    format-check:
       run: just fmt-check-files {staged_files}

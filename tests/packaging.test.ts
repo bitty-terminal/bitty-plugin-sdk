@@ -20,9 +20,6 @@ const packageJson = JSON.parse(readFileSync(PACKAGE_JSON_URL, "utf8")) as {
 const BIN_NAME = "bitty-plugin-lint";
 const CONSUMER_TIMEOUT_MS = 30_000;
 const PACKAGE_ROOT = fileURLToPath(new URL("../", import.meta.url));
-const TSC_ENTRY = fileURLToPath(
-  new URL("./bin/tsc", import.meta.resolve("typescript/package.json")),
-);
 const MANIFEST_SOURCE = readFileSync(
   new URL("../docs/examples/minimal-bitty-plugin.toml", import.meta.url),
   "utf8",
@@ -98,14 +95,20 @@ describe("packaging for dependency consumers", () => {
     const dir = consumerDir();
     const check = () =>
       Bun.spawnSync(
-        [process.execPath, TSC_ENTRY, "--project", "tsconfig.json"],
+        [
+          process.execPath,
+          "check",
+          "--no-script",
+          "--no-pretty",
+          "-p",
+          "tsconfig.json",
+        ],
         {
           cwd: dir,
           timeout: CONSUMER_TIMEOUT_MS,
         },
       );
     const valid = check();
-    expect(valid.stdout.toString() + valid.stderr.toString()).toBe("");
     expect(valid.exitCode).toBe(0);
 
     writeFileSync(
@@ -114,7 +117,9 @@ describe("packaging for dependency consumers", () => {
     );
     const invalid = check();
     expect(invalid.exitCode).not.toBe(0);
-    expect(invalid.stdout.toString()).toContain("TS2322");
+    expect(invalid.stdout.toString() + invalid.stderr.toString()).toContain(
+      "TS2322",
+    );
   });
 
   test("declares the bitty-plugin-lint bin", () => {

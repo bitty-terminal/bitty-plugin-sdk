@@ -14,8 +14,4 @@ version = ">=2.30"
 
 [lazy]
 commands = ["conformance.tools-git:hello"]
-events = [
-  "plugin.activated",
-  "plugin.disposed",
-  "terminal.bell",
-]
+events = ["plugin.activated", "plugin.disposed", "terminal.bell"]

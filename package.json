@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Developer-facing support for Bitty terminal plugins.",
   "license": "MIT",
-  "packageManager": "bun@1.4.2",
+  "packageManager": "bun@1.4.4",
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -17,14 +17,9 @@
     "bitty-plugin-docs-check": "./src/docs-cli.ts"
   },
   "devDependencies": {
-    "@commitlint/cli": "21.2.3",
-    "@commitlint/config-conventional": "21.2.3",
-    "@types/bun": "1.4.2",
+    "@types/bun": "1.4.4",
     "carryctx": "0.11.6",
-    "lefthook": "2.1.14",
-    "markdownlint-cli2": "0.23.2",
-    "prettier": "3.9.6",
-    "typescript": "7.0.2"
+    "lefthook": "2.1.14"
   },
   "dependencies": {
     "smol-toml": "1.8.0"

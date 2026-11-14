@@ -16,7 +16,7 @@
 ## Quality gates
 
 - [ ] `just fmt-check` passes (Prettier 3.9.6)
-- [ ] `just lint` passes (markdownlint-cli2 0.23.1)
+- [ ] `just fmt-check` passes (`bun fmt --check`)
 - [ ] `just check` passes (all of the above)
 - [ ] `actionlint` passes (actionlint 1.7.12)
 
