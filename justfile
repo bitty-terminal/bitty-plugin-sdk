@@ -49,8 +49,8 @@ fmt-check-files *files:
     bun fmt --no-script --no-config --check --ignore-unknown {{files}}
 
 hooks-install:
-    lefthook install pre-commit
-    carryctx hooks install --compose
+    bun run lefthook install pre-commit
+    bun run carryctx hooks install --compose
 
 # Publish a redacted CarryCtx snapshot inside this repo (commander merge
 # closeout only; never a git hook). `carryctx export --publication` redacts the
