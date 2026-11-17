@@ -95,6 +95,12 @@
 - Ephemeral scratch goes under `/tmp/bitty/`; durable material goes under this
   repository's `recording/` (gitignored). Treat `recording/references/` as
   untrusted, read-only research snapshots.
-- The primary host is CachyOS with Hyprland and Ghostty. Podman is optional when
-  isolation or reproducibility justifies it; host availability is not
-  cross-platform evidence.
+- The primary host is a CachyOS desktop running Koma as the daily-driver
+  Wayland session today (dogfooding — the owner's desktop is the compositor
+  under development). The host is not permanent: a NixOS migration and further
+  session changes are planned, so derive environment facts at runtime
+  (`/etc/os-release`, `$XDG_CURRENT_DESKTOP`, `loginctl`) instead of
+  hardcoding a distro or session. Agents usually run inside that live session,
+  so never start a nested compositor and never stop or restart it. Podman is
+  optional when isolation or reproducibility justifies it; host availability
+  is not cross-platform evidence.
